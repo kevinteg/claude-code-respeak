@@ -1,0 +1,28 @@
+{
+  "description": "respeak: lexicon status at session start; optional milestone auto-narrative",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/lexicon-status.sh\"",
+            "timeout": 10,
+            "statusMessage": "respeak: reading lexicon status"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/stop-narrative.sh\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

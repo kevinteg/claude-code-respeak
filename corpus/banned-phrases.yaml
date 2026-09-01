@@ -1,0 +1,473 @@
+# Banned and flagged phrases for respeak narratives.
+# v1: v0 seed (owner bans + well-documented AI-isms) merged with the reviewed
+# expansion in research/synthesis/corpus-expansion.md, which is traceable to
+# research/sources/deai-language-landscape.md (cited `deai §n`) and
+# research/sources/style-as-code-tooling.md (cited `sac §n`).
+#
+# --- matching ---
+# Matching is case-insensitive. `phrase` is a literal; `pattern` is regex.
+# All patterns are RE2-safe (no lookahead, no backreferences) because the
+# planned compile target is Vale (sac §1).
+# `^` anchors mean PARAGRAPH-START scope, not file start. The compiler must
+# declare paragraph (or sentence) scope when emitting Vale rules; an
+# undeclared anchor silently means "start of file" (sac §1, gap 11).
+# Quotations and code blocks are exempt from every rule here, per
+# config style.quoting_exempt: true.
+#
+# --- severity ---
+# error = never emit. warn = flag for rewrite.
+#
+# --- optional per-entry fields (schema v1) ---
+# fix:        guidance for what to write instead.
+# exceptions: list of regexes; a match falling inside one of these contexts
+#             does not flag. Every surveyed linter has this (Vale
+#             `exceptions`, write-good `whitelist`, alex `allow` — sac §10).
+# provenance: `evidence` (default, omitted) or `owner-preference`. The latter
+#             marks entries the project owner banned that no research catalog
+#             lists; they stand on owner authority, not measurement (sac §9
+#             gap 8 asks for exactly this rationale link).
+# tier:       `density` marks common-overuse words that flag by DENSITY
+#             against config style.budgets.warn_phrases_per_1000_words, not
+#             per hit. Kobak's "common but excess" tier says to flag these
+#             only at density (deai §2.1); Hemingway's budget semantics agree
+#             (sac §5). Absent `tier`, an entry flags per occurrence.
+
+version: 1
+
+categories:
+  user_banned:
+    note: Terms the project owner has explicitly banned from all narratives.
+    entries:
+      - phrase: load-bearing
+        severity: error
+        fix: say what breaks if it changes
+      - phrase: spine in a line
+        severity: error
+      - pattern: '\bthe spine\b'
+        severity: error
+        fix: name the actual structure (the core loop, the main path, the schema)
+      - pattern: 'the honest (assessment|take|answer|read)'
+        severity: error
+        fix: just give the assessment; honesty is assumed, not announced
+      - pattern: 'sharpest (part|point|edge|question)'
+        severity: error
+      - phrase: crisp
+        severity: warn
+        fix: short, exact, or specific — pick the one you mean
+        provenance: owner-preference
+        # No research catalog lists `crisp` as an AI tell; Microsoft's *human*
+        # style guide calls its own voice "crisp and clear" (sac §6). Kept on
+        # owner authority — it belongs to the self_grading family (deai §4).
+
+  pleasantries:
+    note: Openers/closers that spend the reader's attention on nothing.
+    entries:
+      - pattern: '^(great|excellent|good) question'
+        severity: error
+      - pattern: '\bI hope this helps\b'
+        severity: error
+      - pattern: '^(certainly|absolutely|of course)[,!]'
+        severity: error
+      - pattern: '\bfeel free to\b'
+        severity: error
+      - pattern: '\bhappy to (help|assist)\b'
+        severity: error
+      - pattern: "\\blet me know if you('d| would)? like\\b"
+        severity: error
+        fix: state the follow-up options as facts, once, or omit
+        # re-scored warn -> error: WP:CERTAINLY puts "let me know" in the
+        # unambiguous chatbot-voice tier (deai §1.1), same row as
+        # "I hope this helps", which the seed already errors.
+      - { pattern: "I('d| would) be happy to\\b", severity: error }               # deai §3.11; broader than "happy to (help|assist)"
+      - { pattern: 'would you like (me to|a|more)', severity: error }             # deai §1.1 WP:CERTAINLY
+      - { pattern: '\bis there anything else\b', severity: error }                # deai §1.1 WP:CERTAINLY
+      - { phrase: I hope this message finds you well, severity: error }           # deai §1.1, §1.5
+      - { pattern: "^here('s| is) (a|an|the)\\b", severity: warn }                # deai §1.1 "here is a…"
+      - { pattern: '\bmore detailed breakdown\b', severity: warn }                # deai §1.1 WP:CERTAINLY
+
+  ai_cliches:
+    note: Statistically overrepresented LLM vocabulary; each reads as machine tell.
+    entries:
+      # --- v0 seed ---
+      - { phrase: delve, severity: error, fix: examine / look at / dig into }     # affirmed: r=28.0 (deai §2.1)
+      - { phrase: tapestry, severity: error }
+      - { pattern: '\ba testament to\b', severity: error, fix: shows / proves }
+      - { phrase: multifaceted, severity: error }
+      - { phrase: nestled, severity: error }
+      - { pattern: '\bboasts\b', severity: error, fix: has }                      # re-scored warn -> error: WP:AIPUFFERY strong tier + WP:AIVOCAB + Kobak rare-style list (deai §1.1, §1.2, §2.1)
+      - { pattern: 'plays? a (crucial|vital|pivotal|key) role', severity: error, fix: name the mechanism instead of grading its importance }
+      - { pattern: "it('s| is) (important|worth) (to note|noting)", severity: error, fix: "delete; if it matters, say it plainly" }
+      - { pattern: 'in today.s fast-paced world', severity: error }               # kept; the *attested* variants are the digital-age entries below (deai §7)
+      - { pattern: '\bseamless(ly)?\b', severity: error }                         # re-scored warn -> error: Kobak rare style list, per-occurrence tier (deai §2.1)
+      - { pattern: '\bleverage[sd]?\b', severity: warn, fix: use }
+      - { pattern: '\brobust\b', severity: warn, fix: say what it survives, tier: density }   # common-but-excess tier (deai §2.1): flag at density, not per hit
+      - { pattern: '\bdive (in|into|deeper)\b', severity: warn }
+      - pattern: '\bunpack\b'
+        severity: warn
+        fix: explain
+        provenance: owner-preference   # no research catalog lists it
+      - pattern: '\bat the end of the day\b'
+        severity: error
+        provenance: owner-preference   # no research catalog lists it; nearest support is proselint's categorical corporate_speak check (sac §4)
+      - { pattern: 'not (just|only) [^.]{3,40}, but( also)?', severity: warn, fix: "contrastive inflation; make one claim at a time" }
+      - { pattern: '\belevat(e|es|ed|ing)\b', severity: warn }
+      - { pattern: '\bgame.?chang(er|ing)\b', severity: error }
+      - { pattern: '\bnavigat(e|ing) the (complexit|landscape)', severity: error }
+      - pattern: '\blandscape\b'
+        severity: warn
+        fix: field / market / codebase — the literal noun
+        tier: density                  # common-but-excess tier (deai §2.1)
+        exceptions:
+          - '\b(landscape (architect|architecture|architects|design|designer|painting|paintings|photography|gardening|mode|orientation)|natural landscape|rural landscape|urban landscape|the landscape of the (valley|hills|coast))\b'
+        # Literal-terrain and page-orientation uses are legitimate (sac §10).
+      - pattern: '\becosystem\b'
+        severity: warn
+        provenance: owner-preference   # no research catalog lists it (biology/platform senses are literal)
+      - pattern: '\bsynerg(y|ies|istic)\b'
+        severity: error
+        provenance: owner-preference   # no source ranks it; the most exposed seed entry (corpus-expansion §3.7)
+      - pattern: '\bholistic\b'
+        severity: warn
+        provenance: owner-preference   # no research catalog lists it
+      - { pattern: '\bstreamlin(e|ed|ing)\b', severity: warn }
+      - { pattern: '\bfostering\b', severity: error }                             # re-scored: the -ing form is in the 2024-25 era vocab list, WP:SUPERFICIAL, and Kobak's list (deai §1.1, §1.2, §2.1)
+      - { pattern: '\bfoster(s|ed)?\b', severity: warn }                          # bare forms stay warn
+      - { pattern: '\bempower(s|ing|ed)?\b', severity: warn }
+      - { pattern: '\bharness(es|ing)? the\b', severity: warn }
+      - { pattern: '\bunlock(s|ing)? the\b', severity: warn }
+      - { pattern: '\bjourney\b', severity: warn, fix: process / work — unless someone is traveling }
+      # --- v1 additions: WP:AIVOCAB (deai §1.2), Kobak 2025 excess-vocab list
+      #     (deai §2.1), WP:AIPUFFERY (deai §1.1), antislop corpus (deai §7) ---
+      - { pattern: '\bpivotal\b', severity: error, fix: name what it decides }    # deai §1.2 + §2.1 (Liang top-4 word)
+      - { pattern: '\bintricate(ly)?\b|\bintricac(y|ies)\b', severity: error }    # deai §1.2, §2.1 (Gray 2024: 2x in 2023)
+      - { pattern: '\bmeticulous(ly)?\b', severity: error, fix: careful(ly) }     # deai §1.2, §2.2 (arXiv:2508.01930)
+      - { pattern: '\bunderscor(e|es|ed|ing)\b', severity: error, fix: shows / stresses }  # deai §2.1 (r=13.8)
+      - { pattern: '\bshowcas(e|es|ed|ing)\b', severity: error, fix: shows }      # deai §2.1 (r=10.7)
+      - { pattern: '\brevolutioniz(e|es|ed|ing)\b', severity: error }             # deai §2.1, §7
+      - { pattern: '\bvaluable insights\b', severity: error }                     # deai §1.1 WP:SUPERFICIAL
+      - { pattern: '\bdiverse array\b', severity: error, fix: list them }         # deai §1.1 WP:AIPUFFERY
+      - { pattern: '\brich cultural heritage\b', severity: error }                # deai §1.1 WP:AIPUFFERY
+      - { pattern: '\b(breathtaking|stunning natural beauty)\b', severity: error } # deai §1.1 WP:AIPUFFERY
+      - { pattern: '\bever.?(evolving|changing)\b', severity: error }             # deai §7 antislop
+      - { pattern: "(today's|in today's) digital (age|era)", severity: error }    # deai §7 antislop (attested forms of the fast-paced-world entry)
+      - { pattern: '\bindelible( mark)?\b', severity: error }                     # deai §1.1 WP:AILEGACY + §7
+      - { pattern: '\bkaleidoscope\b', severity: error }                          # deai §7 antislop
+      - { pattern: '\bsymphony of\b', severity: error }                           # deai §7 antislop
+      - { pattern: '\bdeep dive\b', severity: warn, fix: close look }             # deai §1.2 WP:AIVOCAB
+      - { pattern: '\bbolster(s|ed|ing)?\b', severity: warn, fix: support }       # deai §1.2 (2023-2025 era lists)
+      - { pattern: '\bgarner(s|ed|ing)?\b', severity: warn, fix: get / win }      # deai §1.2
+      - { pattern: '\binterplay\b', severity: warn }                              # deai §1.2, §2.1
+      - { pattern: '\bvibrant\b', severity: warn }                                # deai §1.1 puffery + §1.2 vocab
+      - { pattern: '\brealm(s)?\b', severity: warn, fix: field / area }           # deai §2.1 (Liang top-4), §7
+      - { pattern: '\bgroundbreaking\b', severity: warn, fix: say what it did first } # deai §1.1, §2.1
+      - { pattern: '\brenowned\b', severity: warn, fix: well-known / known for X } # deai §1.1, §2.1
+      - { pattern: '\bin the heart of\b', severity: warn }                        # deai §1.1 WP:AIPUFFERY
+      - { pattern: '\bcutting.?edge\b', severity: warn }                          # deai §7 antislop
+      - { pattern: '\bwhen it comes to\b', severity: warn, fix: for / about }     # deai §7 antislop
+      - { pattern: '\bunparalleled\b', severity: warn }                           # deai §2.1 style list
+      - { pattern: '\binvaluable\b', severity: warn }                             # deai §2.1 style list
+      - { pattern: '\bshed(ding|s)? light\b', severity: warn, fix: show / explain } # deai §2.1
+      - { pattern: '\bpav(e|es|ed|ing) the way\b', severity: warn }               # deai §2.1 ("paving")
+      - { pattern: '\bpoised to\b', severity: warn }                              # deai §2.1
+      - { pattern: '\btransformative\b', severity: warn }                         # deai §2.1
+      - { pattern: '\bburgeoning\b', severity: warn, fix: growing }               # deai §2.1
+      - { pattern: '\bunveil(s|ed|ing)?\b', severity: warn, fix: show / release } # deai §2.1
+      - { pattern: '\bembark(s|ed|ing)?\b', severity: warn, fix: start }          # deai §7 antislop
+      - { pattern: '\bnuanced?\b|\bnuances\b', severity: warn }                   # deai §2.1
+      - { pattern: '\b(align|resonate)s? with\b', severity: warn }                # deai §1.1 WP:SUPERFICIAL, §1.2 (2024-25 era)
+      - { pattern: '\bamidst\b', severity: warn, fix: amid / among }              # deai §2.1, §7
+      - { pattern: '\bakin to\b', severity: warn, fix: like }                     # deai §2.1
+      - { pattern: '\bunderpin(s|ned|ning)?\b', severity: warn }                  # deai §7 antislop
+      - { pattern: '\bdaunting\b', severity: warn }                               # deai §7 antislop
+      - { pattern: '\benduring\b', severity: warn }                               # deai §1.1 AILEGACY + §1.2 vocab
+      - { pattern: '\bcrucial\b', severity: warn, fix: say why it matters, tier: density }   # deai §2.1 (δ=0.037; common tier)
+      - { pattern: '\benhanc(e|es|ed|ing)\b', severity: warn, fix: improve, tier: density }  # deai §1.2 (2024-25 era), §2.1 common set
+      - { pattern: '^additionally,', severity: warn, fix: also, tier: density }   # deai §1.2 "Additionally (sentence-initial)"
+      - { pattern: '^(moreover|furthermore),', severity: warn, tier: density }    # deai §7 antislop; density-based per §2.1
+
+  hedging:
+    note: Uncertainty is stated once, precisely, with a reason — not sprinkled.
+    entries:
+      - { pattern: '\b(arguably|essentially|generally speaking|to some extent)\b', severity: warn }
+      - { pattern: '\bit (could|might) be (argued|said) that\b', severity: error, fix: "who argues it? say it or attribute it" }
+      - { pattern: '\bsomewhat\b', severity: warn }
+      - { pattern: '\btend(s)? to\b', severity: warn, fix: "does it or not? if variable, give the condition" }
+      - { pattern: '\bmay or may not\b', severity: error }
+      - { pattern: '\bit is advisable\b', severity: warn }                        # deai §7 antislop
+      - { pattern: '\byou may want to\b', severity: warn }                        # deai §7 antislop
+      - { pattern: '\bthere are a few considerations\b', severity: warn }         # deai §7 antislop
+
+  self_narration:
+    note: Process talk that describes the writing instead of the subject.
+    entries:
+      - { pattern: "^(now,? )?let('s| us| me)\\b", severity: warn }
+      - { pattern: '\bas (mentioned|noted|discussed) (above|earlier|previously)\b', severity: warn, fix: "repeat the fact; readers do not replay the document" }
+      - { pattern: '\bin this (section|document|report),? (we|I) will\b', severity: error }
+      - { pattern: '\bwithout further ado\b', severity: error }
+      - { pattern: 'as previously (mentioned|noted|discussed)', severity: warn, fix: repeat the fact }   # deai §7; fills the word-order gap in the entry above
+      - { pattern: '\bto put it simply\b', severity: warn }                       # deai §7 antislop
+      - { pattern: '^remember that\b', severity: warn }                           # deai §7 antislop
+
+  summary_inflation:
+    note: Structural padding around the actual content.
+    entries:
+      - { pattern: '^in (summary|conclusion|short|essence)\b', severity: warn, fix: "if the summary adds nothing, cut it; if it does, cut the body" }
+      - { pattern: '\bto summarize\b', severity: warn }
+      - { pattern: '\boverall,\b', severity: warn }
+      - { pattern: '\bkey takeaways?\b', severity: warn }
+
+  # ======================= v1: new categories =======================
+
+  significance_inflation:
+    note: >
+      Undue emphasis on significance/legacy — grading importance instead of
+      stating mechanism. Source: deai §1.1 (WP:AILEGACY / WP:AITREND, "strong"
+      tier) and deai §3 tone item 15; root-cause framing deai §1 ("less
+      specific and more exaggerated").
+    entries:
+      - { pattern: 'highlight(s|ing) (its|the) (importance|significance)', severity: error }
+      - { pattern: '\bkey turning point\b', severity: error }
+      - { pattern: '\bevolving landscape\b', severity: error }
+      - { pattern: 'symboliz(es|ing) (its |the )?(ongoing|enduring|lasting)', severity: error }
+      - { pattern: '(represents|marks) a (significant |major |notable )?shift', severity: warn }
+      - { pattern: '\bsetting the stage for\b', severity: warn }
+      - { pattern: '\bfocal point\b', severity: warn }
+      - { pattern: '\breflects broader\b', severity: warn }
+      - { pattern: '\bdeeply rooted\b', severity: warn }
+      - { pattern: '\b(marking|shaping) the\b', severity: warn }
+      - { pattern: "\\bit('s| is) essential to\\b", severity: warn }              # deai §7
+      - { pattern: '\bkey (factor|driver|moment|component|element)\b', severity: warn }  # deai §1.2 "key (adjective)"
+
+  copula_avoidance:
+    note: >
+      Elaborate verbs where "is/has" is meant. Source: deai §1.2 (WP:AINOCOPULA;
+      measured >10% drop of is/are in 2023 academic text), §3.21, and the fix
+      pattern in deai §6.2 ("restore the copula").
+    entries:
+      - { pattern: '\b(stands|serves) as\b', severity: warn, fix: is }
+      - { pattern: '\bfunctions as\b', severity: warn, fix: is / works as }
+      - { pattern: '\boperates as\b', severity: warn, fix: is / runs as }
+      - { pattern: '\brepresents a\b', severity: warn, fix: is a }
+      - { pattern: '\brefers to\b', severity: warn, fix: "in definitions, write 'X is …'" }
+
+  participial_tails:
+    note: >
+      Sentence-final present-participle clauses bolted onto facts. Source: deai
+      §1.1 (WP:SUPERFICIAL, "strong"), §2.3 (Reinhart et al., PNAS 2025 —
+      measured overuse of present participial clauses), §3.10; fix per §6.3
+      ("chop sentence-final participles").
+    entries:
+      - { pattern: ',\s(highlighting|underscoring|emphasizing|reflecting|symbolizing|signifying|showcasing)\b',
+          severity: error, fix: "end the sentence at the fact, or make the claim its own sentence with an agent" }
+      - { pattern: ',\s(ensuring|fostering|cultivating|encompassing|enhancing)\b', severity: warn,
+          fix: "same — delete the clause or give it an agent" }
+      - { pattern: ',\scontributing to\b', severity: warn }
+
+  weasel_attribution:
+    note: >
+      Vague attribution and canned notability claims. Source: deai §1.1
+      (WP:AIWEASEL "medium"; WP:AIATTR "strong, more common in 2025+ models"),
+      §3.14 and §3.20; fix per §6.6 ("attribute or delete").
+    entries:
+      - { pattern: '\b(experts|observers|critics|analysts) (argue|say|note|suggest|have cited)\b',
+          severity: error, fix: "name the person and source, or cut" }
+      - { pattern: '\bmaintains an active social media presence\b', severity: error }
+      - { pattern: '\bwritten by a leading expert\b', severity: error }
+      - { pattern: '\b(local|regional|national) media outlets\b', severity: error }
+      - { pattern: '\bindustry reports\b', severity: warn, fix: "which report? cite it" }
+      - { pattern: '\bwidely (regarded|considered|seen|held)\b', severity: warn, fix: "by whom?" }
+      - { pattern: '\bseveral (sources|publications|studies|outlets)\b', severity: warn, fix: count them and cite }
+      - { pattern: '\bindependent coverage\b', severity: warn }
+
+  knowledge_cutoff:
+    note: >
+      Model-disclaimer language leaking into documents. Source: deai §1.1
+      (WP:AICUTOFF — "unambiguous" tier), hence all error.
+    entries:
+      - { pattern: 'as of my (last|latest) knowledge update', severity: error }
+      - { pattern: 'while specific details (are|remain) (limited|scarce)', severity: error }
+      - { pattern: 'not widely (available|documented|disclosed)', severity: error }
+      - { pattern: '\bbased on available information\b', severity: error }
+      - { pattern: '\bmaintains a low profile\b', severity: error }
+
+  machine_artifacts:
+    note: >
+      Literal tool residue — never legitimate in output. Source: deai §1.4
+      (tool-specific artifacts) and §1.1 (WP:AIPLACEHOLDER). All error.
+    entries:
+      - { pattern: 'oai_citation|oaicite|contentReference|attributableIndex', severity: error }
+      - { pattern: 'citeturn\d|turn\d+(search|image|news)\d+', severity: error }
+      - { pattern: 'utm_source=(chatgpt\.com|openai|copilot\.com)', severity: error }
+      - { pattern: '\[cite: ?\d+\]|\(start_span\)|\(end_span\)', severity: error }
+      - { pattern: 'grok-card|grok_render_citation_card_json|referrer=grok\.com', severity: error }
+      - { pattern: '【\d+†', severity: error }
+      - { pattern: '\[attached_file:\d+\]|\[web:\d+\]|ppl-ai-file-upload', severity: error }
+      - { pattern: ':::writing\{', severity: error }
+      - { pattern: '\[(Your Name|Specific Topic)\]|INSERT_SOURCE_URL|PASTE_[A-Z_]*URL', severity: error }
+
+  negative_parallelism:
+    note: >
+      The "It's not X — it's Y" family. Source: deai §1.2 (WP:AIPARALLEL),
+      §3.13 ("reads as clearing up a misconception nobody had"); antislop ships
+      regex bans for this family (deai §5). The milder "not just X, but" form
+      is in ai_cliches; these are the stronger em-dash/triple forms.
+    entries:
+      - { pattern: "it('s| is) not [^.]{3,40}[,;]? ?(—|–|-)? ?it('s| is)\\b", severity: error,
+          fix: assert Y directly }
+      - { pattern: "\\bisn't [^.]{3,40}\\s*(—|–)\\s*it('s| is)\\b", severity: error }
+      - { pattern: '\bno \w+, no \w+, just \w+', severity: error }
+
+  condescension:
+    note: >
+      Minimizing difficulty at the reader. Source: sac §6 (Google style guide
+      avoid-list — "simply / it's easy / just / quickly in procedures"),
+      sac §2 (alex — condescending language: "obviously", "everyone knows"),
+      and sac §9 gap 9, which recommends exactly this category.
+    entries:
+      - { pattern: '\beveryone knows\b', severity: error }
+      - { pattern: '\bsimply (click|run|open|add|type|install|select)\b', severity: warn, fix: 'drop "simply"' }
+      - { pattern: '\bjust (click|run|open|add|type|install|select)\b', severity: warn, fix: 'drop "just"' }
+      - { pattern: "\\bit('s| is) (easy|simple|straightforward) to\\b", severity: warn }
+      - { pattern: '\bobviously\b', severity: warn }
+      - { pattern: '!', severity: warn, tier: density,
+          fix: "end with a period; budget is config style.budgets.exclamations_per_doc" }   # sac §6 Google; sac §9 gap 10
+
+  claude_reflexes:
+    note: >
+      Chat voice leaking into documents — Claude-specific conversational
+      reflexes. Source: deai §4 ("Claude conversational reflexes") plus
+      WP:CERTAINLY (deai §1.1) for the verbatim-listed items.
+    entries:
+      - { pattern: "you('re| are) absolutely right", severity: error }            # deai §1.1 lists it verbatim
+      - { pattern: '\b(great|good) catch\b', severity: warn }
+      - { pattern: '\bI appreciate you\b', severity: warn }
+      - { pattern: '\blet me be (direct|clear|blunt)\b', severity: warn, fix: just be it }
+      - { pattern: '^to be fair,', severity: warn }
+      - { pattern: '^that said,', severity: warn, tier: density, fix: one pivot per document }
+      - { pattern: '^(importantly|crucially|critically),', severity: warn, fix: "show the importance, do not announce it" }
+      - { pattern: '\bgenuinely\b', severity: warn }
+      - { pattern: '\bdeeply (personal|felt|human|moving)\b', severity: warn }
+      - { pattern: '\bquietly (one of )?the most\b', severity: warn }
+      - { pattern: '\bin many ways\b', severity: warn }
+      - { pattern: '\bat its core\b', severity: warn }
+      - { pattern: '^fundamentally,', severity: warn }
+      - { pattern: "the way I('d| would) think about (this|it)", severity: warn }
+
+  self_grading:
+    note: >
+      Editorial frames that announce the prose's quality instead of exhibiting
+      it — extensions of the user_banned family. Source: deai §4 ("Self-grading
+      editorial frames"; analysis of the owner-ban generator).
+    entries:
+      - { pattern: '\bthe honest version\b', severity: error }                    # extends the owner-banned "the honest (assessment|take|…)" root
+      - { pattern: '\bthe sharpest version\b', severity: error }                  # extends the owner-banned "sharpest (part|point|…)" root
+      - { pattern: 'a sharper way to (say|put)', severity: warn }
+      - { pattern: "if I('m| am) being honest", severity: warn }
+      - { pattern: '\bto be blunt\b', severity: warn }
+      - { pattern: '^frankly,', severity: warn }
+      - { pattern: 'the real (question|story|work|issue) is', severity: warn }
+      - { pattern: 'the key insight( here)? is', severity: warn }
+      - { pattern: "here('s| is) the thing", severity: warn }
+      - { pattern: '^(the short version|tl;?dr):', severity: warn }
+      - { pattern: 'what actually matters( here)?', severity: warn }
+      - { pattern: '\btighter (framing|version|phrasing)\b', severity: warn }
+      - { pattern: 'a cleaner way to (put|say)', severity: warn }
+      - { pattern: '\bpunch(y|ier)\b', severity: warn }
+      - { pattern: "(this|that) (lands|doesn't land)\\b", severity: warn }
+      - { pattern: '\bdoes a lot of (the )?work\b', severity: warn }              # cousin of the owner-banned "load-bearing"
+      - { pattern: '\bcarries the weight\b', severity: warn }
+      - { pattern: '\bearns (its place|the reader)', severity: warn }
+
+  anatomy_metaphors:
+    note: >
+      Structure-as-body metaphors — same generator as the owner-banned
+      "spine"/"load-bearing" family. Source: deai §4 ("Structure-as-anatomy
+      metaphors", with proposed severities followed here).
+    entries:
+      - { pattern: '\bconnective tissue\b', severity: error }
+      - { pattern: '\bbeating heart of\b', severity: error }
+      - { pattern: '\bthe backbone of\b', severity: warn, fix: name the actual structure }
+      - { pattern: '\b(the skeleton of|skeletal structure)\b', severity: warn }
+      - { pattern: '\bthe scaffolding\b', severity: warn }
+      - { pattern: '\bheavy lifting\b', severity: warn }
+      - { pattern: '\bthrough.?line\b', severity: warn }
+      - { pattern: '\b(connective thread|thread that runs through)\b', severity: warn }
+      - { pattern: '(gives?|adds?) [^.]{0,25}\bmuscle\b', severity: warn }
+
+  formulaic_structure:
+    note: >
+      Rigid outline formulas. Source: deai §1.1 (WP:FACESCHALLENGES — "strong;
+      it's the rigid formula, not the topic"; "Awards and recognition" and
+      title-as-proper-noun leads, both "medium") and deai §3 structure items 2-4.
+    entries:
+      - { pattern: '\bfaces several challenges\b', severity: error }
+      - { pattern: '\bdespite these challenges\b', severity: error }
+      - { pattern: '\b(challenges and legacy|future (outlook|prospects))\b', severity: warn }
+      - { pattern: '\bawards and recognition\b', severity: warn }
+      - { pattern: '(is|refers to) a curated (compilation|list|selection)', severity: warn }
+
+  vague_association:
+    note: >
+      Naming proximity instead of the relation. Source: deai §1.2 (WP:AICONNECT),
+      §3.22; fix per §6.4 ("name the relation").
+    entries:
+      - { pattern: '\bin connection (with|to)\b', severity: warn, fix: for / about / over }
+      - { pattern: '\bin association with\b', severity: warn }
+      - pattern: '\bassociated with\b'
+        severity: warn
+        fix: used for / caused by / part of — name the relation
+        exceptions:
+          - '\b(statistically|significantly|strongly|weakly|positively|negatively|inversely|independently) associated with\b'
+          - '\bassociated with (a |an )?(higher|lower|greater|reduced|increased|decreased) (risk|odds|rate|hazard|likelihood|incidence)\b'
+        # Statistics is the legitimate register: "associated with" there is the
+        # correct hedge against a causal claim, not vagueness (sac §10).
+
+  format_tells:
+    note: >
+      Punctuation/formatting fingerprints. Source: deai §1.3 (WP:AIDASH,
+      WP:AIEMOJI, WP:AILIST, curly quotes, thematic breaks) and §3 structure
+      items 5-9; §3.18 notes the July 2026 finding that Claude is the only
+      major model still above professional-writer em-dash rates — a
+      Claude-specific severity bump for this project.
+    entries:
+      - { pattern: ' — ', severity: warn, tier: density,
+          fix: "restructure the sentence; Claude-specific tell" }
+      - { pattern: '[“”]', severity: warn, fix: "straight quotes; curly quotes signal pasted ChatGPT/DeepSeek text" }
+      - { pattern: '^\s*[-•*]\s*\*\*[^*]+\*\*:', severity: warn, fix: "bold-label bullets read as AI; write prose" }
+      - { pattern: '(🧠|🧱|🚨|🧭|📌|🚀|✨|💡)', severity: error, fix: no emoji decoration }
+        # ✅ removed from the pattern 2026-09-01: paired ✅/❌ as boolean marks in
+        # capability tables is legitimate data, and ❌ was never matched (wiki
+        # pilot finding — the rule flagged 4 table cells, zero decorations).
+      - { pattern: '^-{3,}$', severity: warn, fix: "thematic-break litter; cut" }
+
+  narrative_slop:
+    note: >
+      Stock narrative phrasing, for storytelling/ELI5 modes. Source: deai §7
+      (antislop corpus, "Narrative slop" family; author warns the list is
+      uncurated — errors here are limited to full stock phrases).
+    entries:
+      - { phrase: barely above a whisper, severity: error }
+      - { pattern: 'shivers? (down|up) (his|her|their|my|the) spine', severity: error }
+      - { phrase: with practiced ease, severity: error }
+      - { pattern: 'like a moth to a flame', severity: error }
+      - { pattern: 'little did (he|she|they) know', severity: error }
+      - { phrase: life would never be the same, severity: error }
+      - { phrase: for what seemed like an eternity, severity: error }
+      - { phrase: 'maybe, just maybe', severity: error }
+      - { phrase: 'for now, that was enough', severity: error }
+      - { phrase: reckless abandon, severity: error }
+      - { phrase: humble abode, severity: error }
+      - { pattern: '\b(palpable|cacophony|gossamer|rivulets|ministrations)\b', severity: warn }
+      - { pattern: '\b(thrummed|rasped|glinting|twinkled)\b', severity: warn }
+      - { pattern: '\b(conspiratorially|mischievously|quizzically|sagely|reassuringly)\b', severity: warn }
+
+  stock_names:
+    note: >
+      LLM default-name basin for invented examples. Source: deai §7, which
+      flags this as a "novel category". Case-insensitive matching may collide
+      with real names — hence warn for names real people carry.
+    entries:
+      - { pattern: '\b(Elara|Elysia|Eldoria|Atheria|Zephyria|Whisperwood|Oakhaven|Ravenswood|Kael)\b',
+          severity: error, fix: pick a name outside the LLM default basin }
+      - { pattern: '\b(Lyra|Eira|Jaxon|Elias)\b', severity: warn,
+          fix: "fine for real people; avoid as invented-character defaults" }

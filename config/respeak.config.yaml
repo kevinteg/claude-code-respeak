@@ -1,0 +1,203 @@
+# respeak configuration — the exposed influence surface.
+# v1: applies research/synthesis/config-critique.md (evidence citations there).
+# Contract: every parameter maps to observable writing behavior
+# (corpus/style/tone-mapping.md); a knob with no behavioral mapping is
+# decoration and gets removed.
+
+version: 2
+schema: docs/respeak.config.schema.json # not yet written; shape validation planned
+
+editorial_pass:
+  # Governs in-place edits to existing documents (as opposed to translation,
+  # which generates fresh narrative and always leads with the outcome).
+  #
+  # restructure:
+  #   advise — never move sections; when the buried-lede test fails, report a
+  #            structure advisory: the proposed section order plus a drafted
+  #            lead paragraph the owner can paste in. Headings stay stable, so
+  #            anchors and inbound links survive.
+  #   apply  — may reorder sections, retitle headings, and rewrite the lead.
+  #            Only when the caller owns relinking (e.g. a whole-wiki pass);
+  #            verify such edits with respeak-verify-edit.py --allow-restructure
+  #            and list every moved/retitled anchor in the edit report.
+  #   off    — prose gates only; structure untouched and unreported.
+  restructure: advise
+  # The buried-lede test: a reader who stops at this boundary must already
+  # know the document's outcome/decision/ask and whether to keep reading.
+  buried_lede_boundary: first_paragraph # first_paragraph | first_n_sentences: N
+  # In apply mode, an abstract/BLUF block at the top may substitute for
+  # reordering when moving sections would cost more than it buys.
+  prefer_abstract_over_reorder: true
+
+data:
+  # Rendering rules for homogeneous data (lists of records, metrics, results).
+  # "Crisp visibility": the reader sees the decision-relevant facts before
+  # the detail rows, in a shape built for scanning, not narration.
+  table_over_prose_threshold: 4 # >= N homogeneous items render as a table,
+                                # never as prose or a bullet run
+  key_column_first: true        # the column the reader decides on leads
+  summary_first: true           # totals / deltas / verdict line precede detail
+  outlier_callout: true         # a decision-relevant outlier is named in one
+                                # sentence above the table, never buried mid-rows
+  max_bullets_per_list: 7       # longer lists become tables or get grouped
+  sort_by: decision_relevance   # decision_relevance | magnitude | source_order
+
+narrative:
+  default_mode: technical # eli5 | bluf | technical
+  mode_select: fixed      # fixed | compass (Diátaxis 2-question classifier, opt-in)
+  context_default: routine # per-invocation: incident | routine | celebration
+                           # (Mailchimp: tone conditions on reader state;
+                           #  incident forces plain language + decompression)
+  tone:
+    formality: 0.4   # 0 = conversational, 1 = formal register
+    directness: 0.9  # 0 = cushioned, 1 = conclusion-first
+    confidence: 0.8  # hedging control; uncertainty stated once, precisely
+    # warmth removed in v1 — bare scalar with the weakest external mapping;
+    # replaced by the checkable style.feedback block (Radical Candor CORE).
+  tech_level: 3 # 1-5 audience depth; see tone-mapping.md
+
+# A profile encodes the audience's common ground (Clark & Brennan).
+# It composes with a mode (document form) and a context (reader state).
+# Voice constants in style: never vary.
+profiles:
+  exec:
+    tech_level: 1
+    lexicon_access: forbidden
+    reading_level_grade: 9
+    default_mode: bluf
+    address: you
+  peer-engineer: # fills the tech_level-3 gap the three modes leave open
+    tech_level: 3
+    lexicon_access: expand-first-use
+    reading_level_grade: null
+    default_mode: technical
+    address: you
+  author: # tech_level-5: the opt-in shorthand reader
+    tech_level: 5
+    lexicon_access: inline # the only profile where the two lanes may converge
+    reading_level_grade: null
+    default_mode: technical
+    address: you
+
+modes:
+  eli5:
+    tech_level: 1
+    reading_level_grade: 6
+    max_sentence_words: 15
+    length_budget_words: 150
+    max_paragraphs: 1
+    structure: single-explanation # no headers; no bullets
+    data: summarize-only # never tables: state the one comparison the reader
+                         # cares about; the data block does not apply here
+    address_reader: true          # "you" — plainlanguage #14
+    common_ground_opener: true    # Maxwell: open with something the reader knows
+    metaphor_budget: 1            # the one paid-for analogy...
+    analogy_must_close: true      # ...and it must say what it maps to
+    lexicon_terms: forbidden      # zero shorthand, zero undefined abbreviations
+    contractions: allowed
+    checks: # LLM-judge checks, not lint
+      - understand-feel-do        # what happened / why you care / what next
+      - no-parenthetical-asides
+    output_glob: "out/eli5/**/*.md"
+    tone: { formality: 0.2 } # crosses a behavior band in tone-mapping.md
+
+  bluf:
+    tech_level: 2
+    reading_level_grade: 9
+    max_sentence_words: 20 # AR 25-50 / plain-language cap
+    length_budget_words: 200
+    max_paragraph_sentences: 6 # STE
+    structure: bluf # sentence 1 = the decision/result/ask; no preamble
+    require_ask: # AR 25-50 canonical ask
+      owner: true
+      deadline: true
+      allow_fyi_no_action: true # explicit "FYI only — no action needed" satisfies it
+    address_reader: true
+    metaphor_budget: 0 # GOV.UK: metaphors slow comprehension
+    bullets: # GOV.UK bullet discipline
+      lead_in_required: true
+      min_items: 2
+      max_sentences_per_item: 1
+    grouping: mece # Minto: siblings must not overlap, none missing
+    scqa_preamble_max_clauses: 1
+    checks:
+      - delete-test # sentence 1 alone must carry outcome + expectation
+      - answer-the-question-asked # if you can't, say why
+    output_glob: "out/bluf/**/*.md"
+
+  technical:
+    tech_level: 4
+    reading_level_grade: 12 # UNVERIFIED number — prior art says "a ceiling
+                            # exists" (Hemingway Technical preset), names none
+    max_sentence_words: 25  # was 28 — above every standard; STE descriptive cap
+    max_step_words: 20      # STE procedural cap
+    length_budget_words: 500
+    max_paragraph_sentences: 6  # STE
+    max_paragraph_words: 150    # plainlanguage (hard cap 250)
+    structure: finding-first    # conclusion → evidence file:line → open questions
+    open_questions_require_test: true # end claims with a falsifiable check
+    metaphor_budget: 0
+    lexicon_terms: expand-first-use # ratified terms free after first expansion
+    passive_allowed_when: agent-unknown # STE descriptive rule; never for style
+    procedural: # applies to embedded steps in any mode
+      active_voice: 1.0 # STE: instructions 100% active/imperative
+      one_instruction_per_sentence: true
+      numbered_steps: true # GOV.UK: numbered steps, not bullets, for processes
+      safety_lines_first: true
+    checks:
+      - facts-before-stories # first evidence-bearing sentence is a fact, not a verdict
+    output_glob: "out/technical/**/*.md"
+
+style:
+  banned_phrases: corpus/banned-phrases.yaml
+  replacements: corpus/replacements.yaml
+  rules: corpus/style/
+  no_pleasantries: true
+  no_self_narration: true
+  person: second     # plainlanguage #14
+  tense: present     # plainlanguage #4
+  contractions: allowed
+  negative_contractions: never # GOV.UK: "cannot", never "can't" — misread as opposite
+  positive_form: true          # no double negatives
+  same_term_same_concept: true # plainlanguage #11 + STE; lint against lexicon
+  quoting_exempt: true         # quotes/code blocks exempt from bans
+  readability_metrics: [flesch_kincaid, gunning_fog] # averaged (Vale semantics)
+  min_alert_level: { ci: error, interactive: warn }
+  budgets: # budgets, not bans (Hemingway model)
+    passive_per_10_sentences: 2 # replaces active_voice_min; procedural override = 0
+    adverb_intensifiers_per_100_words: 1 # very/really/extremely
+    qualifiers_per_message: 1   # one precise uncertainty statement
+    exclamations_per_doc: 0     # Google
+    warn_phrases_per_1000_words: 5 # warn-severity matches as density, not ban
+  feedback: # the checkable form of warmth (Radical Candor)
+    core_required: true            # context + observation + result + next step
+    specific_praise_required: true # bare "looks good" = Ruinous Empathy
+    behavior_not_person: true
+
+shorthand:
+  lexicon: corpus/lexicon.yaml
+  proposal_dir: corpus/proposals/
+  ratification: human # human | auto
+  auto: # replaces auto_uses — the shape now carries the semantics
+    uses: 5
+    fidelity_failures_allowed: 0
+    readback_evidence: true # downstream correct action + verified echo (ICAO)
+  legibility_floor: 0.5
+  max_entries: 150            # Gregg: returns diminish fast past ~150 briefs
+  min_token_edit_distance: 2  # QD/QOD, IU/IV near-neighbor failures
+  retire_after_days_unused: 180 # Q-code deprecation pattern
+  review_cadence_days: 90     # ICAO SID/STAR erosion: schedule re-harmonization
+  legibility_audit: { cadence_days: 30, method: fresh-decoder, sample: 10 }
+  register_marker: required   # declare shorthand in-band (ICS "Interco")
+  reserved_metawords: [CORRECTION, SAY-AGAIN, UNVERIFIED]
+  readback_required_for: [irreversible-actions, security-findings, escalations-to-human]
+  decompress_on: [escalation-to-human, incident, repeated-fidelity-failure, new-partner]
+  never_compress: # TJC do-not-use format: each ban carries its failure story
+    - { class: error-messages-and-stack-traces, failure_mode: verbatim evidence lost }
+    - { class: security-findings, failure_mode: high-stakes content must survive any reader }
+    - { class: user-quotes, failure_mode: misattribution }
+    - { class: numbers-with-units, failure_mode: bare magnitudes; TJC trailing-zero precedent }
+    - { class: safety-and-caution-instructions, failure_mode: never buried or shortened (STE) }
+    - { class: ask-owner-and-deadline, failure_mode: BLUF ask stripped in compression }
+    - { class: identifiers-novel-decisions-negations, failure_mode: high-surprisal content is where short encodings become unrecoverable (Piantadosi 2011) }
+    - { class: reserved-metawords, failure_mode: repair channel must never be repurposed }

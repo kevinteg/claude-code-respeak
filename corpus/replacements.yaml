@@ -1,0 +1,106 @@
+# Preferred substitutions for respeak narratives.
+# Unlike banned-phrases.yaml (which rejects), these rewrite: when the draft
+# contains `from`, prefer `to`. The translator applies these before the
+# banned-phrase check; a replacement that still trips a ban is a corpus bug.
+#
+# v1: v0 seed plus the pairs in research/synthesis/corpus-expansion.md §2,
+# cited to research/sources/deai-language-landscape.md (`deai §n`) and
+# research/sources/style-as-code-tooling.md (`sac §n`).
+# Some entries are rewrite-patterns, not word swaps: `to` then describes the
+# move to make, and `note: rewrite-pattern` marks it.
+
+version: 1
+
+replacements:
+  # Latinate/abstract -> Anglo-Saxon/concrete (Simply Said, plain language)
+  - { from: utilize, to: use }
+  - { from: leverage, to: use }
+  - { from: facilitate, to: help / run / make possible, note: pick the literal verb }
+  - { from: implement, to: build / write / add, note: keep "implement" only for interfaces }
+  - { from: functionality, to: features / what it does }
+  - { from: methodology, to: method }
+  - { from: subsequently, to: then }
+  - { from: additionally, to: also }
+  - { from: approximately, to: about }
+  - { from: demonstrates, to: shows }
+  - { from: possesses, to: has }
+  - { from: numerous, to: many }
+  - { from: prior to, to: before }
+  - { from: in order to, to: to }
+  - { from: due to the fact that, to: because }
+  - { from: at this point in time, to: now }
+  - { from: in the event that, to: if }
+  - { from: has the ability to, to: can }
+
+  # Nominalizations -> verbs (plainlanguage.gov)
+  - { from: make a decision, to: decide }
+  - { from: perform an analysis, to: analyze }
+  - { from: conduct a review, to: review }
+  - { from: provide a summary, to: summarize }
+  - { from: reach a conclusion, to: conclude }
+
+  # Importance-grading -> mechanism-naming (the fix for "plays a crucial role")
+  - from: is critical to
+    to: "state what fails without it"
+    note: rewrite-pattern, not word swap
+  - from: significantly improves
+    to: "give the number"
+    note: quantify or drop the adverb
+
+  # --- v1 additions ---
+
+  # Copula restoration (deai §1.2 WP:AINOCOPULA; fix pattern deai §6.2:
+  # "serves as the exhibition arm" -> "is the exhibition space")
+  - { from: serves as, to: is }
+  - { from: stands as, to: is }
+  - { from: functions as, to: is / works as }
+  - { from: represents a, to: is a }
+  - { from: refers to, to: is, note: definitions only }
+  - { from: boasts, to: has }                       # deai §6.2 verbatim ("boasts 8 tracks" -> "has 8 tracks"); also an error-level ban in ai_cliches
+  - { from: maintains a, to: has a, note: when "has" is meant }   # deai §1.2
+
+  # Relation naming (deai §1.2 WP:AICONNECT; deai §6.4)
+  - { from: associated with, to: used for / caused by / part of, note: name the relation }
+  - { from: in connection with, to: for / about / over }
+
+  # AI-vocab -> plain verb (deai §1.2 WP:AIVOCAB; deai §2.1 Kobak style list)
+  - { from: showcases, to: shows }
+  - { from: underscores, to: shows / stresses }
+  - { from: highlights, to: shows, note: verb use }
+  - { from: garner, to: get / win }
+  - { from: bolster, to: support / strengthen }
+  - { from: meticulously, to: carefully }
+  - { from: intricate, to: detailed / complex }
+  - { from: amidst, to: amid / during }
+  - { from: akin to, to: like }
+  - { from: burgeoning, to: growing }
+  - { from: renowned, to: well-known }
+  - { from: deep dive, to: close look }
+  - { from: enhance, to: improve }
+  - { from: elucidate, to: explain }
+  - { from: necessitates, to: requires }
+  - { from: endeavors, to: efforts }
+  - { from: exhibited, to: showed }                 # deai §2.1 common-marker set
+  - { from: comprehensive, to: complete / full }    # deai §2.1 common-marker set
+
+  # Rewrite-patterns, not word swaps
+  - from: a diverse array of
+    to: "list the actual items"
+    note: rewrite-pattern (deai §1.1 WP:AIPUFFERY)
+  - from: "it's not X — it's Y"
+    to: "assert Y directly"
+    note: rewrite-pattern (deai §3.13)
+  - from: please note that
+    to: "(delete)"
+    note: placeholder phrase (sac §6, Google avoid-list)
+  - { from: at this time, to: now / currently }     # sac §6, Google avoid-list
+  - from: "there is / there are (sentence-initial)"
+    to: "name the real subject"
+    note: rewrite-pattern (sac §2 write-good `thereIs`; sac §6 Microsoft tip 10)
+
+  # Contractions — conditional on formality setting (sac §6 Microsoft tip 3:
+  # "project friendliness = use contractions"; sac §9 gap 6). Gate on
+  # config narrative.tone.formality / style.contractions.
+  - { from: it is, to: "it's", note: when formality is low; gate on config }
+  - { from: you will, to: "you'll", note: same gate }
+  - { from: we are, to: "we're", note: same gate }

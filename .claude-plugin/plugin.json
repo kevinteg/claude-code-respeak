@@ -1,0 +1,32 @@
+{
+  "name": "respeak",
+  "displayName": "Respeak",
+  "description": "Two-lane communication for agent swarms: an efficient machine-facing shorthand lexicon for long-running sessions, plus a translator agent that renders human-facing narratives (ELI5, BLUF, technical) tuned by exposed tone and tech-level configuration.",
+  "version": "0.2.0",
+  "author": {
+    "name": "Kevin Tegtmeier"
+  },
+  "keywords": ["communication", "narrative", "translation", "token-optimization", "shorthand", "style"],
+  "userConfig": {
+    "default_mode": {
+      "type": "string",
+      "title": "Default narrative mode",
+      "description": "Mode the translator uses when none is specified: eli5, bluf, or technical",
+      "default": "technical"
+    },
+    "tech_level": {
+      "type": "number",
+      "title": "Audience technical depth",
+      "description": "1 = no assumed background ... 5 = the engineer who wrote it",
+      "default": 3,
+      "min": 1,
+      "max": 5
+    },
+    "auto_narrative": {
+      "type": "boolean",
+      "title": "Auto-narrative at milestones",
+      "description": "When on, a Stop hook nudges a one-paragraph narrative in the configured mode after milestone turns",
+      "default": false
+    }
+  }
+}

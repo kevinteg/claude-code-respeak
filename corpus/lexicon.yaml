@@ -1,0 +1,52 @@
+# respeak shorthand lexicon — the machine-facing lane's canonical dictionary.
+#
+# Modeled on codified expert shorthands (brevity codes, Q-codes, ATC
+# phraseology): the swarm may only rely on shorthand that appears HERE with
+# status: ratified. Anything else must be written out in full.
+#
+# Following the long-running-harness lesson (structured registries resist
+# drift better than prose), this file is append-mostly:
+#   - agents PROPOSE entries by writing files into corpus/proposals/
+#   - ratification (human or auto, per config) moves them here
+#   - entries are never deleted, only status: retired
+#
+# Entry fields:
+#   term:        the shorthand token(s) as they appear in swarm traffic
+#   expansion:   the full-English rendering the translator substitutes
+#   definition:  precise meaning, including what it does NOT cover
+#   scope:       where it is valid (global | repo | session)
+#   status:      proposed | ratified | retired
+#   ratified_by: human|auto + date
+#   uses:        observed-use counter (maintained by tooling, not by hand)
+#   legibility:  0.0-1.0 estimate of how guessable it is without the lexicon
+#                (entries below config's legibility_floor are rejected)
+
+version: 0
+
+entries:
+  # Seed examples showing the shape. These three are near-universal agent
+  # conventions already, so they start ratified with high legibility.
+  - term: "cfg"
+    expansion: "configuration"
+    definition: "Any respeak configuration value; not general app config."
+    scope: repo
+    status: ratified
+    ratified_by: human 2026-08-31
+    uses: 0
+    legibility: 0.9
+  - term: "R1..R7"
+    expansion: "research dimension 1-7"
+    definition: "The seven wide-net research dimensions from the 2026-08-31 research run (deai-language, token-compression, linguistics, communication-practices, style-as-code, claude-code-integration, landscape-and-media)."
+    scope: repo
+    status: ratified
+    ratified_by: human 2026-08-31
+    uses: 0
+    legibility: 0.5
+  - term: "2-lane"
+    expansion: "two-lane architecture"
+    definition: "The core architecture: machine-facing shorthand lane + human-facing narrative lane."
+    scope: repo
+    status: proposed
+    uses: 0
+    legibility: 0.6 # rewritten from "2L" (0.4) which sat below the 0.5 floor —
+                    # the librarian picks the variant closest to plain English
