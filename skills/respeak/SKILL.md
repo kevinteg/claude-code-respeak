@@ -30,7 +30,19 @@ Steps:
    material, and the working directory. Do not translate inline yourself —
    the agent owns the config, corpus gates, and lexicon bookkeeping, and an
    inline paraphrase bypasses all three.
-4. Relay the agent's narrative verbatim — do not re-wrap, soften, or append
-   commentary.
+4. Verify before relaying — do not trust the agent's narrative on its own
+   report. Write it to a temp file, then run:
+   `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/respeak-measure.py" <tmpfile> --fail-on error`
+   (add `--config .claude/respeak/config.yaml` when that file exists, so a
+   project's own `gate.allow`/`style.budgets` apply).
+   - Exit 0: relay the narrative verbatim — do not re-wrap, soften, or
+     append commentary.
+   - Exit 1: send the printed report back to the `respeak:respeak` agent and
+     ask for a rewrite that clears every error-severity hit; run the check
+     again. Allow at most 2 rounds total.
+   - Still exit 1 after 2 rounds: relay the narrative anyway, with the final
+     measure report appended under a `respeak gate: still failing after 2
+     rounds` heading — the human sees exactly what did not clear, instead of
+     a silently-shipped violation. Do not attempt a 3rd round yourself.
 5. If the agent reports lexicon proposals, list the proposed terms in one
    line and note that ratification is pending per the shorthand config.

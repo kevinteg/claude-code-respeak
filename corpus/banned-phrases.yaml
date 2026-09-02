@@ -46,6 +46,27 @@ categories:
       - pattern: '\bthe spine\b'
         severity: error
         fix: name the actual structure (the core loop, the main path, the schema)
+        exceptions:
+          - '\b(leaf|super)[- ]?spines?\b'
+          - '\bspine(s)?\s+(switch|router|tier|layer|plane|ASN|loopback)'
+          - '\bspine[1-9]\b'
+          - '\b(the|each|every|a) spines?\s+(peers?|advertises?|drains?|reflects?|forwards?|receives?)'
+          - '\b(leaf|leaves|ToR|BGP|eBGP|iBGP|ECMP|fabric|prefix(es)?|routes?|uplinks?|Clos|switch(es)?|ASN|loopback)\b'
+        # Literal networking sense (leaf-spine fabrics: spine switches, spine1,
+        # spine ASN, a spine peering/advertising/draining/reflecting/forwarding/
+        # receiving) is legitimate domain language, not the structure metaphor.
+        # A wiki pilot on eBGP-in-the-datacenter lessons false-positived here
+        # (sac §10 pattern: literal-terrain exceptions, same fix as `landscape`
+        # above). The metaphor ban itself stands — "the spine of the argument"
+        # still flags.
+        # The last exception is domain context (networking): any sentence
+        # carrying networking vocabulary (leaf, ToR, BGP, ECMP, fabric,
+        # prefixes, routes, uplinks, Clos, switches, ASN, loopback) alongside
+        # "the spine" is read as the literal fabric tier, not the metaphor —
+        # this is what lets "the spine hasn't got a neighbor statement" and
+        # "summarizing at the spine layer" pass. Projects outside networking
+        # keep the metaphor ban in full; this exception only fires when that
+        # vocabulary is present in the same sentence.
       - pattern: 'the honest (assessment|take|answer|read)'
         severity: error
         fix: just give the assessment; honesty is assumed, not announced

@@ -168,11 +168,46 @@ style:
     adverb_intensifiers_per_100_words: 1 # very/really/extremely
     qualifiers_per_message: 1   # one precise uncertainty statement
     exclamations_per_doc: 0     # Google
-    warn_phrases_per_1000_words: 5 # warn-severity matches as density, not ban
+    # The four keys below are read by respeak-measure.py's --config; each
+    # maps to one measured field there (BUDGET_DEFAULTS), and a FAIL counts
+    # as a warn-level hit for --fail-on. Not yet enforced against the
+    # per-message budgets above (passive/adverb/qualifier/exclamation) —
+    # those stay LLM-judge checks, not lint, until they have a cheap local
+    # scan of their own.
+    warn_phrases_per_1000_words: 5 # -> density_per_1000_words (tier: density hits;
+                                   # warn-severity matches as density, not ban)
+    emdash_per_1000_words: 5       # -> em_dashes_per_1000_words
+    avg_sentence_words: 20         # -> avg_sentence_words
+    max_sentence_words: 35         # -> max_sentence_words (distinct from the mode
+                                   # contracts' max_sentence_words above, which are
+                                   # LLM-judge writing targets, not this lint cap)
   feedback: # the checkable form of warmth (Radical Candor)
     core_required: true            # context + observation + result + next step
     specific_praise_required: true # bare "looks good" = Ruinous Empathy
     behavior_not_person: true
+
+gate:
+  # Enforcement of style.budgets and the banned-phrase corpus on Write|Edit,
+  # via the PostToolUse hook scripts/respeak-gate.sh (hooks/hooks.json).
+  # Every knob here maps to that script's behavior — no knob without a
+  # behavior, same contract as the rest of this file.
+  #
+  # The gate is per-project OPT-IN: this plugin-level default is `enabled:
+  # false`, and the hook itself does nothing unless a project's own
+  # `.claude/respeak/config.yaml` sets `enabled: true` (skills/init/SKILL.md
+  # seeds that file from this one, with the gate left off; a human turns it
+  # on once the project trusts its excludes/allow list). This file is never
+  # the one the hook reads for enforcement decisions on someone else's repo.
+  enabled: false
+  include: ["**/*.md"] # globs, matched relative to the project dir
+  exclude: []           # e.g. ["research/**", "**/CHANGELOG.md"]
+  fail_on: error         # none | warn | error — passed straight to
+                        # respeak-measure.py --fail-on
+  allow: []              # regexes; a corpus rule whose pattern/phrase matches
+                        # one of these is skipped for this project only (the
+                        # escape hatch for a domain term the shared corpus
+                        # exceptions: don't cover yet — file the gap rather
+                        # than leaving this as the permanent fix)
 
 shorthand:
   lexicon: corpus/lexicon.yaml

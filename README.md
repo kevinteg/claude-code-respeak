@@ -106,7 +106,8 @@ ships a format-aware verifier and a test suite for it:
 
 ```sh
 python3 scripts/respeak-verify-edit.py <before> <after>   # exit 0 = safe
-python3 -m unittest discover tests                        # 31 cases
+python3 -m unittest discover tests                        # 45 cases (edit-safety + measure/gate)
+bash tests/test_gate_hook.sh                                # gate hook end-to-end (bash, not unittest)
 ```
 
 | Format | An edit may change | Invariant (checked) |
@@ -127,6 +128,100 @@ The scanner that produced the pilot numbers is also local and free:
 ```sh
 python3 scripts/respeak-measure.py path/to/doc.md
 ```
+
+## Enforcement
+
+The pilot above measured after the fact. In practice every style gate was
+still a prose instruction to the model, and nothing ran the scanner against
+what actually shipped: 14 rendered pages went out with 7 hits of the
+owner-banned phrase `load-bearing`, other error- and warn-severity hits, and
+15–29 em-dashes per 1000 words. Separately, the owner-banned "the spine"
+metaphor rule false-positived on literal networking prose ("spine
+switches"), because the corpus had no exceptions for the literal sense —
+and the banned term was present in the *source* brief, so it propagated
+into every page rendered from it. This section closes both gaps.
+
+**The gate hook** (`scripts/respeak-gate.sh`) is a `PostToolUse` hook on
+`Write|Edit` (`hooks/hooks.json`) that runs `respeak-measure.py` against any
+`.md` file a tool call just wrote, and blocks the tool result (exit 2,
+report on stderr — Claude Code feeds that back to the model as a correctable
+error) on a failing report. It is **opt-in per project**: it does nothing
+unless `<project>/.claude/respeak/config.yaml` exists and sets `gate.enabled:
+true`. Configure it there:
+
+```yaml
+gate:
+  enabled: true
+  include: ["**/*.md"]     # globs, relative to the project dir
+  exclude: ["research/**"] # never gated
+  fail_on: error            # none | warn | error
+  allow: []                 # regexes — see "Exceptions and allow" below
+```
+
+**`--fail-on`**: `respeak-measure.py --fail-on {none,error,warn}`. `none`
+(default) only reports — the pre-enforcement behavior. `error` exits 1 if
+any document has a banned-phrase error hit. `warn` also trips on
+warn-severity hits, density-tier hits, or a budget failure. Exit 2 is
+reserved for usage/IO errors. `--json` now emits a list, one entry per
+document, so one call can gate a whole tree:
+
+```sh
+python3 scripts/respeak-measure.py wiki/**/*.md --fail-on error
+```
+
+**Budgets** (`style.budgets` in `respeak.config.yaml`, read via
+`--config`): `emdash_per_1000_words`, `warn_phrases_per_1000_words` (checked
+against the corpus's `tier: density` hits — the common-but-excess words that
+flag on density, not per occurrence), `avg_sentence_words`,
+`max_sentence_words`. Each is measured and reported PASS/FAIL; a FAIL counts
+as a warn-level hit for `--fail-on`.
+
+**Exceptions and allow** are two escape hatches at different scopes. A
+corpus entry's own `exceptions:` (list of regexes) is scoped to that rule
+and ships with the corpus — this is the actual fix for the "spine switches"
+false positive: the owner-banned `the spine` metaphor rule now exempts
+literal networking senses (`spine switch`, `leaf-spine`, `spine1`, `spine
+ASN`, a spine peering/draining/reflecting, …), so a networking-heavy doc
+keeps the metaphor ban without losing the literal term. `gate.allow`
+(project config) is scoped to one project — it skips a rule entirely for
+that project's runs, for a domain term the shared `exceptions:` list doesn't
+cover yet. Treat `allow` as a stopgap: file the missing exception upstream
+rather than leaving a project-local silence as the permanent fix.
+
+**Verify-then-relay** closes the input-side gap. The `respeak:respeak` skill
+no longer relays a rendered narrative on trust: it writes the agent's output
+to a temp file, runs `respeak-measure.py --fail-on error` against it, and on
+failure sends the report back to the agent for a rewrite — up to 2 rounds —
+before relaying. The `respeak:respeak` agent itself now runs an **input
+gate** first: it scans the source material for owner-banned terms before
+rendering, so a banned term in a brief cannot propagate into the output even
+when asked to preserve the source's wording; a passing render reports `gate:
+N banned terms removed from source` when it removed any.
+
+**Headless rendering** (`scripts/respeak-render.sh`) runs the same
+verify-then-relay loop for the API lane, where there is no interactive skill
+to do it — CI, or a swarm's own automation. It wraps `claude-api-agent` (not
+part of this plugin — install it separately), builds the system prompt from
+`agents/respeak.md`, and gates + retries the same way the skill does:
+
+```sh
+scripts/respeak-render.sh --mode technical \
+  --source notes/draft.md --out wiki/learning/path/03-lesson.md \
+  --max-rounds 2 --budget-usd 1.50
+```
+
+**CI usage** — gate a whole tree after a render step, failing the build on
+any error-severity hit:
+
+```sh
+python3 scripts/respeak-measure.py wiki/**/*.md --fail-on error \
+  --config .claude/respeak/config.yaml || exit 1
+```
+
+**Upgrading**: the installed copy under `~/.claude/plugins/cache` is a
+snapshot, not a live link — after pulling a change here (corpus, gate hook,
+or manifest), run `claude plugin update respeak` (or reinstall) so the
+`PostToolUse` gate hook and corpus edits actually load.
 
 ## Install
 
@@ -234,7 +329,11 @@ Working today: the translator and modes, the style gates and corpus, the
 buried-lede test with structure advisories and the data-rendering contract,
 the lexicon proposal flow, `/respeak:init`, the session-start lexicon hook,
 the statusline script, the measure and verify tools with their test suite
-(31 cases), and the optional milestone-narrative Stop hook (off by default).
+(45 cases plus a bash end-to-end suite for the gate hook), the opt-in
+PostToolUse enforcement gate and its `--fail-on`/budgets/`gate.allow`
+knobs, the verify-then-relay loop in the `respeak:respeak` skill and agent,
+the headless `respeak-render.sh` wrapper for the API lane, and the optional
+milestone-narrative Stop hook (off by default).
 
 Declared in config but not yet enforced by tooling: the lexicon entry cap,
 edit-distance check, usage-based expiry, auto-ratification gate, fresh-decoder
@@ -252,9 +351,12 @@ transcript keeps the shorthand.
 agents/respeak.md          the translator (Sonnet, isolated context window)
 skills/respeak/            /respeak:respeak — the translation entry point
 skills/init/               /respeak:init — per-project setup
-hooks/hooks.json           session-start lexicon status; optional milestone narrative
-scripts/                   measure, verify-edit, statusline, lexicon digest renderer
-tests/                     edit-safety test suite (markdown, code, py, html, yaml, json)
+hooks/hooks.json           session-start lexicon status; optional milestone narrative;
+                           opt-in PostToolUse style gate on Write/Edit
+scripts/                   measure, verify-edit, gate hook, headless render, statusline,
+                           lexicon digest renderer
+tests/                     edit-safety + measure/gate enforcement suite (markdown, code,
+                           py, html, yaml, json, bash gate-hook end-to-end)
 config/respeak.config.yaml the influence surface (v1)
 corpus/                    banned phrases, replacements, lexicon, style maps
 docs/architecture.md       the design, with resolved questions

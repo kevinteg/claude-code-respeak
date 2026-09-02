@@ -1,5 +1,5 @@
 {
-  "description": "respeak: lexicon status at session start; optional milestone auto-narrative",
+  "description": "respeak: lexicon status at session start; optional milestone auto-narrative; opt-in style gate on Write/Edit of markdown",
   "hooks": {
     "SessionStart": [
       {
@@ -20,6 +20,18 @@
             "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/stop-narrative.sh\"",
             "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/respeak-gate.sh\"",
+            "timeout": 20
           }
         ]
       }

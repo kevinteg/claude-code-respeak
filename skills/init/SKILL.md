@@ -15,7 +15,12 @@ Perform these steps in the current project, reporting each as done/skipped:
 1. Create `.claude/respeak/` and `.claude/respeak/proposals/` if missing.
 2. Seed project state from the plugin defaults if the files don't exist yet
    (never overwrite existing project files):
-   - `.claude/respeak/config.yaml` ← `${CLAUDE_PLUGIN_ROOT}/config/respeak.config.yaml`
+   - `.claude/respeak/config.yaml` ← `${CLAUDE_PLUGIN_ROOT}/config/respeak.config.yaml`.
+     This carries a `gate:` block (`enabled: false`, `include: ["**/*.md"]`,
+     `exclude: []`, `fail_on: error`, `allow: []`) — the PostToolUse style
+     gate (`scripts/respeak-gate.sh`) is seeded OFF for every project; a
+     human turns it on by editing this file's `gate.enabled` to `true` once
+     the project trusts its excludes/allow list.
    - `.claude/respeak/lexicon.yaml` ← `${CLAUDE_PLUGIN_ROOT}/corpus/lexicon.yaml`
 3. Generate the lexicon digest: run
    `bash "${CLAUDE_PLUGIN_ROOT}/scripts/render-lexicon-digest.sh"` — it writes
@@ -27,5 +32,8 @@ Perform these steps in the current project, reporting each as done/skipped:
    `.claude/settings.json`:
    `"statusLine": {"type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/statusline.sh\""}`
    (If a statusLine already exists, show it and let the user decide.)
-6. Report: paths created, seeds copied, digest entry count, and which
-   integrations the user accepted.
+6. Report: paths created, seeds copied, digest entry count, which
+   integrations the user accepted, and the gate's current state (`gate:
+   disabled (default) — enable in .claude/respeak/config.yaml` or, if the
+   user asks to turn it on now, edit `gate.enabled: true` there and confirm
+   `gate.include`/`gate.exclude` match the project's layout).

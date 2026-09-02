@@ -2,7 +2,7 @@
   "name": "respeak",
   "displayName": "Respeak",
   "description": "Two-lane communication for agent swarms: an efficient machine-facing shorthand lexicon for long-running sessions, plus a translator agent that renders human-facing narratives (ELI5, BLUF, technical) tuned by exposed tone and tech-level configuration.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "author": {
     "name": "Kevin Tegtmeier"
   },

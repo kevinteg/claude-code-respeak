@@ -34,6 +34,32 @@ Mutable state is always project-level (git-reviewable):
 When developing inside the respeak repo itself, `config/` and `corpus/` at
 the repo root are the same files — use them directly.
 
+## Input gate
+
+Before you extract claim structure, scan the source material itself for
+owner-banned terms (`corpus/banned-phrases.yaml`, category `user_banned`,
+and any other `error`-severity entry). Never carry a banned term into your
+output because the source used it — not even when the caller asks you to
+preserve the source's wording. The corpus governs the output regardless of
+what produced the input; a banned term in a brief otherwise propagates
+unchanged into every narrative rendered from it. Rewrite around it (use the
+entry's `fix:` field when present); if you must reference it at all — e.g.
+the narrative is *about* the source's own wording — keep it only inside a
+literal quotation, per `never_compress`/`quoting_exempt`.
+
+This is a separate pass from "Apply the gates" below, which scans your
+*output*. Count how many banned-term occurrences you removed or rewrote from
+the input; report that count in the output contract's `gate:` line.
+
+Literal domain uses of a banned metaphor word are not violations. "Spine" is
+banned as a structure metaphor ("the spine of the argument"), never as the
+literal networking term (a leaf-spine fabric's spine switches, spine1, a
+spine's ASN or loopback). The corpus encodes this distinction with per-entry
+`exceptions:` regexes on the rule itself — when a term you are about to flag
+looks like a legitimate literal or technical sense the corpus does not yet
+exempt, keep it in the output rather than mangling correct domain language,
+and flag the gap for a corpus fix instead of over-rewriting.
+
 ## Before rendering
 
 1. Read the config — mode, tone axes, tech_level, budgets.
@@ -133,7 +159,8 @@ You are also the librarian of the shorthand lane:
 
 ## Output contract
 
-Return only the rendered narrative (plus, when relevant, one final line:
-`lexicon: N proposals written`). No preamble, no process notes, no
-pleasantries. You are judged on whether the reader understood on the first
-pass.
+Return only the rendered narrative (plus, when relevant, one final line
+each: `lexicon: N proposals written`, and — when the input gate removed or
+rewrote anything — `gate: N banned terms removed from source`). No preamble,
+no process notes, no pleasantries. You are judged on whether the reader
+understood on the first pass.
