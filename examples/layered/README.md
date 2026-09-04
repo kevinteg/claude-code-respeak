@@ -20,10 +20,12 @@ Try it from the plugin checkout:
 export CLAUDE_CONFIG_DIR=$PWD/examples/layered/home/.claude
 P=examples/layered/project
 bash scripts/respeak-config.sh explain --project $P --for $P/docs/exec/q3-summary.md
+bash scripts/respeak-config.sh explain --brief --for $P/docs/api/endpoints.md   # no --project: discovered
 bash scripts/respeak-config.sh resolve --project $P --for $P/docs/api/endpoints.md --format statusline
 bash scripts/respeak-config.sh gate    --project $P --for $P/notes/scratch.md
 bash scripts/respeak-config.sh validate $P/notes/.respeak.yaml            # exits 1: gate.enabled is project-only
-bash scripts/respeak-config.sh validate --kind user home/.claude/respeak/config.yaml
+bash scripts/respeak-config.sh validate --kind user examples/layered/home/.claude/respeak/config.yaml
+CLAUDE_PROJECT_DIR=$P RESPEAK_GATE_TRACE=1 bash scripts/respeak-gate.sh --file $P/docs/overview.md   # the hook, as a command
 ```
 
 What each file gets, and which layer decided it:
@@ -37,7 +39,11 @@ What each file gets, and which layer decided it:
 | `reports/week-36.md` | bluf | 1 | exec | 0.2 | yes (warn) | scope `docs/exec/**, reports/**` |
 | `notes/scratch.md` | technical | 5 | author | 0.2 | no (`notes/**` excluded) | folder file; its `gate.enabled` is ignored |
 
-Without the project (a file outside it, or `--project` pointing elsewhere)
-the user file wins: BLUF, tech_level 2. The `gate.enabled: false` in
+Outside any project (a directory with no `.claude/respeak/config.yaml`
+above it and no `.git`, such as `--project` pointing at an empty
+directory) the user file wins: BLUF, tech_level 2. A file outside this
+project but resolved in a session that found it (`--project $P --for
+/tmp/x.md`) still gets the project's layers, minus its folder files, and
+the gate never applies to it. The `gate.enabled: false` in
 `notes/.respeak.yaml` never takes effect: `explain` reports it under
 `warnings:` and `validate` on that file exits 1 naming the key.

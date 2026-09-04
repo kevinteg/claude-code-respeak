@@ -151,6 +151,95 @@ hook_json_for "$doc_on" \
   > "$work/gate-user-allow.out" 2>&1
 check "user-level gate.allow silences the rule in an enabled project (exit 0)" 0 "$?"
 
+# ===== v0.4.1: adversarial-review regressions =================================
+# Each case below reproduces a confirmed finding against the fixed hook.
+
+check_grep() {
+  # $1 = description, $2 = pattern, $3 = file
+  if grep -q -- "$2" "$3"; then pass=$((pass + 1)); echo "ok   - $1"
+  else fail=$((fail + 1)); echo "FAIL - $1 (pattern '$2' not in $(basename "$3"))"; cat "$3" | head -5; fi
+}
+
+# --- a broken python3 shim first on PATH must not disable an enabled gate ----
+badpath="$work/badpath"; mkdir -p "$badpath"
+printf '#!/bin/sh\necho "pyenv: python3: command not found" >&2\nexit 127\n' > "$badpath/python3"; chmod +x "$badpath/python3"
+hook_json_for "$doc_on" \
+  | PATH="$badpath:$PATH" CLAUDE_PROJECT_DIR="$proj_on" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$GATE" \
+  > "$work/gate-badshim.out" 2>&1
+check "broken python3 shim on PATH still blocks (exit 2)" 2 "$?"
+
+# --- a measure SETUP error (corrupt corpus) fails OPEN, with a trace line ----
+fakeroot="$work/fakeroot"; mkdir -p "$fakeroot/corpus" "$fakeroot/config"
+cp "$REPO_ROOT/config/respeak.config.yaml" "$fakeroot/config/"
+printf 'entries: [\n' > "$fakeroot/corpus/banned-phrases.yaml"
+hook_json_for "$doc_clean" \
+  | RESPEAK_GATE_TRACE=1 CLAUDE_PROJECT_DIR="$proj_on" CLAUDE_PLUGIN_ROOT="$fakeroot" "$GATE" \
+  > "$work/gate-corrupt-corpus.out" 2>&1
+check "corrupt corpus is a setup error: fails open (exit 0)" 0 "$?"
+check_grep "...and the trace names it as a setup error, not a verdict" "setup error" "$work/gate-corrupt-corpus.out"
+hook_json_for "$proj_on/ghost.md" \
+  | RESPEAK_GATE_TRACE=1 CLAUDE_PROJECT_DIR="$proj_on" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$GATE" \
+  > "$work/gate-ghost.out" 2>&1
+check "unreadable target fails open (exit 0)" 0 "$?"
+
+# --- a pass is a real pass: the trace line proves measure ran ----------------
+hook_json_for "$doc_clean" \
+  | RESPEAK_GATE_TRACE=1 CLAUDE_PROJECT_DIR="$proj_on" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$GATE" \
+  > "$work/gate-clean-trace.out" 2>&1
+check "clean doc passes (exit 0)" 0 "$?"
+check_grep "...with a 'checked ... pass' trace (not failed-open)" "checked .*clean.md (fail-on: error): pass" "$work/gate-clean-trace.out"
+
+# --- CLI mode gates one file exactly like the hook ---------------------------
+CLAUDE_PROJECT_DIR="$proj_on" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$GATE" --file "$doc_on" > "$work/gate-cli.out" 2>&1
+check "--file <banned doc> blocks (exit 2)" 2 "$?"
+CLAUDE_PROJECT_DIR="$proj_on" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$GATE" --file "$doc_clean" > "$work/gate-cli-clean.out" 2>&1
+check "--file <clean doc> passes (exit 0)" 0 "$?"
+
+# --- the Markdown contract: include may widen to .markdown/.mdx, never past --
+proj_md="$work/proj-md"; mkdir -p "$proj_md/.claude/respeak"
+printf 'gate:\n  enabled: true\n  include: ["**/*.md", "**/*.mdx", "**/*.txt"]\n' > "$proj_md/.claude/respeak/config.yaml"
+doc_mdx="$proj_md/page.mdx"; echo "$BANNED_TEXT" > "$doc_mdx"
+hook_json_for "$doc_mdx" | CLAUDE_PROJECT_DIR="$proj_md" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$GATE" > "$work/gate-mdx.out" 2>&1
+check ".mdx listed in gate.include is gated (exit 2)" 2 "$?"
+doc_mdx_narrow="$proj_on/page.mdx"; echo "$BANNED_TEXT" > "$doc_mdx_narrow"   # proj_on includes **/*.md only
+hook_json_for "$doc_mdx_narrow" | CLAUDE_PROJECT_DIR="$proj_on" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$GATE" > "$work/gate-mdx-narrow.out" 2>&1
+check ".mdx NOT listed in gate.include is skipped (exit 0)" 0 "$?"
+doc_txt2="$proj_md/notes.txt"; echo "$BANNED_TEXT" > "$doc_txt2"
+hook_json_for "$doc_txt2" | CLAUDE_PROJECT_DIR="$proj_md" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$GATE" > "$work/gate-txt2.out" 2>&1
+check ".txt in gate.include is still skipped: the gate covers Markdown only (exit 0)" 0 "$?"
+
+# --- discovery: no CLAUDE_PROJECT_DIR at all (CI), the config is found -------
+hook_json_for "$doc_on" | env -u CLAUDE_PROJECT_DIR CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$GATE" > "$work/gate-nocpd.out" 2>&1
+check "no CLAUDE_PROJECT_DIR: discovery finds the project config (exit 2)" 2 "$?"
+
+# --- launched in a subdirectory: the repo's config still governs -------------
+mkdir -p "$proj_on/docs"; doc_sub="$proj_on/docs/page.md"; echo "$BANNED_TEXT" > "$doc_sub"
+hook_json_for "$doc_sub" | CLAUDE_PROJECT_DIR="$proj_on/docs" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$GATE" > "$work/gate-subdir.out" 2>&1
+check "session launched in <repo>/docs still enforces the repo config (exit 2)" 2 "$?"
+
+# --- monorepo: a nested project config is the nearest, and it never opted in -
+mkdir -p "$proj_on/pkg/.claude/respeak"; printf 'narrative: {default_mode: bluf}\n' > "$proj_on/pkg/.claude/respeak/config.yaml"
+doc_pkg="$proj_on/pkg/a.md"; echo "$BANNED_TEXT" > "$doc_pkg"
+hook_json_for "$doc_pkg" | RESPEAK_GATE_TRACE=1 CLAUDE_PROJECT_DIR="$proj_on" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$GATE" > "$work/gate-nested.out" 2>&1
+check "nested project config governs its subtree (exit 0: it did not opt in)" 0 "$?"
+check_grep "...and the trace says why" "not applicable" "$work/gate-nested.out"
+
+# --- symlinked spelling of the project path ----------------------------------
+ln -s "$work" "$work/../$(basename "$work")-link" 2>/dev/null || true
+linkroot="$work/../$(basename "$work")-link"
+if [ -d "$linkroot" ]; then
+  hook_json_for "$linkroot/proj-on/notes.md" | CLAUDE_PROJECT_DIR="$proj_on" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$GATE" > "$work/gate-symlink.out" 2>&1
+  check "file path through a symlink is still inside the project (exit 2)" 2 "$?"
+  rm -f "$linkroot"
+fi
+
+# --- a user-level file cannot enable the gate via discovery either -----------
+user2="$work/user2/.claude"; mkdir -p "$user2/respeak" "$work/user2/code/repo/.git"
+printf 'gate: {enabled: true}\n' > "$user2/respeak/config.yaml"
+doc_home="$work/user2/code/repo/notes.md"; echo "$BANNED_TEXT" > "$doc_home"
+hook_json_for "$doc_home" | env -u CLAUDE_PROJECT_DIR CLAUDE_CONFIG_DIR="$user2" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$GATE" > "$work/gate-user-discovery.out" 2>&1
+check "user file under \$HOME is never discovered as a project file (exit 0)" 0 "$?"
+
 echo
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

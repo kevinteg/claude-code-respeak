@@ -8,6 +8,7 @@ description: >
   only.
 disable-model-invocation: true
 argument-hint: "(no arguments)"
+allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/scripts/respeak-config.sh *) Bash(bash ${CLAUDE_PLUGIN_ROOT}/scripts/render-lexicon-digest.sh *)
 ---
 
 # respeak project setup
@@ -33,13 +34,16 @@ Perform these steps in the current project, reporting each as done/skipped:
    `bash "${CLAUDE_PLUGIN_ROOT}/scripts/render-lexicon-digest.sh"` — it writes
    `.claude/respeak/lexicon-active.md` (ratified terms only, compact table).
 4. Show the effective configuration stack: run
-   `bash "${CLAUDE_PLUGIN_ROOT}/scripts/respeak-config.sh" explain` and
-   report which layers exist (a user-level `~/.claude/respeak/config.yaml`,
+   `${CLAUDE_PLUGIN_ROOT}/scripts/respeak-config.sh explain --launch-dir ${CLAUDE_PROJECT_DIR}`
+   and report which layers exist (a user-level `~/.claude/respeak/config.yaml`,
    an ancestor `.respeak.yaml` above the project, the file just seeded) and
-   any warnings. If the user wants a folder-specific tone now, create
+   any warnings. If `project:` names a directory other than this one (a
+   parent directory carries its own `.claude/respeak/config.yaml`, or a
+   nested package does), say so: that file, not the seeded one, governs
+   the files under it. If the user wants a folder-specific tone now, create
    `<folder>/.respeak.yaml` with only the keys that differ (for example
    `narrative: {profile: exec}`) and validate it with
-   `bash "${CLAUDE_PLUGIN_ROOT}/scripts/respeak-config.sh" validate <folder>/.respeak.yaml`.
+   `${CLAUDE_PLUGIN_ROOT}/scripts/respeak-config.sh validate <folder>/.respeak.yaml`.
 5. Ask the user (do not do it silently) whether to add these two lines to the
    project's `.gitignore`, so personal overrides never get committed:
    `.claude/respeak/config.local.yaml` and `.respeak.local.yaml`.

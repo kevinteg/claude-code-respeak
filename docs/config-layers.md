@@ -35,7 +35,8 @@ files, so respeak copies the mechanisms rather than inventing new ones:
 | `CLAUDE.md` in parent directories and in subdirectories | the `.respeak.yaml` walk from the filesystem root down to the target |
 | `.claude/rules/*.md` with `paths:` frontmatter | `scopes:` entries with `paths:` globs |
 | `--settings <file>` and managed settings | files named in `RESPEAK_CONFIG`, near the top of the stack |
-| hooks receive `CLAUDE_PROJECT_DIR`, `cwd`, `tool_input.file_path` | the project root and the target path each hook resolves for |
+| hooks receive `CLAUDE_PROJECT_DIR`, `cwd`, `tool_input.file_path`; the statusline receives `workspace.project_dir` | the launch directory is the fallback project root; the target path is what each consumer resolves for |
+| nested `.claude/skills/` in a monorepo package apply to that package | a nested `.claude/respeak/config.yaml` is the project for the files under it |
 
 ## The layers
 
@@ -50,10 +51,15 @@ Lowest precedence first. "May set" is explained under
 | 4 | ancestors | `<dir>/.respeak.yaml` in every directory above the project root, outermost first | you | no | tone keys |
 | 5 | project | `<project>/.claude/respeak/config.yaml` | the team | yes | everything |
 | 6 | project local | `<project>/.claude/respeak/config.local.yaml` | you | gitignored | everything |
-| 7 | scopes | `scopes:` entries inside any file above whose `paths` match the target, applied right after their file | whoever owns that file | with its file | tone keys |
-| 8 | folders | `<dir>/.respeak.yaml` and `.respeak.local.yaml` from the project root down to the target's directory, nearest last | folder owners | yes / gitignored | tone keys |
-| 9 | env | files listed in `RESPEAK_CONFIG` (colon-separated) | CI, one-off runs | no | everything |
-| 10 | invocation | `--mode`, `--profile`, `--context`, `--set key=value`; `/respeak:respeak bluf` | the caller | no | everything |
+| 7 | folders | `<dir>/.respeak.yaml` and `.respeak.local.yaml` from the project root down to the target's directory, nearest last | folder owners | yes / gitignored | tone keys |
+| 8 | env | files listed in `RESPEAK_CONFIG` (colon-separated) | CI, one-off runs | no | everything |
+| 9 | invocation | `--mode`, `--profile`, `--context`, `--set key=value`; `/respeak:respeak bluf` | the caller | no | everything |
+
+`scopes:` entries are not a layer of their own. Each one is applied right
+after the file that declares it, when one of its `paths` globs matches the
+target. A scope in the project file therefore sits between 5 and 6 and
+loses to `config.local.yaml`; a scope in a folder file sits with that
+folder. Scopes may set tone keys only.
 
 A file that is absent is skipped. A file that fails to parse, or whose top
 level is not a mapping, is skipped with a warning that `explain` prints.
@@ -84,14 +90,17 @@ default value. `null` is a real value in this config
 
 **`narrative.profile` is sugar, expanded where it is written.** When a
 layer says `narrative: {profile: exec}`, the resolver looks up `exec` in
-`profiles:` as merged so far, including any profiles the same layer
-defines. It fills in `tech_level`, `default_mode`, `lexicon_access`,
-`reading_level_grade`, and `address` underneath that layer's own explicit
-keys. So `narrative: {profile: exec, tech_level: 2}` yields exec's BLUF
-mode with tech_level 2. An explicit key in a nearer layer still wins over
-the expansion. The resolved `narrative.profile` names the last profile
-applied, which is a label, not a guarantee that every field still matches
-it. An unknown profile name is a warning and changes nothing.
+the profile table: `profiles:` as merged so far, deep-merged with any
+`profiles:` the same layer defines. It fills in `tech_level`,
+`default_mode`, `lexicon_access`, `reading_level_grade`, and `address`
+underneath that layer's own explicit keys. So `narrative: {profile: exec,
+tech_level: 2}` yields exec's BLUF mode with tech_level 2, and a layer that
+refines one field of a shipped profile (`profiles: {exec: {tech_level:
+2}}`) still gets the profile's other fields. An explicit key in a nearer
+layer still wins over the expansion. The resolved `narrative.profile`
+names the last profile applied, which is a label, not a guarantee that
+every field still matches it. An unknown profile name is a warning; the
+name is not recorded and the layer's other keys still apply.
 
 **Scopes.** Any file may carry a `scopes:` list. Each entry needs `paths`
 (a glob or list of globs) and the keys it overrides; entries are applied in
@@ -106,8 +115,9 @@ with a warning.
 **Globs** are gitignore-flavoured. `**` matches any number of path
 segments, including none; `*` matches within one segment; `?` matches one
 character. A trailing `/` means the directory and everything in it
-(`reports/` equals `reports/**`), and a pattern with no `/` matches at any
-depth (`*.md` equals `**/*.md`). When the target is a directory (the Stop
+(`reports/` equals `reports/**`). A pattern with no `/` matches a file or
+directory of that name at any depth, contents included: `*.md` equals
+`**/*.md`, and `exec` matches `docs/exec/` and everything under it. When the target is a directory (the Stop
 hook and the statusline resolve for the cwd) it is matched with a trailing
 slash, so `docs/**` matches `docs/` but not the project root.
 
@@ -121,7 +131,7 @@ both.
 
 | Keys | Allowed from | Why |
 | --- | --- | --- |
-| `gate.enabled`, `gate.include`, `gate.exclude` | plugin, project, project local, env, invocation | turning enforcement on and choosing which files it covers is a project decision; a stray folder file cannot flip it |
+| `gate.enabled`, `gate.include`, `gate.exclude` | plugin, project, project local, env, invocation | turning enforcement on and choosing which files it covers is a project decision; a stray folder file cannot flip it. The gate covers Markdown files only (`.md`, `.markdown`, `.mdx`): `include` and `exclude` narrow within that set, and `explain` says "not a Markdown file" for anything else |
 | `shorthand.*` | same | ratification mode, legibility floor, never-compress classes, and the lexicon path must not vary by folder or by user |
 | `style.banned_phrases`, `style.replacements`, `style.rules` | same | corpus pointers are resources, not tone |
 | `version`, `schema` | same | file identity |
@@ -133,26 +143,48 @@ exits 1 and names the key. `gate.fail_on` is deliberately open: a folder of
 drafts can say `gate: {fail_on: none}` and the hook still runs there but
 never blocks.
 
-## The target path
+## The target path and the project root
 
 Every consumer resolves for one path. The rule is "the thing being written
 or rendered", so a folder's `.respeak.yaml` governs the files in it.
 
-| Entry point | Target | Project root |
+| Entry point | Target | Launch directory it passes |
 | --- | --- | --- |
-| PostToolUse gate hook (`respeak-gate.sh`) | `tool_input.file_path` | `CLAUDE_PROJECT_DIR` |
-| `/respeak:respeak` skill | the source file when one is given, else the working directory | discovered (see below) |
-| Stop hook auto-narrative (`stop-narrative.sh`) | the hook's `cwd` | `CLAUDE_PROJECT_DIR`, else `cwd` |
-| statusline (`statusline.sh`) | the statusline payload's `cwd` | discovered |
-| headless render (`respeak-render.sh`) | `--out`, the file being produced, with `--mode` on top | discovered |
-| CLI | `--for PATH` (default: cwd) | `--project DIR`, else `CLAUDE_PROJECT_DIR`, else discovered |
+| PostToolUse gate hook (`respeak-gate.sh`) | `tool_input.file_path` | `CLAUDE_PROJECT_DIR` (exported to hooks) |
+| `/respeak:respeak` skill | the source file when one is given, else the working directory | `${CLAUDE_PROJECT_DIR}` via `--launch-dir` |
+| Stop hook auto-narrative (`stop-narrative.sh`) | the hook's `cwd` | `CLAUDE_PROJECT_DIR` |
+| statusline (`statusline.sh`) | `workspace.current_dir` | `workspace.project_dir` via `--launch-dir` |
+| headless render (`respeak-render.sh`) | `--out`, the file being produced, with `--mode` on top | `CLAUDE_PROJECT_DIR` when set |
+| CLI | `--for PATH` (default: cwd) | `--launch-dir DIR`, else `CLAUDE_PROJECT_DIR` |
 
-Discovery walks up from the target and takes the nearest directory holding
-`.claude/respeak/config.yaml`, then the nearest holding `.git` or
-`.claude/`. A target outside the project still gets the project layers
-(they are a property of the session) but none of the project's folder
-files, and the gate never applies to it. A target that does not exist yet
-(`--out` of a render) resolves by its directory.
+**One rule finds the project root for all of them**, so the tool that says
+enforcement is on and the tool that enforces never disagree:
+
+1. `--project DIR`, when given, verbatim.
+2. The nearest ancestor of the target (its own directory included) holding
+   `.claude/respeak/config.yaml`. In a monorepo a package's own file is the
+   project for the files under it. A file in a parent directory, such as
+   `~/code/.claude/respeak/config.yaml`, governs every repo below it, the
+   way a parent `CLAUDE.md` does. The user config directory is never a
+   project: `~/.claude/respeak/config.yaml` is the user layer and is not
+   loaded a second time at project grade, even for a session launched in
+   `~`.
+3. The launch directory: `--launch-dir`, else `CLAUDE_PROJECT_DIR`, the
+   directory where Claude Code was started. This is where a session with
+   no respeak config at all lands, so `/respeak:init` seeds the file there.
+4. The nearest ancestor holding `.git` or `.claude/`, again never `~`.
+
+`explain` prints which rule chose the root next to `project:`. Paths are
+compared after symlink resolution, so `/tmp` and `/private/tmp`, or a
+`~/code` symlink, name the same project.
+
+A target outside the project still gets the project layers (they are a
+property of the session) but none of the project's folder files, and the
+gate never applies to it. Directories above the project root keep their
+place below it wherever the target lives; a `.respeak.yaml` in the
+outsider's own directory chain, below their common ancestor, is nearer and
+wins. A target that does not exist yet (`--out` of a render) resolves by
+its directory.
 
 ## Worked examples
 
@@ -213,13 +245,13 @@ What each file gets:
 | `notes/scratch.md` | technical | 5 | author | 0.2 | no (excluded) | folder file; its `gate.enabled` is ignored |
 
 `explain` for the executive summary (output of
-`bash scripts/respeak-config.sh explain --project $P --for $P/docs/exec/q3-summary.md`;
+`bash scripts/respeak-config.sh explain --project $P --for $P/docs/exec/q3-summary.md --walk-from $P`;
 the user file shows under `<plugin>/` only because the sample home lives
 inside the plugin checkout):
 
 ```
 respeak config for docs/exec/q3-summary.md
-project: ~/code/claude-code-respeak/examples/layered/project
+project: ~/code/claude-code-respeak/examples/layered/project (--project)
 
 layers, lowest precedence first (* = present and applied):
   * plugin         <plugin>/config/respeak.config.yaml
@@ -231,7 +263,7 @@ layers, lowest precedence first (* = present and applied):
   * project-local  .claude/respeak/config.local.yaml
   * folder         docs/exec/.respeak.yaml
     invocation     invocation (--mode/--profile/--context/--set) (absent)
-    (4 directories walked with no .respeak.yaml)
+    (2 directories walked with no .respeak.yaml)
 
 effective narrative: mode=bluf tech_level=1 profile=exec context=routine tone(f=0.8 d=0.9 c=0.8) auto_narrative=false lexicon_access=forbidden
 gate: enabled=true fail_on=warn applies=true (matched gate.include and not gate.exclude)
@@ -262,13 +294,21 @@ project's.
 The other commands, on the same tree:
 
 ```
-$ bash scripts/respeak-config.sh resolve --project $P --for $P/docs/api/endpoints.md --format statusline
+$ bash scripts/respeak-config.sh resolve --project $P --for $P/docs/api/endpoints.md --format statusline --walk-from $P
 technical/t5 author @docs/api/.respeak.yaml
-$ bash scripts/respeak-config.sh gate --project $P --for $P/reports/week-36.md
-{"applies": true, "enabled": true, "fail_on": "warn", "rel_path": "reports/week-36.md", "reason": "matched gate.include and not gate.exclude"}
+$ bash scripts/respeak-config.sh gate --project $P --for $P/reports/week-36.md --walk-from $P
+{"applies": true, "enabled": true, "fail_on": "warn", "rel_path": "reports/week-36.md", "reason": "matched gate.include and not gate.exclude", "warnings": []}
 $ bash scripts/respeak-config.sh validate $P/notes/.respeak.yaml
 examples/layered/project/notes/.respeak.yaml [folder]: ERROR
   error: <checkout>/examples/layered/project/notes/.respeak.yaml: gate.enabled is project-only; ignored
+$ bash scripts/respeak-config.sh explain --brief --project $P --for $P/notes/scratch.md --walk-from $P
+respeak config for notes/scratch.md
+project: ~/code/claude-code-respeak/examples/layered/project (--project)
+layers applied: plugin, user <plugin>/examples/layered/home/.claude/respeak/config.yaml, project .claude/respeak/config.yaml, project-local .claude/respeak/config.local.yaml, folder notes/.respeak.yaml
+effective narrative: mode=technical tech_level=5 profile=author context=routine tone(f=0.2 d=0.9 c=0.8) auto_narrative=false lexicon_access=inline
+gate: enabled=true fail_on=error applies=false (matched by gate.exclude)
+overrides: 13 key(s) set above the plugin defaults; `explain` without --brief lists them
+warning: notes/.respeak.yaml: gate.enabled is project-only; ignored
 ```
 
 ### Recipes
@@ -341,16 +381,23 @@ scopes:
     narrative: { tone: { formality: 0.9, directness: 1.0 } }
 ```
 
-**CI.** Gate a rendered tree with the project's layers plus a CI-only
-file, and fail the build on the resolved verdict:
+**CI.** The gate hook doubles as a command: `respeak-gate.sh --file PATH`
+runs exactly what the PostToolUse hook runs for that file, so CI enforces
+the same layers, the same `fail_on`, and the same Markdown-only contract
+the editor session saw. A CI-only file on `RESPEAK_CONFIG` can harden the
+verdict for the build:
 
 ```sh
 export RESPEAK_CONFIG=ci/respeak-ci.yaml        # e.g. gate: {fail_on: warn}
+export RESPEAK_GATE_TRACE=1                     # say "pass" / "not applicable" per file
 for f in wiki/**/*.md; do
-  bash scripts/respeak-config.sh resolve --for "$f" --format yaml > /tmp/cfg.yaml
-  bash scripts/respeak-py.sh respeak-measure.py "$f" --fail-on warn --config /tmp/cfg.yaml || exit 1
+  bash scripts/respeak-gate.sh --file "$f" || exit 1
 done
 ```
+
+Without `CLAUDE_PROJECT_DIR` in the environment, the root is discovered
+from each file (rule 2 above), so the checkout's own
+`.claude/respeak/config.yaml` must carry `gate.enabled: true`.
 
 **One render, one audience.** The invocation layer beats every file:
 `/respeak:respeak eli5 notes/plan.md`, or headless
@@ -361,11 +408,20 @@ folder's tone applies and `--mode` sits on top of it.
 
 | Command | Use |
 | --- | --- |
-| `respeak-config.sh explain [--for PATH]` | the layer stack (present and absent), the effective narrative and gate, every override with the layer that set it, and warnings |
+| `respeak-config.sh explain [--for PATH]` | the layer stack (present and absent), which rule chose the project root, the effective narrative and gate, warnings, then every override with the layer that set it |
+| `respeak-config.sh explain --brief [--for PATH]` | the same in a few lines: project, layers applied, effective narrative, gate, override count, warnings. The `/respeak:respeak` skill injects this at the top of every invocation |
 | `respeak-config.sh resolve --for PATH --format yaml\|json` | the full effective config, for `respeak-measure.py --config` or for a prompt |
 | `respeak-config.sh resolve --for PATH --format line\|statusline` | one-line summaries; the statusline form is `bluf/t1 exec @docs/exec/.respeak.yaml` |
 | `respeak-config.sh gate --for FILE [--write-config PATH]` | the gate hook's decision as JSON (`applies`, `fail_on`, `reason`), optionally writing the resolved YAML |
 | `respeak-config.sh validate FILE...` | parse, unknown top-level keys, scope shape, and key policy for the file's kind (guessed from its path, or `--kind`); exits 1 on a policy violation |
+| `respeak-gate.sh --file PATH` | the hook's decision and verdict for one file, as an exit code (0 allow, 2 block); `RESPEAK_GATE_TRACE=1` adds a one-line reason on stderr |
+
+Every command takes `--launch-dir DIR` (the directory Claude Code was
+started in, the same role as `CLAUDE_PROJECT_DIR`) and `--project DIR` to
+pin the root outright. `--set key=value` parses the value as a YAML
+scalar, except that `yes`, `no`, `on`, and `off` stay strings, and a
+scalar given for `gate.allow`, `gate.exclude`, or `gate.include` becomes a
+one-item list.
 
 The statusline segment shows the effective mode at a glance: `technical/t3`
 means the plugin default applies; `bluf/t1 exec @docs/exec/.respeak.yaml`
@@ -385,11 +441,23 @@ above a checkout.
   repo under it; it still cannot enable the gate. `explain` lists it.
 - **Personal files stay personal.** `/respeak:init` offers the two
   gitignore lines; the plugin repo's own `.gitignore` carries them.
-- **Hooks fail open.** No PyYAML-capable python, a missing resolver, or a
-  resolver error means the gate allows and the Stop hook stays silent. The
-  scripts pick the first interpreter that can import PyYAML
-  (`scripts/respeak-python.sh`; `RESPEAK_PYTHON` overrides), because a
-  `python3` shim without it used to make every hook a silent no-op.
+- **A parent directory's `.claude/respeak/config.yaml` is a project file.**
+  Whoever creates `~/code/.claude/respeak/config.yaml` has opted every repo
+  below it into that file's gate settings, the way a parent `CLAUDE.md`
+  applies to every repo below it. `explain` names the file next to
+  `project:`; `/respeak:init` reports when the root it found is not the
+  current directory.
+- **Hooks fail open.** No PyYAML-capable python, a missing resolver, a
+  resolver error, or a measure setup error (an unreadable file, a corrupt
+  corpus) means the gate allows; only a real style-gate verdict blocks.
+  `RESPEAK_GATE_TRACE=1` makes the hook say on stderr which of those
+  happened, and a test suite pins each case. The Stop hook has one layer
+  that needs no YAML, the install-time `auto_narrative` knob, and honours
+  it alone when the resolver cannot run. The scripts pick the first
+  interpreter that can import PyYAML (`scripts/respeak-python.sh`;
+  `RESPEAK_PYTHON` overrides) and parse hook JSON with the same one. A
+  `python3` shim without PyYAML, or one that exits 127, used to make every
+  hook a silent no-op.
 
 ## Upgrading from v0.3
 
@@ -407,6 +475,10 @@ above a checkout.
   project or folder can turn milestone narratives on.
 - **Refresh the installed copy.** The plugin cache is a snapshot: run
   `claude plugin update respeak` so the hooks load the resolver.
+- **`${CLAUDE_PROJECT_DIR}` in skills needs Claude Code 2.1.196 or later.**
+  On older versions the skill's `--launch-dir` is empty. The project root
+  then comes from rule 2 or rule 4 above, which is still the answer the
+  hook gives.
 
 ## Design notes
 
@@ -429,12 +501,21 @@ Claude Code has no such convention and a dotfile per directory is what
   needs it yet; `RESPEAK_CONFIG` covers CI. Add it as a layer between 9
   and 10 if an org-wide style guide ever has to win over projects.
 
-**Cost.** One YAML load per present file, typically four to six files,
-tens of milliseconds per hook call. The statusline pays it on every
-refresh; that is acceptable at Claude Code's refresh cadence.
+**Cost.** The resolver itself is about 30 ms per call on a 2024 Mac
+(PyYAML's C loader; one load per present file). Finding a PyYAML-capable
+interpreter used to cost more than that, because a pyenv shim takes about
+70 ms per probe, so `respeak-python.sh` caches the answer per `PATH` in
+`$TMPDIR` and re-validates it with one launch. Warm, a statusline refresh
+is about 100 ms. A gate-hook call on a Markdown write is about 200 ms,
+most of it the measure scan. Claude Code debounces statusline updates at
+300 ms and cancels an in-flight script on the next trigger.
 
 **Open.** The `schema:` pointer in the plugin config is still a promise;
 `validate` checks shape and policy but not value types. A helper that
 writes a folder file from a profile name (`respeak-config.sh init-folder
 docs/exec --profile exec`) would remove the last bit of typing, and
-`mode_select: compass` is scopable today but has no consumer.
+`mode_select: compass` is scopable today but has no consumer. The
+`respeak:respeak` agent has no Bash tool. When a caller hands it no
+resolved block, it approximates the stack from the files it can read and
+says so in its last line. A caller that wants the exact stack passes the
+resolver's output, as the skill and the headless renderer do.

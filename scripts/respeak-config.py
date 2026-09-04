@@ -32,6 +32,14 @@ pointers, version, schema) are dropped with a warning when a user, ancestor,
 folder, or scope layer sets them. `narrative.profile: NAME` in a layer expands
 that profile's fields underneath the layer's own explicit keys.
 
+The project root is found the same way for every consumer (hook, skill,
+statusline, CLI): --project if given; else the nearest ancestor of the target
+holding .claude/respeak/config.yaml (never the user config directory); else
+--launch-dir / $CLAUDE_PROJECT_DIR (where Claude Code was started); else the
+nearest ancestor holding .git or .claude/. All paths are compared after
+symlink resolution. The gate covers Markdown files only (.md .markdown .mdx);
+gate.include/exclude narrow within that set.
+
 Exit codes: 0 ok; 1 validate found errors; 2 usage error or missing PyYAML.
 """
 import argparse
@@ -87,6 +95,32 @@ KNOWN_TOP_KEYS = {"version", "schema", "editorial_pass", "data", "narrative",
 
 FAIL_ON_VALUES = ("none", "warn", "error")
 
+# The style gate is a Markdown scanner; the hook's cheap pre-filter and the
+# resolver's gate decision agree on exactly this set (docs/config-layers.md).
+MARKDOWN_EXTS = (".md", ".markdown", ".mdx")
+
+# PyYAML's C loader parses the 230-line plugin config in a few milliseconds;
+# the pure-Python one takes ~100 ms, which the statusline would pay per refresh.
+_Loader = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
+
+
+def real(path):
+    """Absolute path with symlinks resolved, so /tmp and /private/tmp (or a
+    ~/code symlink) never make an in-project file look like an outsider."""
+    return os.path.realpath(os.path.abspath(os.path.expanduser(path)))
+
+
+def deep_merge(base, over):
+    """Plain recursive merge of two mappings (maps merge, everything else
+    replaces); used for the profile lookup table only."""
+    out = copy.deepcopy(base) if isinstance(base, dict) else {}
+    for k, v in (over or {}).items():
+        if isinstance(v, dict) and isinstance(out.get(k), dict):
+            out[k] = deep_merge(out[k], v)
+        else:
+            out[k] = copy.deepcopy(v)
+    return out
+
 
 # --------------------------------------------------------------------------
 # small path + glob helpers
@@ -127,18 +161,22 @@ _glob_cache = {}
 def glob_to_regex(pat):
     """gitignore-flavoured glob: ** = any depth (including none), * = within
     one segment, ? = one char, a trailing / = the directory and everything in
-    it, and a pattern with no / matches at any depth."""
+    it, and a pattern with no / matches a file or directory of that name at
+    any depth (a directory match includes its contents)."""
     if pat in _glob_cache:
         return _glob_cache[pat]
     p = pat
     if p.endswith("/"):
         p += "**"
     if "/" not in p:
-        p = "**/" + p
+        p = "**/" + p + "/**"
     out, i = "", 0
     while i < len(p):
         if p.startswith("**/", i):
             out += "(?:.*/)?"
+            i += 3
+        elif p.startswith("/**", i) and i + 3 == len(p):
+            out += "(?:/.*)?"
             i += 3
         elif p.startswith("**", i):
             out += ".*"
@@ -159,6 +197,25 @@ def glob_to_regex(pat):
 
 def match_glob(pat, path):
     return bool(glob_to_regex(pat).match(path))
+
+
+def real_glob_prefix(pat):
+    """Resolve symlinks in the literal directory prefix of an absolute or
+    ~-prefixed glob (everything before the first segment holding a glob
+    character), so a user-level scope written as /tmp/x/** matches targets
+    the resolver reports as /private/tmp/x/... ."""
+    pat = os.path.expanduser(pat)
+    segs = pat.split("/")
+    lit = []
+    for seg in segs:
+        if any(c in seg for c in "*?["):
+            break
+        lit.append(seg)
+    rest = segs[len(lit):]
+    prefix = "/".join(lit) or "/"
+    if os.path.exists(prefix):
+        prefix = os.path.realpath(prefix)
+    return "/".join([prefix.rstrip("/")] + rest) if rest else prefix
 
 
 def set_dotted(d, key, value):
@@ -204,15 +261,18 @@ class Layer:
 
 
 class Resolution:
-    def __init__(self, config, origins, warnings, layers, applied, project, target, plugin_root):
+    def __init__(self, config, origins, warnings, layers, applied, project, target, plugin_root,
+                 project_how="", launch_dir=None):
         self.config = config
         self.origins = origins      # dotted leaf key -> label of the layer that set it
         self.warnings = warnings
         self.layers = layers        # every candidate file layer, in precedence order
         self.applied = applied      # layers that contributed, scopes included, in order
         self.project = project
+        self.project_how = project_how  # how the project root was chosen (for explain)
         self.target = target
         self.plugin_root = plugin_root
+        self.launch_dir = launch_dir
 
     def plugin_label(self):
         return self.layers[0].label if self.layers else ""
@@ -224,7 +284,7 @@ class Resolution:
         if not label:
             return ""
         out = label
-        home = os.path.expanduser("~")
+        home = real(os.path.expanduser("~"))
         if self.project:
             out = out.replace(self.project + os.sep, "")
         if self.plugin_root:
@@ -239,7 +299,7 @@ class Resolution:
         """Display form of a directory that should stay absolute (home -> ~)."""
         if not path:
             return ""
-        home = os.path.expanduser("~")
+        home = real(os.path.expanduser("~"))
         if home and home != os.sep and (path == home or path.startswith(home + os.sep)):
             return "~" + path[len(home):]
         return path
@@ -250,7 +310,7 @@ def load_yaml_file(path, warnings):
     mapping, the last two with a warning)."""
     try:
         with open(path) as f:
-            data = yaml.safe_load(f)
+            data = yaml.load(f, Loader=_Loader)
     except FileNotFoundError:
         return None
     except Exception as e:  # noqa: BLE001 — any parse/IO failure means "skip this layer"
@@ -269,23 +329,50 @@ def file_layer(kind, path, base, warnings):
     return Layer(kind, path, path=path, data=data, base=base)
 
 
-def find_project(explicit, env, target):
+def user_config_dir(env):
+    return real(env.get("CLAUDE_CONFIG_DIR") or os.path.join(os.path.expanduser("~"), ".claude"))
+
+
+def is_user_root(d, cfgdir):
+    """True when treating d as a project would load the USER file
+    (<cfgdir>/respeak/config.yaml) at project grade: with the default
+    ~/.claude that is $HOME itself."""
+    return (os.path.join(d, PROJECT_REL) == os.path.join(cfgdir, "respeak", "config.yaml")
+            or os.path.join(d, ".claude") == cfgdir)
+
+
+def find_project(explicit, env, target, launch_dir=None):
+    """(project root or None, how). One rule for every consumer:
+    1. --project, verbatim;
+    2. the nearest ancestor of the target holding .claude/respeak/config.yaml
+       (a nested one wins in a monorepo; a parent one governs every repo
+       below it, like a parent CLAUDE.md), never the user config directory;
+    3. --launch-dir / $CLAUDE_PROJECT_DIR, where Claude Code was started;
+    4. the nearest ancestor holding .git or .claude/ (again never $HOME)."""
+    cfgdir = user_config_dir(env)
     if explicit:
-        return os.path.abspath(explicit)
-    if env.get("CLAUDE_PROJECT_DIR"):
-        return os.path.abspath(env["CLAUDE_PROJECT_DIR"])
+        return real(explicit), "--project"
     d = target if os.path.isdir(target) else os.path.dirname(target)
     chain = list(reversed(ancestors(d)))          # nearest first
     for a in chain:
-        if os.path.isfile(os.path.join(a, PROJECT_REL)):
-            return a
+        if not is_user_root(a, cfgdir) and os.path.isfile(os.path.join(a, PROJECT_REL)):
+            return a, "nearest " + PROJECT_REL
+    launch = launch_dir or env.get("CLAUDE_PROJECT_DIR")
+    if launch:
+        return real(launch), "launch directory (CLAUDE_PROJECT_DIR)"
     for a in chain:
+        if is_user_root(a, cfgdir):
+            continue
         if os.path.isdir(os.path.join(a, ".git")) or os.path.isdir(os.path.join(a, ".claude")):
-            return a
-    return None
+            return a, "nearest .git or .claude/"
+    return None, "none found"
 
 
-def project_layers(project, warnings):
+def project_layers(project, warnings, cfgdir):
+    if is_user_root(project, cfgdir):
+        warnings.append("project root %s is the user config directory; the user file is not "
+                        "re-applied at project grade" % project)
+        return []
     return [
         file_layer("project", os.path.join(project, PROJECT_REL), project, warnings),
         file_layer("project-local", os.path.join(project, PROJECT_LOCAL_REL), project, warnings),
@@ -316,31 +403,43 @@ def build_stack(project, target, plugin_root, env, overrides, walk_from, warning
                         data=uc if set_vars else None))
 
     # 3. user file
-    cfgdir = env.get("CLAUDE_CONFIG_DIR") or os.path.join(os.path.expanduser("~"), ".claude")
+    cfgdir = user_config_dir(env)
     layers.append(file_layer("user", os.path.join(cfgdir, "respeak", "config.yaml"), None, warnings))
 
     # 4-8. the walk from the filesystem root down to the target's directory;
-    #      the project's own files sit at the project root's position.
+    #      the project's own files sit at the project root's position. For a
+    #      target outside the project they sit right after the deepest
+    #      directory common to both, so a .respeak.yaml above the project
+    #      root stays below the project wherever the target lives.
     tdir = target if os.path.isdir(target) else os.path.dirname(target)
     in_project = project is not None and is_under(tdir, project)
-    if project and not in_project:
-        layers.extend(project_layers(project, warnings))
-    walk_root = os.path.abspath(walk_from) if walk_from else None
+    anchor = None
+    if project:
+        if in_project:
+            anchor = project
+        else:
+            try:
+                anchor = os.path.commonpath([tdir, project])
+            except ValueError:  # different drives: nothing in common
+                layers.extend(project_layers(project, warnings, cfgdir))
+    walk_root = real(walk_from) if walk_from else None
     for d in ancestors(tdir):
-        if project and in_project and os.path.abspath(d) == os.path.abspath(project):
-            layers.extend(project_layers(project, warnings))
-        if walk_root and not is_under(d, walk_root):
-            continue
-        kind = "folder" if (project and in_project and is_under(d, project)) else "ancestor"
-        layers.append(file_layer(kind, os.path.join(d, FOLDER_FILE), d, warnings))
-        layers.append(file_layer(kind + "-local", os.path.join(d, FOLDER_LOCAL), d, warnings))
+        at_anchor = anchor is not None and d == anchor
+        if at_anchor and in_project:
+            layers.extend(project_layers(project, warnings, cfgdir))
+        if not (walk_root and not is_under(d, walk_root)):
+            kind = "folder" if (project and in_project and is_under(d, project)) else "ancestor"
+            layers.append(file_layer(kind, os.path.join(d, FOLDER_FILE), d, warnings))
+            layers.append(file_layer(kind + "-local", os.path.join(d, FOLDER_LOCAL), d, warnings))
+        if at_anchor and not in_project:
+            layers.extend(project_layers(project, warnings, cfgdir))
 
     # 9. extra files from the environment (CI, one-off runs)
     for p in (env.get("RESPEAK_CONFIG") or "").split(":"):
         p = p.strip()
         if not p:
             continue
-        p = os.path.abspath(os.path.expanduser(p))
+        p = real(p)
         lay = file_layer("env", p, os.path.dirname(p), warnings)
         if not lay.present:
             warnings.append("RESPEAK_CONFIG: %s not found; ignored" % p)
@@ -409,8 +508,8 @@ def scope_matches(patterns, layer, target, warnings, idx):
                 warnings.append("%s#scopes[%d]: paths at this level must be absolute or ~-prefixed: %r; skipped"
                                 % (layer.label, idx, pat))
                 continue
-            full = os.path.abspath(target) + ("/" if is_dir else "")
-            if match_glob(os.path.expanduser(pat), full):
+            full = target + ("/" if is_dir else "")
+            if match_glob(real_glob_prefix(pat), full):
                 return True
         else:
             rel = rel_under(target, layer.base)
@@ -432,9 +531,10 @@ def apply_layer(cfg, origins, layer, data, target, warnings, applied):
     narrative = data.get("narrative")
     prof = narrative.get("profile") if isinstance(narrative, dict) else None
     if isinstance(prof, str):
-        profiles = dict(cfg.get("profiles") or {})
-        if isinstance(data.get("profiles"), dict):
-            profiles.update(data["profiles"])
+        # the lookup table is the profiles merged so far deep-merged with this
+        # layer's own `profiles:` — the same table `resolve` will report
+        profiles = deep_merge(cfg.get("profiles") or {},
+                              data.get("profiles") if isinstance(data.get("profiles"), dict) else {})
         p = profiles.get(prof)
         if isinstance(p, dict):
             expanded = {"narrative": {k: v for k, v in p.items() if k in PROFILE_KEYS}}
@@ -442,6 +542,9 @@ def apply_layer(cfg, origins, layer, data, target, warnings, applied):
             merge(cfg, expanded, "", sub, origins, warnings)
         else:
             warnings.append("%s: narrative.profile %r is not a known profile; ignored" % (layer.label, prof))
+            narrative = dict(narrative)
+            narrative.pop("profile")
+            data["narrative"] = narrative
 
     merge(cfg, data, "", layer, origins, warnings)
     applied.append(layer)
@@ -471,12 +574,14 @@ def apply_layer(cfg, origins, layer, data, target, warnings, applied):
         apply_layer(cfg, origins, sub, overlay, target, warnings, applied)
 
 
-def resolve(target=None, project=None, plugin_root=None, env=None, overrides=None, walk_from=None):
+def resolve(target=None, project=None, plugin_root=None, env=None, overrides=None, walk_from=None,
+            launch_dir=None):
     env = os.environ if env is None else env
     warnings = []
-    target = os.path.abspath(target or os.getcwd())
-    plugin_root = os.path.abspath(plugin_root or env.get("CLAUDE_PLUGIN_ROOT") or DEFAULT_PLUGIN_ROOT)
-    project = find_project(project, env, target)
+    target = real(target or os.getcwd())
+    plugin_root = real(plugin_root or env.get("CLAUDE_PLUGIN_ROOT") or DEFAULT_PLUGIN_ROOT)
+    launch_dir = real(launch_dir) if launch_dir else None
+    project, how = find_project(project, env, target, launch_dir)
     layers = build_stack(project, target, plugin_root, env, overrides or {}, walk_from, warnings)
     if not layers[0].present:
         warnings.append("plugin defaults not found at %s" % layers[0].path)
@@ -484,7 +589,8 @@ def resolve(target=None, project=None, plugin_root=None, env=None, overrides=Non
     for layer in layers:
         if layer.present:
             apply_layer(config, origins, layer, layer.data, target, warnings, applied)
-    return Resolution(config, origins, warnings, layers, applied, project, target, plugin_root)
+    return Resolution(config, origins, warnings, layers, applied, project, target, plugin_root,
+                      project_how=how, launch_dir=launch_dir)
 
 
 # --------------------------------------------------------------------------
@@ -505,12 +611,19 @@ def gate_decision(res):
     if not res.project or os.path.isdir(res.target):
         out["reason"] = "no project, or target is a directory"
         return out
+    if not res.target.lower().endswith(MARKDOWN_EXTS):
+        out["reason"] = "not a Markdown file (the gate covers %s)" % ", ".join(MARKDOWN_EXTS)
+        return out
     rel = rel_under(res.target, res.project)
     if rel is None:
         out["reason"] = "target is outside the project"
         return out
     out["rel_path"] = rel
-    include = g.get("include") or ["**/*.md"]
+    include = g.get("include")
+    if include is None:
+        include = ["**/*.md"]
+    elif not isinstance(include, list):
+        include = [include]
     exclude = g.get("exclude") or []
     included = any(match_glob(p, rel) for p in include if isinstance(p, str))
     excluded = any(match_glob(p, rel) for p in exclude if isinstance(p, str))
@@ -562,10 +675,45 @@ def fmt_statusline(res):
     return out
 
 
+def fmt_brief(res, gate=None):
+    """The short form for a skill preamble: everything a model needs to
+    decide, nothing it has to page through."""
+    L = ["respeak config for %s" % res.short(res.target)]
+    L.append("project: %s (%s)" % (res.short_abs(res.project) if res.project else "(none found)", res.project_how))
+    present = []
+    for lay in res.layers:
+        if lay.present:
+            present.append("%s %s" % (lay.kind, res.short(lay.label)) if lay.kind not in ("plugin", "userconfig")
+                           else lay.kind)
+            for a in res.applied:
+                if a.kind == "scope" and a.label.startswith(lay.label + "#"):
+                    present.append("scope %s" % res.short(a.label[len(lay.label):]))
+    L.append("layers applied: " + ", ".join(present))
+    s = summary(res)
+    tone = get_dotted(res.config, "narrative.tone", {}) or {}
+    L.append("effective narrative: mode=%s tech_level=%s profile=%s context=%s tone(f=%s d=%s c=%s) auto_narrative=%s"
+             % (s["mode"], s["tech"], s["profile"], s["context"], tone.get("formality"), tone.get("directness"),
+                tone.get("confidence"), str(s["auto_narrative"]).lower()))
+    lex = get_dotted(res.config, "narrative.lexicon_access")
+    if lex:
+        L[-1] += " lexicon_access=%s" % lex
+    if gate is not None:
+        L.append("gate: enabled=%s fail_on=%s applies=%s (%s)"
+                 % (str(gate["enabled"]).lower(), gate["fail_on"], str(gate["applies"]).lower(), gate["reason"]))
+    else:
+        L.append("gate: %s" % s["gate"])
+    plugin = res.plugin_label()
+    n_over = len([k for k, v in res.origins.items() if not v.startswith(plugin) and not k.startswith("profiles.")])
+    L.append("overrides: %d key(s) set above the plugin defaults; `explain` without --brief lists them" % n_over)
+    for w in res.warnings:
+        L.append("warning: %s" % res.short(w))
+    return "\n".join(L)
+
+
 def fmt_explain(res, gate=None):
     L = []
     L.append("respeak config for %s" % res.short(res.target))
-    L.append("project: %s" % (res.short_abs(res.project) if res.project else "(none found)"))
+    L.append("project: %s (%s)" % (res.short_abs(res.project) if res.project else "(none found)", res.project_how))
     L.append("")
     L.append("layers, lowest precedence first (* = present and applied):")
     applied_labels = {a.label: a for a in res.applied}
@@ -598,6 +746,11 @@ def fmt_explain(res, gate=None):
                  % (str(gate["enabled"]).lower(), gate["fail_on"], str(gate["applies"]).lower(), gate["reason"]))
     else:
         L.append("gate: %s" % s["gate"])
+    if res.warnings:
+        L.append("")
+        L.append("warnings:")
+        for w in res.warnings:
+            L.append("  %s" % res.short(w))
     plugin = res.plugin_label()
     overrides = []
     seen_profiles = set()
@@ -623,11 +776,6 @@ def fmt_explain(res, gate=None):
             L.append("  %-*s = %-24s <- %s" % (width, k, val, res.short(lab)))
     else:
         L.append("overrides: none (plugin defaults throughout)")
-    if res.warnings:
-        L.append("")
-        L.append("warnings:")
-        for w in res.warnings:
-            L.append("  %s" % res.short(w))
     return "\n".join(L)
 
 
@@ -636,13 +784,14 @@ def fmt_explain(res, gate=None):
 # --------------------------------------------------------------------------
 
 def guess_kind(path, env):
+    path = real(path)
     base = os.path.basename(path)
     if base in (FOLDER_FILE, FOLDER_LOCAL):
         return "folder"
     norm = path.replace(os.sep, "/")
     if norm.endswith("config/respeak.config.yaml"):
         return "plugin"
-    cfgdir = env.get("CLAUDE_CONFIG_DIR") or os.path.join(os.path.expanduser("~"), ".claude")
+    cfgdir = user_config_dir(env)
     if norm.endswith(".claude/respeak/config.local.yaml"):
         return "project-local"
     if norm.endswith(".claude/respeak/config.yaml"):
@@ -722,8 +871,23 @@ def parse_overrides(args):
         if "=" not in item:
             raise SystemExit("respeak-config: --set expects key=value, got %r" % item)
         k, v = item.split("=", 1)
-        set_dotted(ov, k.strip(), yaml.safe_load(v) if v.strip() else None)
+        k = k.strip()
+        val = parse_set_value(v)
+        if k in APPEND_LISTS + ("gate.include",) and not isinstance(val, list) and val is not None:
+            val = [val]
+        set_dotted(ov, k, val)
     return ov
+
+
+def parse_set_value(raw):
+    """YAML scalar parsing for --set, minus the YAML 1.1 surprise that turns
+    yes/no/on/off into booleans."""
+    s = raw.strip()
+    if s == "":
+        return None
+    if s.lower() in ("yes", "no", "on", "off"):
+        return s
+    return yaml.load(s, Loader=_Loader)
 
 
 def add_common(p):
@@ -731,6 +895,8 @@ def add_common(p):
     p.add_argument("--for", dest="target", default=None, help="file or directory the config is for (default: cwd)")
     p.add_argument("--plugin-root", default=None, help="plugin root (default: $CLAUDE_PLUGIN_ROOT, else this checkout)")
     p.add_argument("--walk-from", default=None, help="only look for .respeak.yaml at or below this directory")
+    p.add_argument("--launch-dir", default=None,
+                   help="where Claude Code was started (the fallback project root; same role as $CLAUDE_PROJECT_DIR)")
     p.add_argument("--mode", choices=("eli5", "bluf", "technical"), default=None)
     p.add_argument("--profile", default=None)
     p.add_argument("--context", choices=("incident", "routine", "celebration"), default=None)
@@ -748,6 +914,7 @@ def main(argv=None):
 
     p = sub.add_parser("explain", help="show every layer and which one set each override")
     add_common(p)
+    p.add_argument("--brief", action="store_true", help="a few lines: project, layers, effective narrative, gate, warnings")
 
     p = sub.add_parser("gate", help="decide whether the style gate applies to --for")
     add_common(p)
@@ -781,7 +948,8 @@ def main(argv=None):
         sys.stderr.write("respeak-config: %s\n" % e)
         return 2
     res = resolve(target=args.target, project=args.project, plugin_root=args.plugin_root,
-                  env=env, overrides=overrides, walk_from=args.walk_from)
+                  env=env, overrides=overrides, walk_from=args.walk_from,
+                  launch_dir=args.launch_dir or None)
 
     if args.cmd == "resolve":
         if args.format == "yaml":
@@ -798,7 +966,7 @@ def main(argv=None):
 
     if args.cmd == "explain":
         gate = gate_decision(res) if not os.path.isdir(res.target) else None
-        print(fmt_explain(res, gate))
+        print(fmt_brief(res, gate) if args.brief else fmt_explain(res, gate))
         return 0
 
     if args.cmd == "gate":

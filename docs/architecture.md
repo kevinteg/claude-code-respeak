@@ -163,8 +163,10 @@ No agent both proposes and ratifies a convention.
    `shorthand.*`) are project-only and dropped with a warning anywhere else,
    so no folder or user file can switch enforcement or ratification; and
    every consumer (gate hook, Stop hook, statusline, skill, headless render)
-   reads through the one resolver, so `explain` shows the truth each of
-   them saw. `narrative.profile` is expanded by the resolver, which wires
+   reads through the one resolver, with one project-root rule (nearest
+   `.claude/respeak/config.yaml` above the target, never the user config
+   directory, then the launch directory, then `.git`), so `explain` shows
+   the truth each of them saw. `narrative.profile` is expanded by the resolver, which wires
    the audience profiles into the skill surface for the first time.
 
 ## Refinements the research forced (v0 → v1)

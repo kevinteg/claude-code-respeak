@@ -43,7 +43,9 @@ class Fixture:
     """A temp home (with CLAUDE_CONFIG_DIR) and a project under it."""
 
     def __init__(self):
-        self.root = tempfile.mkdtemp(prefix="respeak-layers-")
+        # realpath: the resolver reports symlink-resolved paths (/private/var on
+        # macOS), so the fixture compares like with like
+        self.root = os.path.realpath(tempfile.mkdtemp(prefix="respeak-layers-"))
         self.home = os.path.join(self.root, "home")
         self.cfgdir = os.path.join(self.home, ".claude")
         self.project = os.path.join(self.home, "code", "proj")
@@ -539,3 +541,228 @@ class CLI(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ---------------------------------------------------------------------------
+# v0.4.1: regressions for the adversarial-review findings (docs/config-layers.md)
+# ---------------------------------------------------------------------------
+
+class Discovery(unittest.TestCase):
+    """One project-root rule for every consumer."""
+
+    def setUp(self):
+        self.fx = Fixture()
+        self.addCleanup(self.fx.cleanup)
+
+    def test_user_file_is_never_a_project_file(self):
+        # the headline recipe: a user file, a repo with .git and no project config
+        self.fx.user("narrative: {default_mode: bluf}\ngate: {enabled: true, include: ['**/*.md']}\n"
+                     "shorthand: {ratification: auto}\n")
+        os.makedirs(os.path.join(self.fx.project, ".git"))
+        doc = self.fx.doc("README.md")
+        env = self.fx.env()
+        res = rc.resolve(target=doc, project=None, plugin_root=REPO, env=env, walk_from=self.fx.root)
+        self.assertEqual(res.project, self.fx.project)          # the .git root, not $HOME
+        self.assertIn(".git", res.project_how)
+        self.assertEqual(narrative(res, "default_mode"), "bluf")  # tone from the user file applies
+        self.assertFalse(rc.get_dotted(res.config, "gate.enabled"))
+        self.assertEqual(rc.get_dotted(res.config, "shorthand.ratification"), "human")
+        kinds = [lay.kind for lay in res.applied]
+        self.assertEqual(kinds.count("project"), 0)
+        self.assertFalse(rc.gate_decision(res)["applies"])
+
+    def test_launch_dir_equal_to_home_does_not_promote_the_user_file(self):
+        self.fx.user("gate: {enabled: true}\n")
+        doc = self.fx.doc("a.md")
+        for kw in ({"launch_dir": self.fx.home}, {"project": self.fx.home}):
+            res = rc.resolve(target=doc, plugin_root=REPO, env=self.fx.env(), walk_from=self.fx.root, **kw)
+            self.assertFalse(rc.get_dotted(res.config, "gate.enabled"), kw)
+            self.assertEqual([lay.kind for lay in res.applied].count("project"), 0, kw)
+            self.assertTrue(any("not re-applied at project grade" in w for w in res.warnings), kw)
+        env = self.fx.env(CLAUDE_PROJECT_DIR=self.fx.home)
+        res = rc.resolve(target=doc, plugin_root=REPO, env=env, walk_from=self.fx.root)
+        self.assertFalse(rc.get_dotted(res.config, "gate.enabled"))
+
+    def test_nearest_project_config_wins_for_every_consumer(self):
+        # monorepo: outer project config + nested package config
+        self.fx.proj("narrative: {default_mode: technical}\ngate: {enabled: true}\n")
+        inner = os.path.join(self.fx.project, "pkg")
+        write(os.path.join(inner, ".claude", "respeak", "config.yaml"), "narrative: {default_mode: bluf}\n")
+        doc = self.fx.doc("pkg/a.md")
+        hook_side = rc.resolve(target=doc, plugin_root=REPO, walk_from=self.fx.root,
+                               env=self.fx.env(CLAUDE_PROJECT_DIR=self.fx.project))
+        cli_side = rc.resolve(target=doc, plugin_root=REPO, walk_from=self.fx.root, env=self.fx.env())
+        for res in (hook_side, cli_side):
+            self.assertEqual(res.project, inner)
+            self.assertEqual(narrative(res, "default_mode"), "bluf")
+            self.assertFalse(rc.get_dotted(res.config, "gate.enabled"))  # the inner project never opted in
+        # a file outside pkg/ still belongs to the outer project
+        outer_doc = self.fx.doc("a.md")
+        res = rc.resolve(target=outer_doc, plugin_root=REPO, walk_from=self.fx.root, env=self.fx.env())
+        self.assertEqual(res.project, self.fx.project)
+        self.assertTrue(rc.gate_decision(res)["applies"])
+
+    def test_parent_project_config_governs_a_repo_launched_below_it(self):
+        # ~/code/.claude/respeak/config.yaml + session launched in ~/code/repo
+        code = os.path.join(self.fx.home, "code")
+        write(os.path.join(code, ".claude", "respeak", "config.yaml"), "gate: {enabled: true}\n")
+        os.makedirs(os.path.join(self.fx.project, ".git"))
+        doc = self.fx.doc("docs/x.md")
+        for env in (self.fx.env(CLAUDE_PROJECT_DIR=self.fx.project), self.fx.env()):
+            res = rc.resolve(target=doc, plugin_root=REPO, walk_from=self.fx.root, env=env)
+            self.assertEqual(res.project, code)
+            self.assertTrue(rc.gate_decision(res)["applies"])
+
+    def test_launch_dir_is_the_fallback_when_no_project_config_exists(self):
+        doc = self.fx.doc("docs/x.md")
+        res = rc.resolve(target=doc, plugin_root=REPO, walk_from=self.fx.root, env=self.fx.env(),
+                         launch_dir=self.fx.project)
+        self.assertEqual(res.project, self.fx.project)
+        self.assertIn("launch", res.project_how)
+        # launched in a subdirectory of a repo with no config: that subdirectory is the project
+        res = rc.resolve(target=doc, plugin_root=REPO, walk_from=self.fx.root, env=self.fx.env(),
+                         launch_dir=os.path.join(self.fx.project, "docs"))
+        self.assertEqual(res.project, os.path.join(self.fx.project, "docs"))
+
+    def test_symlinked_spellings_resolve_identically(self):
+        self.fx.proj("gate: {enabled: true}\n")
+        self.fx.folder("docs", "narrative: {profile: exec}\n")
+        doc = self.fx.doc("docs/a.md")
+        link = os.path.join(self.fx.root, "link")
+        os.symlink(self.fx.home, link)
+        via_link = os.path.join(link, "code", "proj", "docs", "a.md")
+        combos = [(doc, self.fx.project), (via_link, self.fx.project),
+                  (doc, os.path.join(link, "code", "proj")), (via_link, os.path.join(link, "code", "proj"))]
+        for target, project in combos:
+            res = rc.resolve(target=target, project=project, plugin_root=REPO, walk_from=self.fx.root,
+                             env=self.fx.env())
+            d = rc.gate_decision(res)
+            self.assertTrue(d["applies"], (target, project, d))
+            self.assertEqual(d["rel_path"], "docs/a.md")
+            self.assertEqual(narrative(res, "profile"), "exec")  # the folder file is found on either spelling
+
+    def test_outside_target_keeps_ancestors_below_the_project(self):
+        write(os.path.join(self.fx.home, "code", ".respeak.yaml"), "narrative: {default_mode: eli5}\n")
+        self.fx.proj("narrative: {default_mode: technical, tech_level: 3}\n")
+        outside = os.path.join(self.fx.home, "code", "other", "x.md")
+        write(outside, "# x\n")
+        res = self.fx.resolve(target=outside)
+        self.assertEqual(narrative(res, "default_mode"), "technical")
+        kinds = [lay.kind for lay in res.applied]
+        self.assertLess(kinds.index("ancestor"), kinds.index("project"))
+        # a .respeak.yaml in the outside directory itself is nearer than the project
+        write(os.path.join(self.fx.home, "code", "other", ".respeak.yaml"), "narrative: {default_mode: bluf}\n")
+        res = self.fx.resolve(target=outside)
+        self.assertEqual(narrative(res, "default_mode"), "bluf")
+        self.assertFalse(rc.gate_decision(res)["applies"])
+
+
+class ProfilesAndGlobs(unittest.TestCase):
+    def setUp(self):
+        self.fx = Fixture()
+        self.addCleanup(self.fx.cleanup)
+
+    def test_partial_profile_override_in_the_same_layer_keeps_the_other_fields(self):
+        self.fx.proj("profiles: {exec: {tech_level: 2}}\nnarrative: {profile: exec}\n")
+        res = self.fx.resolve(target=self.fx.doc("a.md"))
+        self.assertEqual(narrative(res, "default_mode"), "bluf")
+        self.assertEqual(narrative(res, "tech_level"), 2)
+        self.assertEqual(narrative(res, "lexicon_access"), "forbidden")
+        # same outcome whichever layer carries the partial profile
+        self.fx.proj("narrative: {profile: exec}\n")
+        self.fx.user("profiles: {exec: {tech_level: 2}}\n")
+        res = self.fx.resolve(target=self.fx.doc("a.md"))
+        self.assertEqual((narrative(res, "default_mode"), narrative(res, "tech_level")), ("bluf", 2))
+
+    def test_unknown_profile_leaves_no_trace(self):
+        self.fx.folder("docs", "narrative: {profile: nobody, tech_level: 2}\n")
+        res = self.fx.resolve(target=self.fx.doc("docs/a.md"))
+        self.assertEqual(narrative(res, "profile"), "peer-engineer")  # the plugin default, not "nobody"
+        self.assertEqual(narrative(res, "tech_level"), 2)             # the explicit key still applies
+
+    def test_bare_name_scope_matches_the_directory_and_its_contents(self):
+        self.fx.proj("scopes:\n  - paths: ['exec']\n    narrative: {profile: exec}\n")
+        res = self.fx.resolve(target=self.fx.doc("docs/exec/q.md"))
+        self.assertEqual(narrative(res, "profile"), "exec")
+        res = self.fx.resolve(target=self.fx.doc("docs/executive/q.md"))
+        self.assertEqual(narrative(res, "profile"), "peer-engineer")
+        m = rc.match_glob
+        self.assertTrue(m("exec", "docs/exec"))
+        self.assertTrue(m("exec", "docs/exec/deep/q.md"))
+        self.assertFalse(m("exec", "docs/exec.md"))
+
+    def test_explicit_empty_include_covers_nothing(self):
+        self.fx.proj("gate: {enabled: true, include: []}\n")
+        d = rc.gate_decision(self.fx.resolve(target=self.fx.doc("a.md")))
+        self.assertFalse(d["applies"])
+        self.assertIn("gate.include", d["reason"])
+
+    def test_gate_covers_markdown_extensions_only(self):
+        self.fx.proj("gate: {enabled: true, include: ['**/*']}\n")
+        for name, expect in (("a.md", True), ("a.markdown", True), ("a.mdx", True), ("a.txt", False), ("a.py", False)):
+            d = rc.gate_decision(self.fx.resolve(target=self.fx.doc(name)))
+            self.assertEqual(d["applies"], expect, name)
+            if not expect:
+                self.assertIn("Markdown", d["reason"])
+
+    def test_set_parsing(self):
+        ns = type("A", (), {})()
+        ns.mode = ns.profile = ns.context = None
+        ns.set = ["gate.allow=spine", "narrative.tone.formality=0.9", "narrative.auto_narrative=yes", "gate.include=docs/**"]
+        ov = rc.parse_overrides(ns)
+        self.assertEqual(ov["gate"]["allow"], ["spine"])
+        self.assertEqual(ov["gate"]["include"], ["docs/**"])
+        self.assertEqual(ov["narrative"]["tone"]["formality"], 0.9)
+        self.assertEqual(ov["narrative"]["auto_narrative"], "yes")  # not the YAML-1.1 boolean
+
+    def test_user_scope_written_through_a_symlink_still_matches(self):
+        link = os.path.join(self.fx.root, "link")
+        os.symlink(self.fx.home, link)
+        self.fx.user("scopes:\n  - paths: ['%s/code/proj/**']\n    narrative: {tech_level: 5}\n" % link)
+        res = self.fx.resolve(target=self.fx.doc("docs/a.md"))
+        self.assertEqual(narrative(res, "tech_level"), 5)
+
+
+class ExplainOutput(unittest.TestCase):
+    def setUp(self):
+        self.fx = Fixture()
+        self.addCleanup(self.fx.cleanup)
+
+    def test_warnings_precede_overrides_and_brief_is_short(self):
+        self.fx.folder("docs", "narrative: {profile: exec}\ngate: {enabled: true}\n")
+        res = self.fx.resolve(target=self.fx.doc("docs/a.md"))
+        full = rc.fmt_explain(res, rc.gate_decision(res))
+        self.assertLess(full.index("warnings:"), full.index("overrides (key"))
+        brief = rc.fmt_brief(res, rc.gate_decision(res))
+        self.assertLessEqual(len(brief.splitlines()), 8)
+        self.assertIn("warning: docs/.respeak.yaml: gate.enabled is project-only; ignored", brief)
+        self.assertIn("mode=bluf tech_level=1 profile=exec", brief)
+        self.assertIn("(--project)", brief)
+        self.assertIn("folder docs/.respeak.yaml", brief)
+
+
+class CLIv041(unittest.TestCase):
+    def setUp(self):
+        self.fx = Fixture()
+        self.addCleanup(self.fx.cleanup)
+        self.env = dict(os.environ)
+        self.env["CLAUDE_CONFIG_DIR"] = self.fx.cfgdir
+        for k in ("CLAUDE_PROJECT_DIR", "RESPEAK_CONFIG"):
+            self.env.pop(k, None)
+
+    def run_cli(self, *args, **kw):
+        env = dict(self.env); env.update(kw.get("env", {}))
+        return subprocess.run([sys.executable, RESOLVER] + list(args) + ["--plugin-root", REPO],
+                              capture_output=True, text=True, env=env)
+
+    def test_launch_dir_flag_and_env_agree(self):
+        self.fx.proj("gate: {enabled: true}\n")
+        doc = self.fx.doc("docs/a.md")
+        a = self.run_cli("gate", "--for", doc, "--launch-dir", os.path.join(self.fx.project, "docs"), "--walk-from", self.fx.root)
+        b = self.run_cli("gate", "--for", doc, "--walk-from", self.fx.root, env={"CLAUDE_PROJECT_DIR": os.path.join(self.fx.project, "docs")})
+        self.assertEqual(a.returncode, 0, a.stderr)
+        self.assertEqual(json.loads(a.stdout)["applies"], True)   # nearest project config beats the launch dir
+        self.assertEqual(json.loads(a.stdout)["applies"], json.loads(b.stdout)["applies"])
+        r = self.run_cli("explain", "--brief", "--for", doc, "--launch-dir", "", "--walk-from", self.fx.root)
+        self.assertEqual(r.returncode, 0, r.stderr)               # an empty --launch-dir is "not given"
+        self.assertIn("nearest .claude/respeak/config.yaml", r.stdout)

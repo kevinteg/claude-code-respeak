@@ -7,16 +7,17 @@ description: >
   "what would I tell the team", "translate this for the docs".
 argument-hint: "[eli5|bluf|technical] [text or file path — defaults to this session's latest outcome]"
 arguments: [mode, source]
+allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/scripts/respeak-config.sh *) Bash(${CLAUDE_PLUGIN_ROOT}/scripts/respeak-py.sh *)
 ---
 
 # respeak — render a narrative
 
-Effective configuration for the working directory, and the layer that set
-each override (plugin defaults, `~/.claude/respeak/config.yaml`, the
-project's `.claude/respeak/config.yaml` and its `scopes:`, any folder
-`.respeak.yaml`; nearest wins. The contract is `docs/config-layers.md`):
+Effective configuration for the working directory (plugin defaults,
+`~/.claude/respeak/config.yaml`, the project's `.claude/respeak/config.yaml`
+and its `scopes:`, any folder `.respeak.yaml`; nearest wins. The contract
+is `docs/config-layers.md`):
 
-!`bash "${CLAUDE_PLUGIN_ROOT}/scripts/respeak-config.sh" explain 2>&1 | head -60`
+!`${CLAUDE_PLUGIN_ROOT}/scripts/respeak-config.sh explain --brief --launch-dir ${CLAUDE_PROJECT_DIR}`
 
 Steps:
 
@@ -33,10 +34,12 @@ Steps:
 3. Resolve the configuration for the target. The target is the source file
    when `$source` is a file path (a folder's `.respeak.yaml` governs the
    files in it), otherwise the working directory. Run:
-   `bash "${CLAUDE_PLUGIN_ROOT}/scripts/respeak-config.sh" resolve --for <target> [--mode <mode>] --format yaml > <tmpdir>/respeak-config.yaml`
+   `${CLAUDE_PLUGIN_ROOT}/scripts/respeak-config.sh resolve --for <target> --launch-dir ${CLAUDE_PROJECT_DIR} [--mode <mode>] --format yaml > <tmpdir>/respeak-config.yaml`
    Add `--profile <name>` when the user named an audience that matches a
-   profile listed under `profiles:` (for example "for the exec team" →
-   `exec`, or a household profile the user defined at user level).
+   profile the config defines under `profiles:` (for example "for the exec
+   team" → `exec`, or a household profile the user defined at user level);
+   run `${CLAUDE_PLUGIN_ROOT}/scripts/respeak-config.sh explain --for <target> --launch-dir ${CLAUDE_PROJECT_DIR}`
+   when you need the full layer-by-layer listing.
 4. Delegate to the `respeak:respeak` agent with: the mode, the contents of
    that resolved config file verbatim under a heading
    `Resolved respeak configuration`, the source material, and the working
@@ -44,7 +47,7 @@ Steps:
    gates and lexicon bookkeeping, and an inline paraphrase bypasses both.
 5. Verify before relaying — do not trust the agent's narrative on its own
    report. Write it to a temp file, then run:
-   `bash "${CLAUDE_PLUGIN_ROOT}/scripts/respeak-py.sh" respeak-measure.py <tmpfile> --fail-on error --config <tmpdir>/respeak-config.yaml`
+   `${CLAUDE_PLUGIN_ROOT}/scripts/respeak-py.sh respeak-measure.py <tmpfile> --fail-on error --config <tmpdir>/respeak-config.yaml`
    (the resolved config carries every layer's `gate.allow` and
    `style.budgets`, so a project's or folder's exceptions apply).
    - Exit 0: relay the narrative verbatim — do not re-wrap, soften, or

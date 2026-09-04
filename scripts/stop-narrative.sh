@@ -7,29 +7,33 @@
 # (docs/config-layers.md), resolved for the hook's cwd: the install-time
 # userConfig (CLAUDE_PLUGIN_OPTION_AUTO_NARRATIVE), ~/.claude/respeak/
 # config.yaml, the project's .claude/respeak/config.yaml, or a .respeak.yaml
-# in the cwd's folder chain can each turn it on; nearest wins. If no
-# PyYAML-capable python exists, only the userConfig env vars are consulted.
+# in the cwd's folder chain can each turn it on; nearest wins. When the
+# resolver cannot run (no PyYAML-capable python), the install-time knob
+# alone decides — the one layer that needs no YAML — so the hook still
+# honours `claude plugin install --config auto_narrative=true`.
 set -u
 
 HOOK_JSON="$(cat)"
 
 script_dir="$(cd "$(dirname "$0")" && pwd)"
-RESPEAK_PY=""
+RESPEAK_PY=""; RESPEAK_PY_STD=""
 [ -f "$script_dir/respeak-python.sh" ] && . "$script_dir/respeak-python.sh"
+pyj="${RESPEAK_PY:-$RESPEAK_PY_STD}"
+[ -n "$pyj" ] || exit 0
 
-cwd="$(printf '%s' "$HOOK_JSON" | python3 -c '
+cwd="$(printf '%s' "$HOOK_JSON" | "$pyj" -c '
 import json, sys
 try:
     print(json.load(sys.stdin).get("cwd") or "")
 except Exception:
     print("")
 ' 2>/dev/null)"
-project="${CLAUDE_PROJECT_DIR:-${cwd:-$(pwd)}}"
 
 cfg_json=""
 if [ -n "$RESPEAK_PY" ] && [ -f "$script_dir/respeak-config.py" ]; then
+  # no --project: discovery from cwd, then $CLAUDE_PROJECT_DIR (exported to hooks)
   cfg_json="$("$RESPEAK_PY" "$script_dir/respeak-config.py" resolve \
-              --project "$project" --for "${cwd:-$project}" --format json 2>/dev/null)" || cfg_json=""
+              --for "${cwd:-$(pwd)}" --format json 2>/dev/null)" || cfg_json=""
 fi
 
 # The program goes in via -c, never via stdin: `python3 - <<'PY'` would
@@ -73,5 +77,5 @@ ctx = ("Respeak auto-narrative is enabled (mode: %s). This turn crossed a "
 print(json.dumps({"hookSpecificOutput": {"hookEventName": "Stop", "additionalContext": ctx}}))
 PY
 )
-printf '%s' "$HOOK_JSON" | python3 -c "$PY_SCRIPT" "$cfg_json" 2>/dev/null || exit 0
+printf '%s' "$HOOK_JSON" | "$pyj" -c "$PY_SCRIPT" "$cfg_json" 2>/dev/null || exit 0
 exit 0

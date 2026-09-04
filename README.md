@@ -108,6 +108,7 @@ ships a format-aware verifier and a test suite for it:
 python3 scripts/respeak-verify-edit.py <before> <after>   # exit 0 = safe
 python3 -m unittest discover tests                        # edit-safety, measure/gate, config layers
 bash tests/test_gate_hook.sh                                # gate hook end-to-end (bash, not unittest)
+bash tests/test_hooks.sh                                    # Stop hook + statusline end-to-end
 ```
 
 | Format | An edit may change | Invariant (checked) |
@@ -143,9 +144,11 @@ into every page rendered from it. This section closes both gaps.
 
 **The gate hook** (`scripts/respeak-gate.sh`) is a `PostToolUse` hook on
 `Write|Edit` (`hooks/hooks.json`) that runs `respeak-measure.py` against any
-`.md` file a tool call just wrote, and blocks the tool result (exit 2,
-report on stderr — Claude Code feeds that back to the model as a correctable
-error) on a failing report. It is **opt-in per project**: it does nothing
+Markdown file (`.md`, `.markdown`, `.mdx`) a tool call just wrote, and blocks
+the tool result (exit 2, report on stderr — Claude Code feeds that back to
+the model as a correctable error) on a failing report. Setup problems (no
+PyYAML, a corrupt corpus, an unreadable file) never block: the hook fails
+open, and `RESPEAK_GATE_TRACE=1` says so on stderr. It is **opt-in per project**: it does nothing
 unless the project layer (`<project>/.claude/respeak/config.yaml` or its
 gitignored `config.local.yaml`) sets `gate.enabled: true`; a user-level
 file or a folder `.respeak.yaml` cannot turn it on, though they can soften
@@ -213,12 +216,11 @@ scripts/respeak-render.sh --mode technical \
   --max-rounds 2 --budget-usd 1.50
 ```
 
-**CI usage** — gate a whole tree after a render step, failing the build on
-any error-severity hit:
+**CI usage** — the hook is also a command. Gate a whole tree after a render
+step with exactly the layers and verdict an editor session would see:
 
 ```sh
-python3 scripts/respeak-measure.py wiki/**/*.md --fail-on error \
-  --config .claude/respeak/config.yaml || exit 1
+for f in wiki/**/*.md; do bash scripts/respeak-gate.sh --file "$f" || exit 1; done
 ```
 
 **Upgrading**: the installed copy under `~/.claude/plugins/cache` is a
@@ -228,10 +230,12 @@ or manifest), run `claude plugin update respeak` (or reinstall) so the
 
 ## Install
 
-Prerequisites: Claude Code ≥ 2.1, bash, and a python3 with PyYAML. The
-scripts pick the first interpreter that can import it (`python3`,
-`/usr/bin/python3`, the brew pythons; override with `RESPEAK_PYTHON`), so a
-pyenv shim without PyYAML on PATH does not silently disable the hooks. The translator runs as a Sonnet subagent in its own context
+Prerequisites: Claude Code ≥ 2.1.196 (for `${CLAUDE_PROJECT_DIR}` in
+skills; older 2.1 works with discovery alone), bash, and a python3 with
+PyYAML. The scripts pick the first interpreter that can import it
+(`python3`, `/usr/bin/python3`, the brew pythons; override with
+`RESPEAK_PYTHON`) and cache the answer per `PATH`, so a pyenv shim without
+PyYAML on PATH neither disables the hooks nor taxes every call. The translator runs as a Sonnet subagent in its own context
 window, so each translation costs one subagent invocation proportional to the
 source material — the swarm's context never pays for wordsmithing.
 
@@ -334,7 +338,7 @@ layer nearest the target wins.
 | user | `~/.claude/respeak/config.yaml` | your default across every repo, plus profiles you define |
 | project | `.claude/respeak/config.yaml` | the team's baseline; the only place the gate turns on |
 | project local | `.claude/respeak/config.local.yaml` (gitignored) | your personal override for one repo |
-| scopes | `scopes:` entries with `paths:` globs inside any file above | central, path-keyed overrides, like `.claude/rules` |
+| scopes | `scopes:` entries with `paths:` globs inside any file above, applied right after that file | central, path-keyed overrides, like `.claude/rules` |
 | folder | `.respeak.yaml` in any folder from the project root down | a folder's own audience |
 | invocation | `/respeak:respeak bluf`, `--mode`, `--set` | this one render |
 
@@ -352,7 +356,13 @@ choose which files it covers, or touch shorthand governance: those keys are
 project-only and are dropped with a warning anywhere else, so a stray file
 in a subfolder cannot switch enforcement on or off for a repo.
 
-See what applies to a file and which layer decided each key:
+Every consumer, the gate hook included, finds the project root the same
+way: the nearest `.claude/respeak/config.yaml` above the file (a package's
+own in a monorepo, a parent directory's for every repo below it), then the
+directory Claude Code was launched in, then the nearest `.git`. The user
+file under `~/.claude` is never mistaken for a project file. See what
+applies to a file, which rule chose the root, and which layer decided
+each key:
 
 ```sh
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/respeak-config.sh" explain --for docs/exec/q3.md
@@ -376,7 +386,7 @@ full diff before trusting it, and the verifier exists so that reading is
 cheap. Treat translated narratives the way you treat any report: spot-check
 against the evidence it cites.
 
-## Honest status (v0.4)
+## Honest status (v0.4.1)
 
 Working today: the translator and modes, the style gates and corpus, the
 buried-lede test with structure advisories and the data-rendering contract,
@@ -390,7 +400,12 @@ the optional milestone-narrative Stop hook (off by default), and the
 layered configuration resolver (`respeak-config.sh resolve|explain|gate|
 validate`) that every hook, the skill, the statusline, and the headless
 renderer now read through, including audience profiles, which the
-resolver expands.
+resolver expands. v0.4.1 is the result of an adversarial review of v0.4.0
+(six lenses, two skeptics per finding): one project-root rule for every
+consumer, the user file never promoted to project grade, symlink-safe path
+comparison, fail-open on setup errors, a Markdown-only gate contract, and
+`allowed-tools` on the skills so the preamble runs under default
+permissions.
 
 Declared in config but not yet enforced by tooling: the lexicon entry cap,
 edit-distance check, usage-based expiry, auto-ratification gate, and
@@ -414,7 +429,8 @@ scripts/                   config resolver (respeak-config.py + .sh), measure, v
                            gate hook, headless render, statusline, lexicon digest renderer,
                            PyYAML-aware interpreter finder (respeak-python.sh, respeak-py.sh)
 tests/                     edit-safety + measure/gate + config-layer suites (markdown, code,
-                           py, html, yaml, json, bash gate-hook end-to-end)
+                           py, html, yaml, json), bash end-to-end suites for the gate hook,
+                           the Stop hook, and the statusline
 config/respeak.config.yaml the influence surface (plugin defaults, lowest layer)
 config/project-seed.yaml   the sparse file /respeak:init drops into a project
 corpus/                    banned phrases, replacements, lexicon, style maps
