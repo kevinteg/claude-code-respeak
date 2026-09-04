@@ -1,0 +1,20 @@
+# A sample USER-level file: ~/.claude/respeak/config.yaml (honours $CLAUDE_CONFIG_DIR).
+# Applies to every project on this machine unless a nearer layer overrides it.
+narrative:
+  default_mode: bluf        # this person reads BLUF unless a repo says otherwise
+  tech_level: 2
+profiles:
+  household:                # a profile every repo on this machine can name
+    tech_level: 2
+    default_mode: eli5
+    lexicon_access: forbidden
+    reading_level_grade: 8
+    address: you
+scopes:
+  # user-level scope paths must be absolute or ~-prefixed
+  - paths: ["~/code/legal-records/**"]
+    narrative:
+      tone: { formality: 0.9, directness: 1.0 }
+gate:
+  allow: ["spine"]          # allow lists append across layers; `enabled` here
+                            # would be ignored (project-only), see notes/.respeak.yaml

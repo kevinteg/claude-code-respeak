@@ -1,0 +1,17 @@
+# PROJECT layer (git-tracked): .claude/respeak/config.yaml
+version: 3
+narrative:
+  default_mode: technical   # this repo's baseline: engineers read it
+  tech_level: 3
+gate:
+  enabled: true
+  include: ["**/*.md"]
+  exclude: ["notes/**"]
+  fail_on: error
+  allow: ["load-bearing"]
+scopes:                     # central, path-scoped; later entries win
+  - paths: ["docs/**"]
+    narrative: { profile: peer-engineer }
+  - paths: ["docs/exec/**", "reports/**"]
+    narrative: { profile: exec }
+    gate: { fail_on: warn }

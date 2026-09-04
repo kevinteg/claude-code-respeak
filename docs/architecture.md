@@ -105,6 +105,8 @@ optimization:
 
 1. **Narrative knobs** (`narrative.*`, `modes.*`): tone axes and tech_level
    change how the human lane reads. They never touch the machine lane.
+   These are the keys any layer may set, down to a single folder
+   (resolved question 6).
 2. **Shorthand governance** (`shorthand.*`): ratification mode, legibility
    floor, and the never-compress list bound how far the machine lane may
    drift. The human changes a number; the swarm's dialect follows.
@@ -145,6 +147,25 @@ No agent both proposes and ratifies a convention.
    the two lanes; guardrails: `register_marker: required`, never_compress and
    reserved metawords stay verbatim, and author-profile traffic stays in the
    monthly fresh-decoder audit sample.
+
+6. **Where configuration lives → layered, nearest to the target wins**
+   (v0.4; contract in `docs/config-layers.md`). The influence surface above
+   was one file per project, which made "different tones for different
+   folders" and "my default across every repo" both impossible. The
+   resolver (`scripts/respeak-config.py`) now merges, lowest first: plugin
+   defaults, the plugin's install-time userConfig, `~/.claude/respeak/
+   config.yaml`, ancestor `.respeak.yaml` files above the project, the
+   project's `.claude/respeak/config.yaml` and gitignored `config.local.yaml`,
+   `scopes:` entries keyed by `paths:` globs (the `.claude/rules` idiom),
+   folder `.respeak.yaml` files from the project root down, `$RESPEAK_CONFIG`
+   files, and the invocation's own flags. Two invariants keep the influence
+   model intact: governance keys (`gate.enabled`, `gate.include/exclude`,
+   `shorthand.*`) are project-only and dropped with a warning anywhere else,
+   so no folder or user file can switch enforcement or ratification; and
+   every consumer (gate hook, Stop hook, statusline, skill, headless render)
+   reads through the one resolver, so `explain` shows the truth each of
+   them saw. `narrative.profile` is expanded by the resolver, which wires
+   the audience profiles into the skill surface for the first time.
 
 ## Refinements the research forced (v0 → v1)
 

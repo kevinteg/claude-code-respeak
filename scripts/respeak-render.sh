@@ -15,8 +15,14 @@
 #      frontmatter and substitutes ${CLAUDE_PLUGIN_ROOT} (unset outside a
 #      Claude Code plugin session) so the agent's own "resolve config/corpus
 #      here" instructions resolve to real paths.
+#   1b. Resolves the layered configuration for --out (docs/config-layers.md):
+#      user file, project file + scopes, and any .respeak.yaml in the folders
+#      above the output file, with --mode applied on top. The resolved YAML
+#      goes into the prompt as the agent's configuration (so a folder's tone
+#      applies headlessly too) and into every measure call as --config.
 #   2. Runs claude-api-agent non-interactively, piping a prompt (mode +
-#      optional contract notes + the source material) on stdin.
+#      resolved config + optional contract notes + the source material) on
+#      stdin.
 #   3. Extracts the `.result` string from the agent's --output-format json
 #      output, strips any preamble before the first real content line (a
 #      leading `---` front-matter fence or a `#` heading) — belt-and-suspenders
@@ -37,6 +43,7 @@ set -u
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+. "$SCRIPT_DIR/respeak-python.sh"
 
 MODE=""
 SOURCE=""
@@ -62,6 +69,11 @@ if [ -z "$MODE" ] || [ -z "$SOURCE" ] || [ -z "$OUT" ]; then
   exit 2
 fi
 
+[ -n "$RESPEAK_PY" ] || {
+  echo "respeak-render: no python3 with PyYAML found — the resolver and the style gate need it (set RESPEAK_PYTHON=/path/to/python3 or install PyYAML)." >&2
+  exit 2
+}
+
 command -v claude-api-agent >/dev/null 2>&1 || {
   echo "respeak-render: claude-api-agent not found on PATH — install the headless Claude Agent SDK wrapper this script depends on before using the API lane (see docs/architecture.md for the entry-points table)." >&2
   exit 2
@@ -82,7 +94,7 @@ trap 'rm -rf "$TMPDIR_R"' EXIT
 # --- 1. system prompt: agents/respeak.md, frontmatter stripped, ${CLAUDE_PLUGIN_ROOT}
 #        substituted so the agent's path instructions resolve outside a session ---
 SYSTEM_PROMPT="$TMPDIR_R/system-prompt.md"
-python3 - "$AGENT_MD" "$PLUGIN_ROOT" > "$SYSTEM_PROMPT" <<'PY'
+"$RESPEAK_PY" - "$AGENT_MD" "$PLUGIN_ROOT" > "$SYSTEM_PROMPT" <<'PY'
 import re, sys
 path, plugin_root = sys.argv[1], sys.argv[2]
 text = open(path).read()
@@ -91,12 +103,28 @@ text = text.replace("${CLAUDE_PLUGIN_ROOT}", plugin_root)
 sys.stdout.write(text)
 PY
 
-# --- 2. prompt: mode + optional contract notes + source material ---
+# --- 1b. resolved configuration for the output path (layered; --mode on top) ---
+RESOLVED="$TMPDIR_R/resolved-config.yaml"
+if ! CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$RESPEAK_PY" "$SCRIPT_DIR/respeak-config.py" resolve \
+      --for "$OUT" --mode "$MODE" --format yaml > "$RESOLVED" 2> "$TMPDIR_R/resolve.err"; then
+  echo "respeak-render: could not resolve the layered config for $OUT; rendering with the agent's own file reads" >&2
+  cat "$TMPDIR_R/resolve.err" >&2
+  RESOLVED=""
+fi
+
+# --- 2. prompt: mode + resolved config + optional contract notes + source material ---
 prompt_body() {
-  # writes the base prompt (mode + contract + source) to stdout
+  # writes the base prompt (mode + config + contract + source) to stdout
   echo "Render the following source material as a respeak '$MODE' narrative."
   echo "Write only the rendered narrative, per your output contract — no preamble."
   echo
+  if [ -n "$RESOLVED" ] && [ -s "$RESOLVED" ]; then
+    echo "Resolved respeak configuration for this render (every layer already merged; use these values instead of reading config files):"
+    echo '```yaml'
+    cat "$RESOLVED"
+    echo '```'
+    echo
+  fi
   if [ -n "$CONTRACT" ] && [ -f "$CONTRACT" ]; then
     echo "Additional contract notes for this render:"
     cat "$CONTRACT"
@@ -133,7 +161,7 @@ run_agent() {
 
 extract_and_write() {
   # $1 = raw --output-format json file, $2 = destination narrative file
-  python3 - "$1" "$2" <<'PY'
+  "$RESPEAK_PY" - "$1" "$2" <<'PY'
 import json, re, sys
 src, dest = sys.argv[1], sys.argv[2]
 raw = open(src).read()
@@ -172,7 +200,11 @@ while [ "$round" -le "$MAX_ROUNDS" ]; do
 
   extract_and_write "$raw_out" "$OUT" || exit 2
 
-  gate_report="$(python3 "$MEASURE" "$OUT" --fail-on error 2>&1)"
+  if [ -n "$RESOLVED" ] && [ -s "$RESOLVED" ]; then
+    gate_report="$("$RESPEAK_PY" "$MEASURE" "$OUT" --fail-on error --config "$RESOLVED" 2>&1)"
+  else
+    gate_report="$("$RESPEAK_PY" "$MEASURE" "$OUT" --fail-on error 2>&1)"
+  fi
   gate_status=$?
   if [ "$gate_status" -eq 0 ]; then
     final_status=0

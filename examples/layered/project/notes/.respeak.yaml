@@ -1,0 +1,6 @@
+# FOLDER layer for scratch notes. The gate key is IGNORED (project-only);
+# the profile applies.
+narrative:
+  profile: author
+gate:
+  enabled: false

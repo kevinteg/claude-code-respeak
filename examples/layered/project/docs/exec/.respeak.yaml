@@ -1,0 +1,5 @@
+# FOLDER layer: applies to docs/exec/ and everything under it.
+# The project's scopes already make this folder `exec`; this file adds a
+# formal register on top and wins over config.local.yaml because it is nearer.
+narrative:
+  tone: { formality: 0.8 }

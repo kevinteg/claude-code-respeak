@@ -1,0 +1,29 @@
+# respeak project configuration, seeded by /respeak:init. Edit freely.
+#
+# This file is one layer of a stack (docs/config-layers.md): it overrides the
+# plugin defaults and ~/.claude/respeak/config.yaml, and is overridden by
+# .claude/respeak/config.local.yaml (personal, gitignored), by the `scopes:`
+# below, and by any .respeak.yaml in a subfolder. State only what this
+# project changes: every key written here pins that value for the whole
+# project and hides the user-level setting. See the effective stack with
+#   bash "${CLAUDE_PLUGIN_ROOT}/scripts/respeak-config.sh" explain
+version: 3
+
+# narrative:
+#   profile: peer-engineer   # exec | peer-engineer | author | one you define under profiles:
+#   default_mode: technical  # eli5 | bluf | technical
+#   tech_level: 3
+
+gate:
+  enabled: false           # the PostToolUse style gate is opt-in per project
+  include: ["**/*.md"]
+  exclude: []
+  fail_on: error           # none | warn | error
+  allow: []
+
+# scopes:                  # path-scoped overrides; later entries win
+#   - paths: ["docs/**"]
+#     narrative: { profile: peer-engineer }
+#   - paths: ["docs/exec/**", "reports/**"]
+#     narrative: { profile: exec }
+#     gate: { fail_on: warn }

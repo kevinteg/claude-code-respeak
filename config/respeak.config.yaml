@@ -3,9 +3,19 @@
 # Contract: every parameter maps to observable writing behavior
 # (corpus/style/tone-mapping.md); a knob with no behavioral mapping is
 # decoration and gets removed.
+#
+# This file is the LOWEST layer of a layered configuration (docs/config-layers.md).
+# Above it, nearest to the target wins: the plugin's userConfig, the user's
+# ~/.claude/respeak/config.yaml, the project's .claude/respeak/config.yaml
+# (+ config.local.yaml and its `scopes:`), then any .respeak.yaml in the
+# folders between the project root and the file being written or rendered.
+# Resolve what applies somewhere with:
+#   bash scripts/respeak-config.sh explain --for docs/exec/q3.md
+# Keys marked "project-only" below are ignored when a user or folder layer
+# sets them.
 
-version: 2
-schema: docs/respeak.config.schema.json # not yet written; shape validation planned
+version: 3
+schema: docs/respeak.config.schema.json # not yet written; `respeak-config.sh validate` checks shape + policy
 
 editorial_pass:
   # Governs in-place edits to existing documents (as opposed to translation,
@@ -43,8 +53,17 @@ data:
   sort_by: decision_relevance   # decision_relevance | magnitude | source_order
 
 narrative:
+  profile: peer-engineer  # a name from `profiles:` below. Sugar: the profile's
+                          # fields (tech_level, default_mode, lexicon_access,
+                          # reading_level_grade, address) are filled in UNDER
+                          # any explicit key written in the same file/layer, so
+                          # a folder file saying `profile: exec` plus
+                          # `tech_level: 2` gets exec's mode with tech_level 2.
   default_mode: technical # eli5 | bluf | technical
   mode_select: fixed      # fixed | compass (Diátaxis 2-question classifier, opt-in)
+  auto_narrative: false   # Stop hook nudges a one-paragraph narrative after
+                          # milestone turns (scripts/stop-narrative.sh); also
+                          # settable at install: --config auto_narrative=true
   context_default: routine # per-invocation: incident | routine | celebration
                            # (Mailchimp: tone conditions on reader state;
                            #  incident forces plain language + decompression)
@@ -198,18 +217,21 @@ gate:
   # seeds that file from this one, with the gate left off; a human turns it
   # on once the project trusts its excludes/allow list). This file is never
   # the one the hook reads for enforcement decisions on someone else's repo.
-  enabled: false
-  include: ["**/*.md"] # globs, matched relative to the project dir
-  exclude: []           # e.g. ["research/**", "**/CHANGELOG.md"]
+  enabled: false        # project-only: a user or folder layer cannot turn it on
+  include: ["**/*.md"] # project-only. globs, matched relative to the project dir
+  exclude: []           # project-only. e.g. ["research/**"]; appends across layers
   fail_on: error         # none | warn | error — passed straight to
-                        # respeak-measure.py --fail-on
-  allow: []              # regexes; a corpus rule whose pattern/phrase matches
+                        # respeak-measure.py --fail-on. Any layer may set it,
+                        # so a folder can soften to `warn` for its own files.
+  allow: []              # regexes; appends across layers (a user-level allow
+                        # for a domain vocabulary is legitimate). A corpus
+                        # rule whose pattern/phrase matches
                         # one of these is skipped for this project only (the
                         # escape hatch for a domain term the shared corpus
                         # exceptions: don't cover yet — file the gap rather
                         # than leaving this as the permanent fix)
 
-shorthand:
+shorthand: # project-only: governance never varies by folder or by user
   lexicon: corpus/lexicon.yaml
   proposal_dir: corpus/proposals/
   ratification: human # human | auto
@@ -236,3 +258,15 @@ shorthand:
     - { class: ask-owner-and-deadline, failure_mode: BLUF ask stripped in compression }
     - { class: identifiers-novel-decisions-negations, failure_mode: high-surprisal content is where short encodings become unrecoverable (Piantadosi 2011) }
     - { class: reserved-metawords, failure_mode: repair channel must never be repurposed }
+
+scopes: [] # path-scoped overrides declared centrally, the analog of a
+           # .claude/rules/*.md `paths:` frontmatter. Each entry needs `paths`
+           # (globs relative to the directory that owns this file; `**` = any
+           # depth, a trailing `/` = the folder and everything in it) plus the
+           # keys it overrides; later entries win. A .respeak.yaml inside a
+           # matching folder wins over all of them (it is nearer). Example:
+           #   - paths: ["docs/**"]
+           #     narrative: { profile: peer-engineer }
+           #   - paths: ["docs/exec/**", "reports/**"]
+           #     narrative: { profile: exec }
+           #     gate: { fail_on: warn }

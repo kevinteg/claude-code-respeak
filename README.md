@@ -106,7 +106,7 @@ ships a format-aware verifier and a test suite for it:
 
 ```sh
 python3 scripts/respeak-verify-edit.py <before> <after>   # exit 0 = safe
-python3 -m unittest discover tests                        # 45 cases (edit-safety + measure/gate)
+python3 -m unittest discover tests                        # edit-safety, measure/gate, config layers
 bash tests/test_gate_hook.sh                                # gate hook end-to-end (bash, not unittest)
 ```
 
@@ -146,8 +146,11 @@ into every page rendered from it. This section closes both gaps.
 `.md` file a tool call just wrote, and blocks the tool result (exit 2,
 report on stderr — Claude Code feeds that back to the model as a correctable
 error) on a failing report. It is **opt-in per project**: it does nothing
-unless `<project>/.claude/respeak/config.yaml` exists and sets `gate.enabled:
-true`. Configure it there:
+unless the project layer (`<project>/.claude/respeak/config.yaml` or its
+gitignored `config.local.yaml`) sets `gate.enabled: true`; a user-level
+file or a folder `.respeak.yaml` cannot turn it on, though they can soften
+`fail_on` and add `allow` regexes for their own files (see "Where the tone
+comes from"). Configure it there:
 
 ```yaml
 gate:
@@ -225,8 +228,10 @@ or manifest), run `claude plugin update respeak` (or reinstall) so the
 
 ## Install
 
-Prerequisites: Claude Code ≥ 2.1, bash, python3; the measure/verify scripts
-want PyYAML. The translator runs as a Sonnet subagent in its own context
+Prerequisites: Claude Code ≥ 2.1, bash, and a python3 with PyYAML. The
+scripts pick the first interpreter that can import it (`python3`,
+`/usr/bin/python3`, the brew pythons; override with `RESPEAK_PYTHON`), so a
+pyenv shim without PyYAML on PATH does not silently disable the hooks. The translator runs as a Sonnet subagent in its own context
 window, so each translation costs one subagent invocation proportional to the
 source material — the swarm's context never pays for wordsmithing.
 
@@ -251,11 +256,13 @@ Then set up each project once:
 /respeak:init
 ```
 
-This creates `.claude/respeak/` (project-local config, lexicon, proposals),
-generates the ratified-lexicon digest, and offers — never forces — two
-integrations: the one-line CLAUDE.md import that makes every session load the
-digest, and a statusline segment showing `mode · lexicon version · pending
-proposals`.
+This creates `.claude/respeak/` (a sparse project config that states only
+what the project changes, the lexicon, proposals), generates the
+ratified-lexicon digest, shows the effective configuration stack, and
+offers — never forces — three integrations: gitignore entries for the
+personal `*.local.yaml` overrides, the one-line CLAUDE.md import that makes
+every session load the digest, and a statusline segment showing
+`mode/tech_level [@deciding file] · lexicon version · pending proposals`.
 
 ## Use
 
@@ -282,7 +289,8 @@ normal code review.
 ## The knobs
 
 Everything a human should be able to turn lives in
-[`config/respeak.config.yaml`](config/respeak.config.yaml); tone axes and
+[`config/respeak.config.yaml`](config/respeak.config.yaml), the plugin
+defaults that every nearer layer overrides (next section); tone axes and
 tech levels map to the behavior tables in
 [`corpus/style/tone-mapping.md`](corpus/style/tone-mapping.md).
 
@@ -310,6 +318,51 @@ tech levels map to the behavior tables in
   before detail rows; outliers get named in a sentence above the table. eli5
   is the exception: it states the one comparison the reader cares about.
 
+## Where the tone comes from
+
+Tone depends on where the writing lives. An executive brief under
+`docs/exec/` and an API note under `docs/api/` in the same repo have
+different readers, and one person's default across every repo differs from
+a team's default for one of them. Respeak resolves its configuration the
+way Claude Code resolves settings and CLAUDE.md files: from layers, and the
+layer nearest the target wins.
+
+| Layer | File | Typical use |
+| --- | --- | --- |
+| plugin defaults | `config/respeak.config.yaml` in the plugin | the shipped contract |
+| plugin userConfig | `claude plugin install respeak --config default_mode=bluf` | a quick personal default |
+| user | `~/.claude/respeak/config.yaml` | your default across every repo, plus profiles you define |
+| project | `.claude/respeak/config.yaml` | the team's baseline; the only place the gate turns on |
+| project local | `.claude/respeak/config.local.yaml` (gitignored) | your personal override for one repo |
+| scopes | `scopes:` entries with `paths:` globs inside any file above | central, path-keyed overrides, like `.claude/rules` |
+| folder | `.respeak.yaml` in any folder from the project root down | a folder's own audience |
+| invocation | `/respeak:respeak bluf`, `--mode`, `--set` | this one render |
+
+A folder file is three lines:
+
+```yaml
+# docs/exec/.respeak.yaml
+narrative:
+  profile: exec        # bluf, tech_level 1, no shorthand
+```
+
+Folder and user files may set tone (`narrative`, `modes`, `style` budgets,
+`profiles`, `gate.fail_on`, `gate.allow`). They may not enable the gate,
+choose which files it covers, or touch shorthand governance: those keys are
+project-only and are dropped with a warning anywhere else, so a stray file
+in a subfolder cannot switch enforcement on or off for a repo.
+
+See what applies to a file and which layer decided each key:
+
+```sh
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/respeak-config.sh" explain --for docs/exec/q3.md
+```
+
+The contract, the merge rules, and worked examples are in
+[`docs/config-layers.md`](docs/config-layers.md); a runnable example tree
+with its outcomes pinned by the test suite is in
+[`examples/layered/`](examples/layered/).
+
 ## What can go wrong
 
 The design's own risk register
@@ -323,21 +376,25 @@ full diff before trusting it, and the verifier exists so that reading is
 cheap. Treat translated narratives the way you treat any report: spot-check
 against the evidence it cites.
 
-## Honest status (v0.2)
+## Honest status (v0.4)
 
 Working today: the translator and modes, the style gates and corpus, the
 buried-lede test with structure advisories and the data-rendering contract,
 the lexicon proposal flow, `/respeak:init`, the session-start lexicon hook,
 the statusline script, the measure and verify tools with their test suite
-(45 cases plus a bash end-to-end suite for the gate hook), the opt-in
-PostToolUse enforcement gate and its `--fail-on`/budgets/`gate.allow`
-knobs, the verify-then-relay loop in the `respeak:respeak` skill and agent,
-the headless `respeak-render.sh` wrapper for the API lane, and the optional
-milestone-narrative Stop hook (off by default).
+(a bash end-to-end suite for the gate hook alongside the unittest cases),
+the opt-in PostToolUse enforcement gate and its `--fail-on`/budgets/
+`gate.allow` knobs, the verify-then-relay loop in the `respeak:respeak`
+skill and agent, the headless `respeak-render.sh` wrapper for the API lane,
+the optional milestone-narrative Stop hook (off by default), and the
+layered configuration resolver (`respeak-config.sh resolve|explain|gate|
+validate`) that every hook, the skill, the statusline, and the headless
+renderer now read through, including audience profiles, which the
+resolver expands.
 
 Declared in config but not yet enforced by tooling: the lexicon entry cap,
-edit-distance check, usage-based expiry, auto-ratification gate, fresh-decoder
-audits, and audience-profile wiring in the skill surface. The config is the
+edit-distance check, usage-based expiry, auto-ratification gate, and
+fresh-decoder audits. The config is the
 contract. The enforcement scripts are the next milestone, alongside a
 `respeak compile` step that emits the corpus as a [Vale](https://vale.sh/)
 style package for CI (the corpus is already RE2-safe for it) and a
@@ -353,13 +410,17 @@ skills/respeak/            /respeak:respeak — the translation entry point
 skills/init/               /respeak:init — per-project setup
 hooks/hooks.json           session-start lexicon status; optional milestone narrative;
                            opt-in PostToolUse style gate on Write/Edit
-scripts/                   measure, verify-edit, gate hook, headless render, statusline,
-                           lexicon digest renderer
-tests/                     edit-safety + measure/gate enforcement suite (markdown, code,
+scripts/                   config resolver (respeak-config.py + .sh), measure, verify-edit,
+                           gate hook, headless render, statusline, lexicon digest renderer,
+                           PyYAML-aware interpreter finder (respeak-python.sh, respeak-py.sh)
+tests/                     edit-safety + measure/gate + config-layer suites (markdown, code,
                            py, html, yaml, json, bash gate-hook end-to-end)
-config/respeak.config.yaml the influence surface (v1)
+config/respeak.config.yaml the influence surface (plugin defaults, lowest layer)
+config/project-seed.yaml   the sparse file /respeak:init drops into a project
 corpus/                    banned phrases, replacements, lexicon, style maps
 docs/architecture.md       the design, with resolved questions
+docs/config-layers.md      the layered configuration contract, with examples
+examples/layered/          a runnable project tree the config tests pin
 research/                  11 source studies, 4 synthesis passes, the pilot artifacts
 ```
 

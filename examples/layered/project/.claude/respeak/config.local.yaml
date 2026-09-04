@@ -1,0 +1,4 @@
+# PROJECT-LOCAL layer (gitignored, personal): this developer wants a more
+# conversational register in this repo without changing the shared file.
+narrative:
+  tone: { formality: 0.2 }

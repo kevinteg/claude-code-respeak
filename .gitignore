@@ -3,3 +3,9 @@ fanout-runs/
 *.pyc
 __pycache__/
 .DS_Store
+
+# respeak personal config overrides (docs/config-layers.md)
+.claude/respeak/config.local.yaml
+.respeak.local.yaml
+!examples/layered/**/config.local.yaml
+!examples/layered/**/.respeak.local.yaml

@@ -1,23 +1,32 @@
 {
   "name": "respeak",
   "displayName": "Respeak",
-  "description": "Two-lane communication for agent swarms: an efficient machine-facing shorthand lexicon for long-running sessions, plus a translator agent that renders human-facing narratives (ELI5, BLUF, technical) tuned by exposed tone and tech-level configuration.",
-  "version": "0.3.0",
+  "description": "Two-lane communication for agent swarms: an efficient machine-facing shorthand lexicon for long-running sessions, plus a translator agent that renders human-facing narratives (ELI5, BLUF, technical) tuned by a layered tone configuration: plugin defaults, user (~/.claude/respeak), project (.claude/respeak), and per-folder .respeak.yaml files, nearest wins.",
+  "version": "0.4.0",
   "author": {
     "name": "Kevin Tegtmeier"
   },
-  "keywords": ["communication", "narrative", "translation", "token-optimization", "shorthand", "style"],
+  "keywords": [
+    "communication",
+    "narrative",
+    "translation",
+    "token-optimization",
+    "shorthand",
+    "style",
+    "layered-config",
+    "tone"
+  ],
   "userConfig": {
     "default_mode": {
       "type": "string",
       "title": "Default narrative mode",
-      "description": "Mode the translator uses when none is specified: eli5, bluf, or technical",
+      "description": "Mode the translator uses when none is specified: eli5, bluf, or technical. Install-time convenience; overridden by ~/.claude/respeak/config.yaml, a project's .claude/respeak/config.yaml, and any folder .respeak.yaml.",
       "default": "technical"
     },
     "tech_level": {
       "type": "number",
       "title": "Audience technical depth",
-      "description": "1 = no assumed background ... 5 = the engineer who wrote it",
+      "description": "1 = no assumed background ... 5 = the engineer who wrote it. Same precedence as default_mode (config files nearer the target win).",
       "default": 3,
       "min": 1,
       "max": 5
@@ -25,7 +34,7 @@
     "auto_narrative": {
       "type": "boolean",
       "title": "Auto-narrative at milestones",
-      "description": "When on, a Stop hook nudges a one-paragraph narrative in the configured mode after milestone turns",
+      "description": "When on, a Stop hook nudges a one-paragraph narrative in the effective mode after milestone turns. Same precedence as default_mode.",
       "default": false
     }
   }

@@ -19,13 +19,37 @@ file) and lexicon proposals.
 
 ## Locating configuration and corpus
 
-Resolve each of these in order — project override first, then the plugin's
-shipped defaults:
+Configuration is layered (`docs/config-layers.md`): plugin defaults, then
+the user's `~/.claude/respeak/config.yaml`, then the project's
+`.claude/respeak/config.yaml` (plus `config.local.yaml` and any `scopes:`
+whose `paths` match the target), then every `.respeak.yaml` in the folders
+between the project root and the file being rendered, nearest last. The
+caller normally resolves this for you:
 
-1. Project: `.claude/respeak/` in the working project (config.yaml,
-   banned-phrases.yaml, replacements.yaml, lexicon.yaml, style/)
-2. Plugin defaults: `${CLAUDE_PLUGIN_ROOT}/config/respeak.config.yaml` and
-   `${CLAUDE_PLUGIN_ROOT}/corpus/`
+1. If your prompt carries a `Resolved respeak configuration` block, that
+   block IS the configuration. Use it verbatim; do not re-read or re-merge
+   config files, because it already reflects every layer plus the caller's
+   mode choice.
+2. Otherwise you cannot run the resolver (no Bash), so approximate it: read
+   each of these that exists, in this order, letting a later file override
+   an earlier one key by key (maps merge, scalars replace):
+   `${CLAUDE_PLUGIN_ROOT}/config/respeak.config.yaml`,
+   `~/.claude/respeak/config.yaml`, `.claude/respeak/config.yaml`,
+   `.claude/respeak/config.local.yaml`, then `.respeak.yaml` in each
+   directory from the project root down to the directory of the file you
+   are rendering (or the working directory). Apply a `scopes:` entry only
+   when one of its `paths` globs matches that file. Never take
+   `gate.enabled`, `gate.include`, `gate.exclude`, or `shorthand.*` from a
+   user or folder file. End your output with the line
+   `config: approximated from files (no resolved block)` so the caller
+   knows the resolver did not run.
+
+Corpus files are not layered. Resolve each in order — project override
+first, then the plugin's shipped defaults:
+
+1. Project: `.claude/respeak/` in the working project (banned-phrases.yaml,
+   replacements.yaml, lexicon.yaml, style/)
+2. Plugin defaults: `${CLAUDE_PLUGIN_ROOT}/corpus/`
 
 Mutable state is always project-level (git-reviewable):
 - Lexicon: `.claude/respeak/lexicon.yaml` (fall back to the plugin's seed)
@@ -62,11 +86,19 @@ and flag the gap for a corpus fix instead of over-rewriting.
 
 ## Before rendering
 
-1. Read the config — mode, tone axes, tech_level, budgets.
-2. Read the lexicon — expand every ratified shorthand term to its
-   `expansion` unless the target is tech_level 5.
+1. Read the config — mode, tone axes, tech_level, budgets, and the
+   audience fields a profile fills in: `narrative.profile`,
+   `narrative.lexicon_access`, `narrative.address`,
+   `narrative.reading_level_grade`.
+2. Read the lexicon. `narrative.lexicon_access` decides how ratified
+   shorthand appears: `forbidden` — always the expansion, never the term;
+   `expand-first-use` — "term (expansion)" the first time, the bare term
+   after; `inline` — the ratified term as-is (the `author` profile,
+   tech_level 5, the one place the two lanes may converge). When the field
+   is absent, expand everything unless tech_level is 5.
 3. Load the style gates: banned-phrases, replacements, and
-   `style/tone-mapping.md`.
+   `style/tone-mapping.md`. `narrative.reading_level_grade`, when set,
+   caps the register the same way a mode's `reading_level_grade` does.
 
 If the caller names a mode, use it; otherwise the configured `default_mode`.
 

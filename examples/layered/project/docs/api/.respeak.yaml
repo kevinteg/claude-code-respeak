@@ -1,0 +1,3 @@
+# FOLDER layer: API notes are read by the people who wrote the system.
+narrative:
+  profile: author           # tech_level 5, ratified shorthand allowed inline
