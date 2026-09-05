@@ -38,6 +38,7 @@ run_gate() {
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
+export RESPEAK_CACHE_DIR="$work/cache"   # the suite never reads or rewrites the user's cache
 
 # Isolate the user layer: an empty CLAUDE_CONFIG_DIR unless a case sets one.
 # HOME stays real because PyYAML may live in the interpreter's user site.
@@ -226,6 +227,23 @@ check ".mdx NOT listed in gate.include is skipped (exit 0)" 0 "$?"
 doc_txt2="$proj_md/notes.txt"; echo "$BANNED_TEXT" > "$doc_txt2"
 hook_json_for "$doc_txt2" | CLAUDE_PROJECT_DIR="$proj_md" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$GATE" > "$work/gate-txt2.out" 2>&1
 check ".txt in gate.include is still skipped: the gate covers Markdown only (exit 0)" 0 "$?"
+
+# --- v0.4.3: extension case parity between hook and resolver ----------------
+proj_up="$work/proj-up"; mkdir -p "$proj_up/.claude/respeak"
+printf 'gate: {enabled: true, include: ["**/*"], fail_on: error}\n' > "$proj_up/.claude/respeak/config.yaml"
+for name in README.MDX Page.Markdown NOTES.MD; do
+  echo "$BANNED_TEXT" > "$proj_up/$name"
+  hook_json_for "$proj_up/$name" | CLAUDE_PROJECT_DIR="$proj_up" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$GATE" > "$work/gate-up.out" 2>&1
+  check "$name is gated like its lowercase twin (exit 2)" 2 "$?"
+done
+echo "$BANNED_TEXT" > "$proj_up/notes.TXT"
+hook_json_for "$proj_up/notes.TXT" | CLAUDE_PROJECT_DIR="$proj_up" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$GATE" > "$work/gate-up-txt.out" 2>&1
+check "notes.TXT is still not Markdown (exit 0)" 0 "$?"
+
+# --- v0.4.3: a symlink inside the project pointing outside is still gated -----
+mkdir -p "$work/outside"; echo "$BANNED_TEXT" > "$work/outside/ext.md"; ln -s "$work/outside/ext.md" "$proj_on/ext.md"
+hook_json_for "$proj_on/ext.md" | CLAUDE_PROJECT_DIR="$proj_on" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$GATE" > "$work/gate-inlink.out" 2>&1
+check "in-project symlink to an outside file is gated (exit 2)" 2 "$?"
 
 # --- discovery: no CLAUDE_PROJECT_DIR at all (CI), the config is found -------
 hook_json_for "$doc_on" | env -u CLAUDE_PROJECT_DIR CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$GATE" > "$work/gate-nocpd.out" 2>&1

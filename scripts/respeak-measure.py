@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Measure one or more Markdown documents against the respeak style gates.
 
-Usage: respeak-measure.py <doc.md> [<doc2.md> ...]
+Usage: respeak-measure.py <doc.md|-> [<doc2.md> ...]        ('-' = stdin, once)
                            [--corpus <banned-phrases.yaml>]
                            [--config <respeak.config.yaml>]
                            [--fail-on {none,error,warn}]
@@ -214,9 +214,12 @@ def check_budgets(result, budgets):
 
 
 def read_doc(doc_path):
-    """Read a document as UTF-8; anything else is an unreadable file (a
+    """Read a document as UTF-8 ('-' reads stdin, so a caller can gate text it
+    holds without writing a temp file); anything else is an unreadable file (a
     SetupError), not a style verdict."""
     try:
+        if doc_path == "-":
+            return sys.stdin.buffer.read().decode("utf-8")
         with open(doc_path, encoding="utf-8") as f:
             return f.read()
     except UnicodeDecodeError as e:
@@ -236,7 +239,7 @@ def measure(doc_path, corpus, config, max_sentence_words):
     emdash = len(re.findall(r" — ", text))
 
     result = {
-        "doc": doc_path,
+        "doc": "<stdin>" if doc_path == "-" else doc_path,
         "words": words,
         "sentences": len(sents),
         "avg_sentence_words": round(sum(lens) / len(lens), 1) if lens else 0,
@@ -296,33 +299,44 @@ def main():
         os.environ.get("CLAUDE_PLUGIN_ROOT", os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
         "corpus", "banned-phrases.yaml")
 
+    # The report carries corpus rule text (curly quotes, dashes), so a
+    # non-UTF-8 stdout must never turn a pass into a crash.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(errors="replace")
+            except Exception:  # noqa: BLE001
+                pass
+
     # Every failure that is not a style verdict exits 2, including ones
     # nobody anticipated: the gate hook reads exit 1 as "the document failed
     # the gate" and blocks the write, so an uncaught traceback (which CPython
-    # exits 1 for) would turn a broken corpus into a blocked edit.
+    # exits 1 for) would turn a broken corpus into a blocked edit. Printing
+    # sits inside the same guard for the same reason.
     try:
         corpus = load_yaml(corpus_path)
         validate_corpus(corpus, corpus_path)
         config = load_yaml(args.config) if args.config else None
         if config is not None and not isinstance(config, dict):
             raise SetupError(f"{args.config}: top level is not a mapping")
+        if args.docs.count("-") > 1:
+            raise SetupError("'-' (stdin) may be given once")
         results = []
         for doc in args.docs:
             results.append(measure(doc, corpus, config, args.max_sentence_words))
+        if args.json:
+            print(json.dumps(results, indent=1))
+        else:
+            for i, r in enumerate(results):
+                if i:
+                    print()
+                print_result(r, args.max_sentence_words)
     except (OSError, yaml.YAMLError, SetupError) as e:
         print(f"respeak-measure: {e}", file=sys.stderr)
         sys.exit(2)
     except Exception as e:  # noqa: BLE001 — anything unexpected is a setup error, not a verdict
         print(f"respeak-measure: internal error ({type(e).__name__}: {e})", file=sys.stderr)
         sys.exit(2)
-
-    if args.json:
-        print(json.dumps(results, indent=1))
-    else:
-        for i, r in enumerate(results):
-            if i:
-                print()
-            print_result(r, args.max_sentence_words)
 
     if args.fail_on != "none":
         threshold = FAIL_LEVELS[args.fail_on]

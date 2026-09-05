@@ -131,7 +131,7 @@ both.
 
 | Keys | Allowed from | Why |
 | --- | --- | --- |
-| `gate.enabled`, `gate.include`, `gate.exclude` | plugin, project, project local, env, invocation | turning enforcement on and choosing which files it covers is a project decision; a stray folder file cannot flip it. The gate covers Markdown files only (`.md`, `.markdown`, `.mdx`): `include` and `exclude` narrow within that set, and `explain` says "not a Markdown file" for anything else |
+| `gate.enabled`, `gate.include`, `gate.exclude` | plugin, project, project local, env, invocation | turning enforcement on and choosing which files it covers is a project decision; a stray folder file cannot flip it. The gate covers Markdown files only (`.md`, `.markdown`, `.mdx`, any letter case): `include` and `exclude` narrow within that set, and `explain` says "not a Markdown file" for anything else. The shipped `include` is `**/*.md`; list `**/*.mdx` or `**/*.markdown` to cover those too |
 | `shorthand.*` | same | ratification mode, legibility floor, never-compress classes, and the lexicon path must not vary by folder or by user |
 | `style.banned_phrases`, `style.replacements`, `style.rules` | same | corpus pointers are resources, not tone |
 | `version`, `schema` | same | file identity |
@@ -175,8 +175,12 @@ enforcement is on and the tool that enforces never disagree:
 4. The nearest ancestor holding `.git` or `.claude/`, again never `~`.
 
 `explain` prints which rule chose the root next to `project:`. Paths are
-compared after symlink resolution, so `/tmp` and `/private/tmp`, or a
-`~/code` symlink, name the same project.
+compared after symlink resolution, and on macOS and Windows after case and
+Unicode folding as well, so `/tmp` and `/private/tmp`, a `~/code` symlink,
+and `~/Code/Proj` typed for `~/code/proj` all name the same project. A file
+counts as inside the project when either its path as given or its resolved
+path is under the root: a symlink inside the project that points elsewhere
+is still the project's file and is still gated.
 
 A target outside the project still gets the project layers (they are a
 property of the session) but none of the project's folder files, and the
@@ -385,12 +389,14 @@ scopes:
 runs exactly what the PostToolUse hook runs for that file, so CI enforces
 the same layers, the same `fail_on`, and the same Markdown-only contract
 the editor session saw. A CI-only file on `RESPEAK_CONFIG` can harden the
-verdict for the build:
+verdict for the build. Use `find`, not `**`: bash 3.2 (the macOS default)
+and GitHub Actions' default shell have no `globstar`, so `wiki/**/*.md`
+silently matches one directory level there.
 
 ```sh
 export RESPEAK_CONFIG=ci/respeak-ci.yaml        # e.g. gate: {fail_on: warn}
 export RESPEAK_GATE_TRACE=1                     # say "pass" / "not applicable" per file
-for f in wiki/**/*.md; do
+find wiki -name '*.md' -print0 | while IFS= read -r -d '' f; do
   bash scripts/respeak-gate.sh --file "$f" || exit 1
 done
 ```
@@ -410,18 +416,20 @@ folder's tone applies and `--mode` sits on top of it.
 | --- | --- |
 | `respeak-config.sh explain [--for PATH]` | the layer stack (present and absent), which rule chose the project root, the effective narrative and gate, warnings, then every override with the layer that set it |
 | `respeak-config.sh explain --brief [--for PATH]` | the same in a few lines: project, layers applied, effective narrative, gate, override count, warnings. The `/respeak:respeak` skill injects this at the top of every invocation |
-| `respeak-config.sh resolve --for PATH --format yaml\|json` | the full effective config, for `respeak-measure.py --config` or for a prompt |
+| `respeak-config.sh resolve --for PATH --format yaml\|json [--out FILE]` | the full effective config, for `respeak-measure.py --config` or for a prompt; `--out` writes it without a shell redirect, which a skill's `allowed-tools` rule would not cover |
 | `respeak-config.sh resolve --for PATH --format line\|statusline` | one-line summaries; the statusline form is `bluf/t1 exec @docs/exec/.respeak.yaml` |
 | `respeak-config.sh gate --for FILE [--write-config PATH]` | the gate hook's decision as JSON (`applies`, `fail_on`, `reason`), optionally writing the resolved YAML |
 | `respeak-config.sh validate FILE...` | parse, unknown top-level keys, scope shape, and key policy for the file's kind (guessed from its path, or `--kind`); exits 1 on a policy violation |
 | `respeak-gate.sh --file PATH` | the hook's decision and verdict for one file, as an exit code (0 allow, 2 block); `RESPEAK_GATE_TRACE=1` adds a one-line reason on stderr |
 
 Every command takes `--launch-dir DIR` (the directory Claude Code was
-started in, the same role as `CLAUDE_PROJECT_DIR`) and `--project DIR` to
-pin the root outright. `--set key=value` parses the value as a YAML
-scalar, except that `yes`, `no`, `on`, and `off` stay strings, and a
-scalar given for `gate.allow`, `gate.exclude`, or `gate.include` becomes a
-one-item list.
+started in, the same role as `CLAUDE_PROJECT_DIR`; an empty value means
+not given) and `--project DIR` to pin the root outright, used as resolved;
+`validate` accepts both and ignores them. `--set key=value` parses the
+value as a YAML scalar: `yes`, `no`, `on`, and `off` become booleans on a
+boolean key and stay strings elsewhere, a value that is not YAML (a bare
+glob such as `**/*.md`) is taken literally, and a scalar given for
+`gate.allow`, `gate.exclude`, or `gate.include` becomes a one-item list.
 
 The statusline segment shows the effective mode at a glance: `technical/t3`
 means the plugin default applies; `bluf/t1 exec @docs/exec/.respeak.yaml`
@@ -462,6 +470,14 @@ above a checkout.
   `RESPEAK_PYTHON` overrides) and parse hook JSON with the same one. A
   `python3` shim without PyYAML, or one that exits 127, used to make every
   hook a silent no-op.
+- **The interpreter cache cannot be used to run arbitrary code.** It lives
+  in `${XDG_CACHE_HOME:-~/.cache}/respeak/` (or `RESPEAK_CACHE_DIR`), a
+  directory created `0700` that must be owned by the caller and not a
+  symlink; the file must be a regular owner-owned file; and the cached
+  name is honoured only if it is one of the fixed candidates
+  (`python3`, `/usr/bin/python3`, the brew pythons). A tampered file can at
+  worst select a different known interpreter. No usable directory means no
+  cache, never a fallback to `/tmp`.
 
 ## Upgrading from v0.3
 
@@ -508,8 +524,8 @@ Claude Code has no such convention and a dotfile per directory is what
 **Cost.** The resolver itself is about 30 ms per call on a 2024 Mac
 (PyYAML's C loader; one load per present file). Finding a PyYAML-capable
 interpreter used to cost more than that, because a pyenv shim takes about
-70 ms per probe, so `respeak-python.sh` caches the answer per `PATH` in
-`$TMPDIR` and re-validates it with one launch. Warm, a statusline refresh
+70 ms per probe, so `respeak-python.sh` caches the answer per `PATH` under
+`~/.cache/respeak/` and re-validates it with one launch. Warm, a statusline refresh
 is about 100 ms. A gate-hook call on a Markdown write is about 200 ms,
 most of it the measure scan. Claude Code debounces statusline updates at
 300 ms and cancels an in-flight script on the next trigger.

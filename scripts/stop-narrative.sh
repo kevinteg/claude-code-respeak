@@ -50,9 +50,14 @@ try:
 except Exception:
     cfg = {}
 narrative = cfg.get("narrative") or {}
-enabled = narrative.get("auto_narrative")
-if enabled is None:  # no resolved config: the userConfig env var alone decides
-    enabled = os.environ.get("CLAUDE_PLUGIN_OPTION_AUTO_NARRATIVE", "false") == "true"
+if cfg:
+    # the resolver ran: its answer is final (a null in a project file is
+    # "off", not "ask the knob")
+    enabled = bool(narrative.get("auto_narrative"))
+else:
+    # no resolver: the install-time knob alone decides, spelled the way the
+    # resolver's coerce_env accepts it
+    enabled = os.environ.get("CLAUDE_PLUGIN_OPTION_AUTO_NARRATIVE", "").strip().lower() in ("1", "true", "yes", "on")
 if not enabled:
     sys.exit(0)
 # Never fire on a continuation the hook itself caused.

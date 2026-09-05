@@ -17,7 +17,7 @@ Effective configuration for the working directory (plugin defaults,
 and its `scopes:`, any folder `.respeak.yaml`; nearest wins. The contract
 is `docs/config-layers.md`):
 
-!`${CLAUDE_PLUGIN_ROOT}/scripts/respeak-config.sh explain --brief --launch-dir ${CLAUDE_PROJECT_DIR}`
+!`"${CLAUDE_PLUGIN_ROOT}/scripts/respeak-config.sh" explain --brief --launch-dir "${CLAUDE_PROJECT_DIR}"`
 
 Steps:
 
@@ -33,12 +33,13 @@ Steps:
    shorthand used along the way.
 3. Resolve the configuration for the target. The target is the source file
    when `$source` is a file path (a folder's `.respeak.yaml` governs the
-   files in it), otherwise the working directory. Run:
-   `${CLAUDE_PLUGIN_ROOT}/scripts/respeak-config.sh resolve --for <target> --launch-dir ${CLAUDE_PROJECT_DIR} [--mode <mode>] --format yaml > <tmpdir>/respeak-config.yaml`
+   files in it), otherwise the working directory. Run (quote the paths as
+   shown; `--out` writes the file so no shell redirect is needed):
+   `"${CLAUDE_PLUGIN_ROOT}/scripts/respeak-config.sh" resolve --for "<target>" --launch-dir "${CLAUDE_PROJECT_DIR}" [--mode <mode>] --format yaml --out "/tmp/respeak-${CLAUDE_SESSION_ID}.yaml"`
    Add `--profile <name>` when the user named an audience that matches a
    profile the config defines under `profiles:` (for example "for the exec
    team" → `exec`, or a household profile the user defined at user level);
-   run `${CLAUDE_PLUGIN_ROOT}/scripts/respeak-config.sh explain --for <target> --launch-dir ${CLAUDE_PROJECT_DIR}`
+   run `"${CLAUDE_PLUGIN_ROOT}/scripts/respeak-config.sh" explain --for "<target>" --launch-dir "${CLAUDE_PROJECT_DIR}"`
    when you need the full layer-by-layer listing.
 4. Delegate to the `respeak:respeak` agent with: the mode, the contents of
    that resolved config file verbatim under a heading
@@ -46,8 +47,13 @@ Steps:
    directory. Do not translate inline yourself — the agent owns the corpus
    gates and lexicon bookkeeping, and an inline paraphrase bypasses both.
 5. Verify before relaying — do not trust the agent's narrative on its own
-   report. Write it to a temp file, then run:
-   `${CLAUDE_PLUGIN_ROOT}/scripts/respeak-py.sh respeak-measure.py <tmpfile> --fail-on error --config <tmpdir>/respeak-config.yaml`
+   report. Feed the narrative to the scanner on stdin (a heredoc; no temp
+   file, so no file-write permission is needed):
+   ```
+   "${CLAUDE_PLUGIN_ROOT}/scripts/respeak-py.sh" respeak-measure.py - --fail-on error --config "/tmp/respeak-${CLAUDE_SESSION_ID}.yaml" <<'RESPEAK_EOF'
+   <the narrative, verbatim>
+   RESPEAK_EOF
+   ```
    (the resolved config carries every layer's `gate.allow` and
    `style.budgets`, so a project's or folder's exceptions apply).
    - Exit 0: relay the narrative verbatim — do not re-wrap, soften, or

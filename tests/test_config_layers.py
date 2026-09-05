@@ -766,3 +766,182 @@ class CLIv041(unittest.TestCase):
         r = self.run_cli("explain", "--brief", "--for", doc, "--launch-dir", "", "--walk-from", self.fx.root)
         self.assertEqual(r.returncode, 0, r.stderr)               # an empty --launch-dir is "not given"
         self.assertIn("nearest .claude/respeak/config.yaml", r.stdout)
+
+
+# ---------------------------------------------------------------------------
+# v0.4.3: second re-break / regression round
+# ---------------------------------------------------------------------------
+
+def _case_variant(path):
+    """A differently cased spelling of the same path on a case-insensitive
+    filesystem, or None when the volume is case-sensitive."""
+    head, tail = os.path.split(path)
+    alt = os.path.join(head, tail.upper() if tail != tail.upper() else tail.lower())
+    return alt if alt != path and os.path.exists(alt) and os.path.samefile(alt, path) else None
+
+
+class V043Paths(unittest.TestCase):
+    def setUp(self):
+        self.fx = Fixture()
+        self.addCleanup(self.fx.cleanup)
+
+    def test_symlinked_config_dir_is_never_a_project(self):
+        # dotfiles-managed ~/.claude -> dot/claude; the user file enables the gate
+        real_dir = os.path.join(self.fx.home, "dot", "claude")
+        write(os.path.join(real_dir, "respeak", "config.yaml"), "gate: {enabled: true}\nshorthand: {ratification: auto}\n")
+        link = os.path.join(self.fx.home, "claude-link")
+        os.symlink(real_dir, link)
+        doc = self.fx.doc("docs/a.md")  # repo with no config, no .git
+        env = {"CLAUDE_CONFIG_DIR": link, "CLAUDE_PROJECT_DIR": self.fx.project}
+        res = rc.resolve(target=doc, plugin_root=REPO, env=env, walk_from=self.fx.root)
+        self.assertEqual(res.project, self.fx.project)
+        self.assertFalse(rc.get_dotted(res.config, "gate.enabled"))
+        self.assertEqual(rc.get_dotted(res.config, "shorthand.ratification"), "human")
+        self.assertEqual([lay.kind for lay in res.applied].count("project"), 0)
+        # and with the link's parent as the candidate project root (a session launched in ~)
+        res = rc.resolve(target=doc, plugin_root=REPO, env={"CLAUDE_CONFIG_DIR": link}, walk_from=self.fx.root,
+                         launch_dir=self.fx.home)
+        self.assertFalse(rc.get_dotted(res.config, "gate.enabled"))
+
+    def test_symlink_inside_project_pointing_outside_is_still_gated(self):
+        self.fx.proj("gate: {enabled: true}\n")
+        outside = os.path.join(self.fx.root, "outside")
+        write(os.path.join(outside, "ext.md"), "# x\n")
+        os.symlink(os.path.join(outside, "ext.md"), os.path.join(self.fx.project, "ext.md"))
+        res = self.fx.resolve(target=os.path.join(self.fx.project, "ext.md"))
+        d = rc.gate_decision(res)
+        self.assertTrue(d["applies"], d)
+        self.assertEqual(d["rel_path"], "ext.md")
+        # a symlinked directory too, and its folder file is read through the link
+        shared = os.path.join(self.fx.root, "shared", "docs")
+        write(os.path.join(shared, "n.md"), "# n\n")
+        write(os.path.join(shared, ".respeak.yaml"), "narrative: {profile: exec}\n")
+        os.symlink(shared, os.path.join(self.fx.project, "docs"))
+        res = self.fx.resolve(target=os.path.join(self.fx.project, "docs", "n.md"))
+        d = rc.gate_decision(res)
+        self.assertTrue(d["applies"], d)
+        self.assertEqual(d["rel_path"], "docs/n.md")
+        self.assertEqual(narrative(res, "profile"), "exec")
+
+    def test_case_variant_spelling_names_the_same_project(self):
+        alt_project = _case_variant(self.fx.project)
+        if not alt_project:
+            self.skipTest("case-sensitive filesystem")
+        self.fx.proj("gate: {enabled: true}\n")
+        self.fx.folder("docs", "narrative: {profile: exec}\n")
+        doc = self.fx.doc("docs/a.md")
+        # --project spelled differently from the target
+        res = rc.resolve(target=doc, project=alt_project, plugin_root=REPO, env=self.fx.env(), walk_from=self.fx.root)
+        d = rc.gate_decision(res)
+        self.assertTrue(d["applies"], d)
+        self.assertEqual(d["rel_path"], "docs/a.md")
+        self.assertEqual(narrative(res, "profile"), "exec")
+        # the user config dir spelled differently must still be excluded from discovery
+        self.fx.user("gate: {enabled: true}\n")
+        alt_home = _case_variant(self.fx.home)
+        if alt_home:
+            os.makedirs(os.path.join(self.fx.project, ".git"), exist_ok=True)
+            plain = self.fx.doc("b.md")
+            alt_doc = os.path.join(alt_home, "code", "proj", "b.md")
+            res = rc.resolve(target=alt_doc, plugin_root=REPO, env=self.fx.env(), walk_from=self.fx.root)
+            self.assertNotEqual(rc.path_key(res.project), rc.path_key(self.fx.home))
+            self.assertFalse(rc.get_dotted(res.config, "gate.enabled") and not
+                             rc.get_dotted(res.config, "gate.include"))  # only the project could enable it
+        # outside target with a case-variant project: ancestors stay below the project
+        write(os.path.join(self.fx.home, "code", ".respeak.yaml"), "narrative: {default_mode: eli5}\n")
+        self.fx.proj("narrative: {default_mode: technical}\ngate: {enabled: true}\n")
+        outside = os.path.join(self.fx.home, "code", "other", "x.md")
+        write(outside, "# x\n")
+        res = rc.resolve(target=outside, project=alt_project, plugin_root=REPO, env=self.fx.env(), walk_from=self.fx.root)
+        self.assertEqual(narrative(res, "default_mode"), "technical")
+
+
+class V043Merge(unittest.TestCase):
+    def setUp(self):
+        self.fx = Fixture()
+        self.addCleanup(self.fx.cleanup)
+
+    def test_bool_words_on_boolean_keys(self):
+        self.fx.proj("gate: {enabled: true}\nnarrative: {auto_narrative: true}\n")
+        doc = self.fx.doc("a.md")
+        for word, expect in (("no", False), ("off", False), ("false", False), ("yes", True), ("on", True), ("0", False)):
+            res = self.fx.resolve(target=doc, overrides={"gate": {"enabled": word}})
+            self.assertIs(rc.get_dotted(res.config, "gate.enabled"), expect, word)
+        res = self.fx.resolve(target=doc, overrides={"narrative": {"auto_narrative": "off"}})
+        self.assertIs(narrative(res, "auto_narrative"), False)
+        res = self.fx.resolve(target=doc, overrides={"gate": {"enabled": "maybe"}})
+        self.assertIs(rc.get_dotted(res.config, "gate.enabled"), True)
+        self.assertTrue(any("not a boolean spelling" in w for w in res.warnings))
+
+    def test_null_profile_entry_does_not_delete_the_profile(self):
+        self.fx.proj("profiles: {exec: null}\nnarrative: {profile: exec}\n")
+        res = self.fx.resolve(target=self.fx.doc("a.md"))
+        self.assertEqual(narrative(res, "default_mode"), "bluf")
+        self.assertEqual(narrative(res, "tech_level"), 1)
+        self.assertFalse(any("not a known profile" in w for w in res.warnings), res.warnings)
+        self.assertTrue(any("is a mapping in a lower layer" in w for w in res.warnings))
+
+    def test_non_string_profile_is_dropped_with_a_warning(self):
+        self.fx.local("narrative: {profile: 123}\n")
+        res = self.fx.resolve(target=self.fx.doc("a.md"))
+        self.assertEqual(narrative(res, "profile"), "peer-engineer")
+        self.assertTrue(any("not a known profile" in w for w in res.warnings))
+
+    def test_set_glob_values_are_literal(self):
+        ns = type("A", (), {})(); ns.mode = ns.profile = ns.context = None
+        ns.set = ["gate.include=**/*.md", "gate.exclude=*.tmp.md", "gate.allow=[a-z"]
+        ov = rc.parse_overrides(ns)
+        self.assertEqual(ov["gate"]["include"], ["**/*.md"])
+        self.assertEqual(ov["gate"]["exclude"], ["*.tmp.md"])
+        self.assertEqual(ov["gate"]["allow"], ["[a-z"])
+
+
+class V043CLI(unittest.TestCase):
+    def setUp(self):
+        self.fx = Fixture()
+        self.addCleanup(self.fx.cleanup)
+        self.env = dict(os.environ)
+        self.env["CLAUDE_CONFIG_DIR"] = self.fx.cfgdir
+        for k in ("CLAUDE_PROJECT_DIR", "RESPEAK_CONFIG"):
+            self.env.pop(k, None)
+
+    def run_cli(self, *args):
+        return subprocess.run([sys.executable, RESOLVER] + list(args) + ["--plugin-root", REPO],
+                              capture_output=True, text=True, env=self.env)
+
+    def test_empty_launch_dir_means_not_given(self):
+        self.fx.proj("narrative: {default_mode: bluf}\n")
+        doc = self.fx.doc("a.md")
+        for extra in (["--launch-dir", ""], ["--launch-dir"]):
+            r = self.run_cli("resolve", "--for", doc, "--format", "line", "--walk-from", self.fx.root, *extra)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertIn("mode=bluf", r.stdout)
+        r = self.run_cli("resolve", "--for", doc, "--launch-dir", "", "--mode", "eli5", "--format", "line", "--walk-from", self.fx.root)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("mode=eli5", r.stdout)
+
+    def test_resolve_out_writes_the_file(self):
+        doc = self.fx.doc("a.md")
+        out = os.path.join(self.fx.root, "resolved.yaml")
+        r = self.run_cli("resolve", "--for", doc, "--format", "yaml", "--out", out, "--walk-from", self.fx.root)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout, "")
+        with open(out) as f:
+            self.assertIn("default_mode: technical", f.read())
+
+    def test_validate_accepts_the_common_flags(self):
+        f = os.path.join(self.fx.project, "docs", ".respeak.yaml")
+        write(f, "narrative: {profile: exec}\n")
+        r = self.run_cli("validate", "--launch-dir", self.fx.project, "--project", self.fx.project, f)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+    def test_set_glob_and_bool_words_via_cli(self):
+        self.fx.proj("gate: {enabled: true}\n")
+        doc = self.fx.doc("docs/a.md")
+        r = self.run_cli("gate", "--for", doc, "--set", "gate.include=**/*.md", "--walk-from", self.fx.root)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertNotIn("Traceback", r.stderr)
+        self.assertTrue(json.loads(r.stdout)["applies"])
+        r = self.run_cli("gate", "--for", doc, "--set", "gate.enabled=no", "--walk-from", self.fx.root)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertFalse(json.loads(r.stdout)["enabled"])

@@ -144,7 +144,8 @@ into every page rendered from it. This section closes both gaps.
 
 **The gate hook** (`scripts/respeak-gate.sh`) is a `PostToolUse` hook on
 `Write|Edit` (`hooks/hooks.json`) that runs `respeak-measure.py` against any
-Markdown file (`.md`, `.markdown`, `.mdx`) a tool call just wrote, and blocks
+Markdown file a tool call just wrote (`.md` by default; `.markdown` and
+`.mdx` when `gate.include` lists them), and blocks
 the tool result (exit 2, report on stderr — Claude Code feeds that back to
 the model as a correctable error) on a failing report. Setup problems (no
 PyYAML, a corrupt corpus, an unreadable file) never block: the hook fails
@@ -220,7 +221,9 @@ scripts/respeak-render.sh --mode technical \
 step with exactly the layers and verdict an editor session would see:
 
 ```sh
-for f in wiki/**/*.md; do bash scripts/respeak-gate.sh --file "$f" || exit 1; done
+find wiki -name '*.md' -print0 | while IFS= read -r -d '' f; do
+  bash scripts/respeak-gate.sh --file "$f" || exit 1
+done
 ```
 
 **Upgrading**: the installed copy under `~/.claude/plugins/cache` is a
@@ -386,7 +389,7 @@ full diff before trusting it, and the verifier exists so that reading is
 cheap. Treat translated narratives the way you treat any report: spot-check
 against the evidence it cites.
 
-## Honest status (v0.4.2)
+## Honest status (v0.4.3)
 
 Working today: the translator and modes, the style gates and corpus, the
 buried-lede test with structure advisories and the data-rendering contract,
@@ -408,7 +411,12 @@ comparison, fail-open on setup errors, a Markdown-only gate contract, and
 permissions. A re-break pass on those fixes then found that measure setup
 errors surfacing as uncaught exceptions still blocked writes; v0.4.2 makes
 every non-verdict failure exit 2 and validates the corpus shape and
-`gate.allow` regexes up front.
+`gate.allow` regexes up front. A second re-break and regression round on
+that produced v0.4.3: paths compared after case and Unicode folding on
+macOS, a symlinked `~/.claude` never mistaken for a project, in-project
+symlinks still gated, a trust-bounded interpreter cache under `~/.cache`,
+a statusline that survives spaces in paths, quoted skill commands, and
+stdin input for the scanner so the skill verifies without a temp file.
 
 Declared in config but not yet enforced by tooling: the lexicon entry cap,
 edit-distance check, usage-based expiry, auto-ratification gate, and

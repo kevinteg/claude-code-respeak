@@ -48,6 +48,7 @@ import json
 import os
 import re
 import sys
+import unicodedata
 
 try:
     import yaml
@@ -110,6 +111,40 @@ def real(path):
     return os.path.realpath(os.path.abspath(os.path.expanduser(path)))
 
 
+# macOS (APFS/HFS+) and Windows filesystems are case-insensitive and treat
+# NFC/NFD spellings as one name, but os.path.realpath canonicalises neither;
+# comparisons fold both so "/Users/Kevin/Proj" and "/users/kevin/proj" are one
+# directory there, while Linux keeps exact comparison.
+CASE_INSENSITIVE_FS = sys.platform in ("darwin", "win32")
+
+
+def fold(path):
+    return unicodedata.normalize("NFC", path).casefold() if CASE_INSENSITIVE_FS else path
+
+
+def path_key(path):
+    """Comparison key: symlink-resolved and folded."""
+    return fold(real(path))
+
+
+def logical_depth(path, root):
+    """Number of leading components of the path AS SPELLED that resolve to
+    root (i.e. root is one of the spelled path's ancestors, symlinks followed
+    only up to that ancestor), or None. A symlink inside the project that
+    points outside it still names a file that lives in the project."""
+    own = segs(os.path.abspath(os.path.expanduser(path)))
+    rk = path_key(root)
+    for n in range(len(own), -1, -1):
+        prefix = os.sep + os.sep.join(own[:n])
+        if path_key(prefix) == rk:
+            return n
+    return None
+
+
+def segs(path):
+    return [x for x in path.split(os.sep) if x]
+
+
 def deep_merge(base, over):
     """Plain recursive merge of two mappings (maps merge, everything else
     replaces); used for the profile lookup table only."""
@@ -117,6 +152,8 @@ def deep_merge(base, over):
     for k, v in (over or {}).items():
         if isinstance(v, dict) and isinstance(out.get(k), dict):
             out[k] = deep_merge(out[k], v)
+        elif isinstance(out.get(k), dict):
+            continue  # a scalar/null never deletes a mapping; merge() warns for it
         else:
             out[k] = copy.deepcopy(v)
     return out
@@ -139,20 +176,49 @@ def ancestors(d):
     return list(reversed(out))
 
 
+def _under(pk, rk):
+    return pk[:len(rk)] == rk
+
+
+def under_how(path, root):
+    """'real' when the symlink-resolved path is under root, else 'logical'
+    when one of the path's spelled ancestors resolves to root, else None."""
+    rk = segs(path_key(root))
+    if _under(segs(path_key(path)), rk):
+        return "real"
+    if logical_depth(path, root) is not None:
+        return "logical"
+    return None
+
+
 def is_under(path, root):
-    path, root = os.path.abspath(path), os.path.abspath(root)
-    try:
-        return os.path.commonpath([path, root]) == root
-    except ValueError:
-        return False
+    return under_how(path, root) is not None
+
+
+def same_dir(a, b):
+    return path_key(a) == path_key(b)
 
 
 def rel_under(path, root):
-    """Path relative to root ('' when equal), or None when not under it."""
-    if not is_under(path, root):
+    """Path relative to root ('' when equal) in the path's own spelling, or
+    None when not under it."""
+    how = under_how(path, root)
+    if how is None:
         return None
-    rel = os.path.relpath(os.path.abspath(path), os.path.abspath(root))
-    return "" if rel == "." else rel.replace(os.sep, "/")
+    if how == "real":
+        return "/".join(segs(real(path))[len(segs(path_key(root))):])
+    own = segs(os.path.abspath(os.path.expanduser(path)))
+    return "/".join(own[logical_depth(path, root):])
+
+
+def common_ancestor(path, other):
+    """The deepest directory shared by two paths, in `path`'s own spelling."""
+    pk, ok = segs(path_key(path)), segs(path_key(other))
+    n = 0
+    while n < min(len(pk), len(ok)) and pk[n] == ok[n]:
+        n += 1
+    own = segs(os.path.abspath(os.path.expanduser(path)))
+    return os.sep + os.sep.join(own[:n]) if n else os.sep
 
 
 _glob_cache = {}
@@ -336,9 +402,12 @@ def user_config_dir(env):
 def is_user_root(d, cfgdir):
     """True when treating d as a project would load the USER file
     (<cfgdir>/respeak/config.yaml) at project grade: with the default
-    ~/.claude that is $HOME itself."""
-    return (os.path.join(d, PROJECT_REL) == os.path.join(cfgdir, "respeak", "config.yaml")
-            or os.path.join(d, ".claude") == cfgdir)
+    ~/.claude that is $HOME itself. Compared after symlink resolution and
+    case folding, so a dotfiles-managed ~/.claude symlink or a differently
+    cased spelling of $HOME cannot smuggle the user file in."""
+    user_file = path_key(os.path.join(cfgdir, "respeak", "config.yaml"))
+    return (path_key(os.path.join(d, PROJECT_REL)) == user_file
+            or path_key(os.path.join(d, ".claude")) == path_key(cfgdir))
 
 
 def find_project(explicit, env, target, launch_dir=None):
@@ -356,7 +425,7 @@ def find_project(explicit, env, target, launch_dir=None):
     chain = list(reversed(ancestors(d)))          # nearest first
     for a in chain:
         if not is_user_root(a, cfgdir) and os.path.isfile(os.path.join(a, PROJECT_REL)):
-            return a, "nearest " + PROJECT_REL
+            return real(a), "nearest " + PROJECT_REL
     launch = launch_dir or env.get("CLAUDE_PROJECT_DIR")
     if launch:
         return real(launch), "launch directory (CLAUDE_PROJECT_DIR)"
@@ -364,8 +433,16 @@ def find_project(explicit, env, target, launch_dir=None):
         if is_user_root(a, cfgdir):
             continue
         if os.path.isdir(os.path.join(a, ".git")) or os.path.isdir(os.path.join(a, ".claude")):
-            return a, "nearest .git or .claude/"
+            return real(a), "nearest .git or .claude/"
     return None, "none found"
+
+
+def tdir_anchor(tdir, project):
+    """The ancestor of tdir (in tdir's own spelling) that IS the project root."""
+    for d in ancestors(tdir):
+        if same_dir(d, project):
+            return d
+    return project
 
 
 def project_layers(project, warnings, cfgdir):
@@ -415,16 +492,13 @@ def build_stack(project, target, plugin_root, env, overrides, walk_from, warning
     in_project = project is not None and is_under(tdir, project)
     anchor = None
     if project:
-        if in_project:
-            anchor = project
-        else:
-            try:
-                anchor = os.path.commonpath([tdir, project])
-            except ValueError:  # different drives: nothing in common
-                layers.extend(project_layers(project, warnings, cfgdir))
+        anchor = tdir_anchor(tdir, project) if in_project else common_ancestor(tdir, project)
+        if anchor == os.sep and not same_dir(anchor, project) and os.sep not in (tdir[:1],):
+            layers.extend(project_layers(project, warnings, cfgdir))  # nothing in common
+            anchor = None
     walk_root = real(walk_from) if walk_from else None
     for d in ancestors(tdir):
-        at_anchor = anchor is not None and d == anchor
+        at_anchor = anchor is not None and same_dir(d, anchor)
         if at_anchor and in_project:
             layers.extend(project_layers(project, warnings, cfgdir))
         if not (walk_root and not is_under(d, walk_root)):
@@ -490,6 +564,18 @@ def merge(dst, src, prefix, layer, origins, warnings):
             warnings.append("%s: %s is a mapping in a lower layer but %s here; ignored"
                             % (layer.label, key, "null" if v is None else type(v).__name__))
             continue
+        if isinstance(dst.get(k), bool) and isinstance(v, str):
+            # --set gate.enabled=no must not turn the gate ON: a string on a
+            # boolean key is read as a boolean spelling or refused.
+            word = v.strip().lower()
+            if word in ("true", "yes", "on", "1"):
+                v = True
+            elif word in ("false", "no", "off", "0"):
+                v = False
+            else:
+                warnings.append("%s: %s is a boolean but %r is not a boolean spelling; ignored"
+                                % (layer.label, key, v))
+                continue
         dst[k] = copy.deepcopy(v)
         for o in [o for o in origins if o.startswith(key + ".")]:
             del origins[o]
@@ -530,12 +616,12 @@ def apply_layer(cfg, origins, layer, data, target, warnings, applied):
     # own explicit keys, using the profiles merged so far plus this layer's.
     narrative = data.get("narrative")
     prof = narrative.get("profile") if isinstance(narrative, dict) else None
-    if isinstance(prof, str):
+    if prof is not None:
         # the lookup table is the profiles merged so far deep-merged with this
         # layer's own `profiles:` — the same table `resolve` will report
         profiles = deep_merge(cfg.get("profiles") or {},
                               data.get("profiles") if isinstance(data.get("profiles"), dict) else {})
-        p = profiles.get(prof)
+        p = profiles.get(prof) if isinstance(prof, str) else None
         if isinstance(p, dict):
             expanded = {"narrative": {k: v for k, v in p.items() if k in PROFILE_KEYS}}
             sub = Layer(layer.kind, "%s (profile %s)" % (layer.label, prof), base=layer.base)
@@ -578,10 +664,15 @@ def resolve(target=None, project=None, plugin_root=None, env=None, overrides=Non
             launch_dir=None):
     env = os.environ if env is None else env
     warnings = []
-    target = real(target or os.getcwd())
+    given = os.path.abspath(os.path.expanduser(target or os.getcwd()))
+    target = real(given)
     plugin_root = real(plugin_root or env.get("CLAUDE_PLUGIN_ROOT") or DEFAULT_PLUGIN_ROOT)
     launch_dir = real(launch_dir) if launch_dir else None
-    project, how = find_project(project, env, target, launch_dir)
+    project, how = find_project(project, env, given, launch_dir)
+    if project and under_how(target, project) is None and under_how(given, project) == "logical":
+        # e.g. proj/ext.md -> /elsewhere/ext.md: the file the tool wrote lives
+        # in the project, so resolve for the spelling that says so
+        target = given
     layers = build_stack(project, target, plugin_root, env, overrides or {}, walk_from, warnings)
     if not layers[0].present:
         warnings.append("plugin defaults not found at %s" % layers[0].path)
@@ -887,7 +978,10 @@ def parse_set_value(raw):
         return None
     if s.lower() in ("yes", "no", "on", "off"):
         return s
-    return yaml.load(s, Loader=_Loader)
+    try:
+        return yaml.load(s, Loader=_Loader)
+    except yaml.YAMLError:
+        return s  # a bare glob such as **/*.md is not YAML; take it literally
 
 
 def add_common(p):
@@ -895,8 +989,9 @@ def add_common(p):
     p.add_argument("--for", dest="target", default=None, help="file or directory the config is for (default: cwd)")
     p.add_argument("--plugin-root", default=None, help="plugin root (default: $CLAUDE_PLUGIN_ROOT, else this checkout)")
     p.add_argument("--walk-from", default=None, help="only look for .respeak.yaml at or below this directory")
-    p.add_argument("--launch-dir", default=None,
-                   help="where Claude Code was started (the fallback project root; same role as $CLAUDE_PROJECT_DIR)")
+    p.add_argument("--launch-dir", nargs="?", const="", default=None,
+                   help="where Claude Code was started (the fallback project root; same role as "
+                        "$CLAUDE_PROJECT_DIR); an empty value means not given")
     p.add_argument("--mode", choices=("eli5", "bluf", "technical"), default=None)
     p.add_argument("--profile", default=None)
     p.add_argument("--context", choices=("incident", "routine", "celebration"), default=None)
@@ -911,6 +1006,7 @@ def main(argv=None):
     p = sub.add_parser("resolve", help="print the effective configuration")
     add_common(p)
     p.add_argument("--format", choices=("yaml", "json", "line", "statusline"), default="yaml")
+    p.add_argument("--out", default=None, help="write the output to this file instead of stdout")
 
     p = sub.add_parser("explain", help="show every layer and which one set each override")
     add_common(p)
@@ -923,6 +1019,8 @@ def main(argv=None):
     p = sub.add_parser("validate", help="check config files for shape and policy")
     p.add_argument("files", nargs="+")
     p.add_argument("--plugin-root", default=None)
+    p.add_argument("--project", default=None, help=argparse.SUPPRESS)      # accepted for symmetry
+    p.add_argument("--launch-dir", nargs="?", const="", default=None, help=argparse.SUPPRESS)
     p.add_argument("--kind", choices=("plugin", "user", "project", "project-local", "folder"), default=None)
 
     args = ap.parse_args(argv)
@@ -953,13 +1051,18 @@ def main(argv=None):
 
     if args.cmd == "resolve":
         if args.format == "yaml":
-            sys.stdout.write(yaml.safe_dump(res.config, sort_keys=False, default_flow_style=False))
+            text = yaml.safe_dump(res.config, sort_keys=False, default_flow_style=False)
         elif args.format == "json":
-            print(json.dumps(res.config, indent=2))
+            text = json.dumps(res.config, indent=2) + "\n"
         elif args.format == "line":
-            print(fmt_line(res))
+            text = fmt_line(res) + "\n"
         else:
-            print(fmt_statusline(res))
+            text = fmt_statusline(res) + "\n"
+        if args.out:
+            with open(args.out, "w") as f:
+                f.write(text)
+        else:
+            sys.stdout.write(text)
         for w in res.warnings:
             sys.stderr.write("respeak-config: %s\n" % w)
         return 0
@@ -984,4 +1087,10 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except SystemExit:
+        raise
+    except Exception as e:  # noqa: BLE001 — a usage/setup problem, never a traceback (exit 2)
+        sys.stderr.write("respeak-config: %s: %s\n" % (type(e).__name__, e))
+        sys.exit(2)

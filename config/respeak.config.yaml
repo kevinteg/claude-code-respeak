@@ -219,8 +219,9 @@ gate:
   # the one the hook reads for enforcement decisions on someone else's repo.
   enabled: false        # project-only: a user or folder layer cannot turn it on
   include: ["**/*.md"] # project-only. globs, matched relative to the project dir.
-                        # The gate covers Markdown files only (.md .markdown .mdx);
-                        # include/exclude narrow within that set. [] = nothing.
+                        # The gate covers Markdown files only (.md .markdown .mdx,
+                        # any case); include/exclude narrow within that set, so
+                        # .mdx/.markdown are gated only when listed. [] = nothing.
   exclude: []           # project-only. e.g. ["research/**"]; appends across layers
   fail_on: error         # none | warn | error — passed straight to
                         # respeak-measure.py --fail-on. Any layer may set it,

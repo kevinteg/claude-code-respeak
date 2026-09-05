@@ -22,7 +22,9 @@ pyj="${RESPEAK_PY:-$RESPEAK_PY_STD}"
 
 cwd=""; launch=""
 if [ -n "$pyj" ]; then
-  read -r cwd launch <<EOF
+  # one path per line, read whole (IFS empty): a space in a directory name
+  # must not split it, and a newline in one is the caller's problem
+  { IFS= read -r cwd; IFS= read -r launch; } <<EOF
 $("$pyj" -c '
 import json, sys
 try:
@@ -31,7 +33,8 @@ except Exception:
     d = {}
 ws = d.get("workspace") or {}
 cwd = ws.get("current_dir") or d.get("cwd") or ""
-print((cwd or ".") + " " + (ws.get("project_dir") or ""))
+print(cwd or ".")
+print(ws.get("project_dir") or "")
 ' 2>/dev/null)
 EOF
 fi

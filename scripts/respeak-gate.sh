@@ -54,10 +54,11 @@ fi
 
 [ -z "$file_path" ] && exit 0
 
-# Cheap pre-filter, identical to the resolver's MARKDOWN_EXTS: the measure
-# script is a Markdown scanner, and most Write/Edit calls are not Markdown.
-case "$file_path" in
-  *.md|*.markdown|*.mdx|*.MD) ;;
+# Cheap pre-filter, identical to the resolver's MARKDOWN_EXTS (which
+# lowercases too): the measure script is a Markdown scanner, and most
+# Write/Edit calls are not Markdown.
+case "$(printf '%s' "$file_path" | tr '[:upper:]' '[:lower:]')" in
+  *.md|*.markdown|*.mdx) ;;
   *) exit 0 ;;
 esac
 

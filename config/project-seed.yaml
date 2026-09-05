@@ -16,7 +16,7 @@ version: 3
 
 gate:
   enabled: false           # the PostToolUse style gate is opt-in per project
-  include: ["**/*.md"]     # Markdown only (.md .markdown .mdx); narrows within that
+  include: ["**/*.md"]     # add "**/*.mdx" / "**/*.markdown" to cover those; never non-Markdown
   exclude: []
   fail_on: error           # none | warn | error
   allow: []

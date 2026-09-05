@@ -241,3 +241,35 @@ class SetupErrorsExit2(unittest.TestCase):
     def test_a_real_verdict_still_exits_1(self):
         r = run_measure([write_tmp("# T\n\nThis is load-bearing.\n"), "--fail-on", "error"])
         self.assertEqual(r.returncode, 1, r.stderr)
+
+
+class StdinAndEncoding(unittest.TestCase):
+    """v0.4.3: '-' reads the document from stdin (so a skill can verify a
+    narrative without a temp file), and a non-UTF-8 stdout never turns a
+    report into a crash (which exits 1, the verdict status)."""
+
+    def run_stdin(self, text, *args, env_extra=None):
+        env = dict(os.environ); env.update(env_extra or {})
+        return subprocess.run([sys.executable, MEASURE_PATH, "-"] + list(args),
+                              input=text, capture_output=True, text=True, env=env)
+
+    def test_stdin_pass_and_verdict(self):
+        r = self.run_stdin("# T\n\nThe plan uses the cache.\n", "--fail-on", "error")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("<stdin>:", r.stdout)
+        r = self.run_stdin("# T\n\nThis is load-bearing.\n", "--fail-on", "error")
+        self.assertEqual(r.returncode, 1, r.stderr)
+        r = self.run_stdin("# T\n\nfine\n", "--fail-on", "error", "--json")
+        self.assertEqual(json.loads(r.stdout)[0]["doc"], "<stdin>")
+
+    def test_stdin_twice_is_a_setup_error(self):
+        r = subprocess.run([sys.executable, MEASURE_PATH, "-", "-"], input="x", capture_output=True, text=True)
+        self.assertEqual(r.returncode, 2)
+
+    def test_non_utf8_stdout_does_not_crash_a_warn_only_report(self):
+        doc = write_tmp("# T\n\nThe team said “hello” on Monday. Nothing else changed.\n")
+        for enc in ("ascii", "latin-1"):
+            r = subprocess.run([sys.executable, MEASURE_PATH, doc, "--fail-on", "error"],
+                               capture_output=True, text=True, env=dict(os.environ, PYTHONIOENCODING=enc))
+            self.assertEqual(r.returncode, 0, "%s: %s" % (enc, r.stderr))
+            self.assertNotIn("Traceback", r.stderr)
