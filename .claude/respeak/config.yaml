@@ -1,0 +1,10 @@
+# respeak project layer (git-tracked). Layers: ~/code/claude-code-respeak/docs/config-layers.md
+version: 3
+
+# Dogfood: this plugin's own prose is gated by its own scanner.
+narrative: { default_mode: technical, tech_level: 4 }
+gate:
+  enabled: true
+  include: ["**/*.md"]
+  exclude: ["research/**", "examples/**", "corpus/**"]
+  fail_on: error
