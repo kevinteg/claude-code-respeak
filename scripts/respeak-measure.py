@@ -104,9 +104,42 @@ def rule_text(entry) -> str:
     return entry.get("pattern") or entry.get("phrase") or ""
 
 
+class SetupError(Exception):
+    """A problem with the inputs (corpus, config, or document), as opposed to
+    a style-gate verdict. main() maps it to exit 2 so the gate hook fails
+    open; exit 1 is reserved for a real verdict."""
+
+
 def allowed_by_gate(entry, allow_regexes) -> bool:
     txt = rule_text(entry)
-    return any(re.search(a, txt) for a in allow_regexes)
+    return any(a.search(txt) for a in allow_regexes)
+
+
+def validate_corpus(corpus, path):
+    """Raise SetupError unless the corpus has the shape scan_doc needs."""
+    cats = corpus.get("categories") if isinstance(corpus, dict) else None
+    if not isinstance(cats, dict):
+        raise SetupError(f"{path}: corpus has no 'categories' mapping")
+    for cat, cdef in cats.items():
+        entries = cdef.get("entries") if isinstance(cdef, dict) else None
+        if not isinstance(entries, list):
+            raise SetupError(f"{path}: category {cat!r} has no 'entries' list")
+        for i, e in enumerate(entries):
+            if not isinstance(e, dict) or not (e.get("pattern") or e.get("phrase")):
+                raise SetupError(f"{path}: {cat}[{i}] needs a 'pattern' or 'phrase'")
+            if e.get("severity") not in ("error", "warn", None):
+                raise SetupError(f"{path}: {cat}[{i}] severity {e.get('severity')!r} is not error/warn")
+            for field in ("pattern",):
+                if e.get(field):
+                    try:
+                        re.compile(e[field], re.I | re.M)
+                    except re.error as exc:
+                        raise SetupError(f"{path}: {cat}[{i}] {field} {e[field]!r}: {exc}")
+            for x in e.get("exceptions") or []:
+                try:
+                    re.compile(x, re.I | re.M)
+                except re.error as exc:
+                    raise SetupError(f"{path}: {cat}[{i}] exception {x!r}: {exc}")
 
 
 def scan_doc(text: str, corpus, allow_regexes):
@@ -150,9 +183,20 @@ def get_budgets(config):
 
 
 def get_allow(config):
+    """gate.allow as compiled regexes; a bad one is a SetupError (a config
+    problem), never a verdict."""
     if not config:
         return []
-    return list((config.get("gate") or {}).get("allow") or [])
+    raw = (config.get("gate") or {}).get("allow") or []
+    if not isinstance(raw, list):
+        raise SetupError(f"gate.allow must be a list, got {type(raw).__name__}")
+    out = []
+    for a in raw:
+        try:
+            out.append(re.compile(str(a)))
+        except re.error as exc:
+            raise SetupError(f"gate.allow entry {a!r} is not a valid regex: {exc}")
+    return out
 
 
 def check_budgets(result, budgets):
@@ -169,8 +213,18 @@ def check_budgets(result, budgets):
     }
 
 
+def read_doc(doc_path):
+    """Read a document as UTF-8; anything else is an unreadable file (a
+    SetupError), not a style verdict."""
+    try:
+        with open(doc_path, encoding="utf-8") as f:
+            return f.read()
+    except UnicodeDecodeError as e:
+        raise SetupError(f"{doc_path}: not UTF-8 text ({e})")
+
+
 def measure(doc_path, corpus, config, max_sentence_words):
-    raw = open(doc_path).read()
+    raw = read_doc(doc_path)
     text = strip_exempt(raw)
     allow_regexes = get_allow(config)
     hits = scan_doc(text, corpus, allow_regexes)
@@ -242,20 +296,25 @@ def main():
         os.environ.get("CLAUDE_PLUGIN_ROOT", os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
         "corpus", "banned-phrases.yaml")
 
+    # Every failure that is not a style verdict exits 2, including ones
+    # nobody anticipated: the gate hook reads exit 1 as "the document failed
+    # the gate" and blocks the write, so an uncaught traceback (which CPython
+    # exits 1 for) would turn a broken corpus into a blocked edit.
     try:
         corpus = load_yaml(corpus_path)
+        validate_corpus(corpus, corpus_path)
         config = load_yaml(args.config) if args.config else None
-    except (OSError, yaml.YAMLError) as e:
+        if config is not None and not isinstance(config, dict):
+            raise SetupError(f"{args.config}: top level is not a mapping")
+        results = []
+        for doc in args.docs:
+            results.append(measure(doc, corpus, config, args.max_sentence_words))
+    except (OSError, yaml.YAMLError, SetupError) as e:
         print(f"respeak-measure: {e}", file=sys.stderr)
         sys.exit(2)
-
-    results = []
-    for doc in args.docs:
-        try:
-            results.append(measure(doc, corpus, config, args.max_sentence_words))
-        except OSError as e:
-            print(f"respeak-measure: {e}", file=sys.stderr)
-            sys.exit(2)
+    except Exception as e:  # noqa: BLE001 — anything unexpected is a setup error, not a verdict
+        print(f"respeak-measure: internal error ({type(e).__name__}: {e})", file=sys.stderr)
+        sys.exit(2)
 
     if args.json:
         print(json.dumps(results, indent=1))

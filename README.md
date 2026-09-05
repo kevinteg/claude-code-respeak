@@ -386,7 +386,7 @@ full diff before trusting it, and the verifier exists so that reading is
 cheap. Treat translated narratives the way you treat any report: spot-check
 against the evidence it cites.
 
-## Honest status (v0.4.1)
+## Honest status (v0.4.2)
 
 Working today: the translator and modes, the style gates and corpus, the
 buried-lede test with structure advisories and the data-rendering contract,
@@ -405,7 +405,10 @@ resolver expands. v0.4.1 is the result of an adversarial review of v0.4.0
 consumer, the user file never promoted to project grade, symlink-safe path
 comparison, fail-open on setup errors, a Markdown-only gate contract, and
 `allowed-tools` on the skills so the preamble runs under default
-permissions.
+permissions. A re-break pass on those fixes then found that measure setup
+errors surfacing as uncaught exceptions still blocked writes; v0.4.2 makes
+every non-verdict failure exit 2 and validates the corpus shape and
+`gate.allow` regexes up front.
 
 Declared in config but not yet enforced by tooling: the lexicon entry cap,
 edit-distance check, usage-based expiry, auto-ratification gate, and

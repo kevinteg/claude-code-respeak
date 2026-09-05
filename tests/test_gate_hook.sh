@@ -182,6 +182,25 @@ hook_json_for "$proj_on/ghost.md" \
   > "$work/gate-ghost.out" 2>&1
 check "unreadable target fails open (exit 0)" 0 "$?"
 
+# --- v0.4.2: setup errors that used to escape as tracebacks (exit 1) --------
+doc_latin1="$proj_on/latin1.md"; printf 'The plan uses the cache. Caf\xe9 is not UTF-8.\n' > "$doc_latin1"
+hook_json_for "$doc_latin1" | RESPEAK_GATE_TRACE=1 CLAUDE_PROJECT_DIR="$proj_on" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$GATE" > "$work/gate-latin1.out" 2>&1
+check "non-UTF-8 doc is unreadable: fails open (exit 0)" 0 "$?"
+check_grep "...as a setup error" "setup error" "$work/gate-latin1.out"
+proj_badallow="$work/proj-badallow"; mkdir -p "$proj_badallow/.claude/respeak"
+printf 'gate: {enabled: true, include: ["**/*.md"], fail_on: error, allow: ["("]}\n' > "$proj_badallow/.claude/respeak/config.yaml"
+doc_badallow="$proj_badallow/clean.md"; echo "$CLEAN_TEXT" > "$doc_badallow"
+hook_json_for "$doc_badallow" | RESPEAK_GATE_TRACE=1 CLAUDE_PROJECT_DIR="$proj_badallow" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$GATE" > "$work/gate-badallow.out" 2>&1
+check "invalid gate.allow regex is a config error: fails open (exit 0)" 0 "$?"
+for shape in 'foo: bar' '- a' 'categories: {x: {entries: [{pattern: "(", severity: error}]}}'; do
+  printf '%s\n' "$shape" > "$fakeroot/corpus/banned-phrases.yaml"
+  hook_json_for "$doc_clean" | CLAUDE_PROJECT_DIR="$proj_on" CLAUDE_PLUGIN_ROOT="$fakeroot" "$GATE" > "$work/gate-shape.out" 2>&1
+  check "corpus shape error ($shape) fails open (exit 0)" 0 "$?"
+done
+: > "$fakeroot/corpus/banned-phrases.yaml"
+hook_json_for "$doc_clean" | CLAUDE_PROJECT_DIR="$proj_on" CLAUDE_PLUGIN_ROOT="$fakeroot" "$GATE" > "$work/gate-empty-corpus.out" 2>&1
+check "empty corpus file fails open (exit 0)" 0 "$?"
+
 # --- a pass is a real pass: the trace line proves measure ran ----------------
 hook_json_for "$doc_clean" \
   | RESPEAK_GATE_TRACE=1 CLAUDE_PROJECT_DIR="$proj_on" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$GATE" \

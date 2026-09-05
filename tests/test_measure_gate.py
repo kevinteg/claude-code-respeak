@@ -192,3 +192,52 @@ class TestSentenceWindow(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SetupErrorsExit2(unittest.TestCase):
+    """v0.4.2: every non-verdict failure exits 2, so the gate hook fails open.
+    An uncaught exception exits 1 in CPython, which the hook reads as a
+    verdict; these pin the cases an adversarial re-break found."""
+
+    CLEAN = "# T\n\nThe plan uses the cache and finishes in three steps.\n"
+
+    def corpus_file(self, text):
+        return write_tmp(text, suffix=".yaml")
+
+    def test_non_utf8_doc_is_a_setup_error(self):
+        f = tempfile.NamedTemporaryFile(mode="wb", suffix=".md", delete=False)
+        f.write(b"# T\n\nThe plan uses the cache. Caf\xe9 is not UTF-8.\n"); f.close()
+        r = run_measure([f.name, "--fail-on", "error"])
+        self.assertEqual(r.returncode, 2, r.stderr)
+        self.assertIn("not UTF-8", r.stderr)
+
+    def test_bad_allow_regex_is_a_setup_error(self):
+        cfg = write_tmp("gate:\n  allow: ['(']\n", suffix=".yaml")
+        r = run_measure([write_tmp(self.CLEAN), "--fail-on", "error", "--config", cfg])
+        self.assertEqual(r.returncode, 2, r.stderr)
+        self.assertIn("gate.allow", r.stderr)
+
+    def test_corpus_shape_errors_exit_2(self):
+        cases = {
+            "no categories": "foo: bar\n",
+            "empty file": "",
+            "a list": "- a\n",
+            "bad pattern": "categories:\n  x:\n    entries:\n      - {pattern: '(', severity: error}\n",
+            "bad exception": "categories:\n  x:\n    entries:\n      - {phrase: foo, severity: error, exceptions: ['(']}\n",
+            "bad severity": "categories:\n  x:\n    entries:\n      - {phrase: foo, severity: loud}\n",
+            "entry without text": "categories:\n  x:\n    entries:\n      - {severity: error}\n",
+        }
+        for name, text in cases.items():
+            r = run_measure([write_tmp(self.CLEAN), "--fail-on", "error", "--corpus", self.corpus_file(text)])
+            self.assertEqual(r.returncode, 2, "%s: rc=%s stderr=%s" % (name, r.returncode, r.stderr))
+            self.assertTrue(r.stderr.startswith("respeak-measure:"), name)
+            self.assertNotIn("Traceback", r.stderr, name)
+
+    def test_config_that_is_not_a_mapping_exits_2(self):
+        cfg = write_tmp("- just\n- a list\n", suffix=".yaml")
+        r = run_measure([write_tmp(self.CLEAN), "--config", cfg])
+        self.assertEqual(r.returncode, 2, r.stderr)
+
+    def test_a_real_verdict_still_exits_1(self):
+        r = run_measure([write_tmp("# T\n\nThis is load-bearing.\n"), "--fail-on", "error"])
+        self.assertEqual(r.returncode, 1, r.stderr)

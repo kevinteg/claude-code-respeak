@@ -448,8 +448,12 @@ above a checkout.
   `project:`; `/respeak:init` reports when the root it found is not the
   current directory.
 - **Hooks fail open.** No PyYAML-capable python, a missing resolver, a
-  resolver error, or a measure setup error (an unreadable file, a corrupt
-  corpus) means the gate allows; only a real style-gate verdict blocks.
+  resolver error, or a measure setup error means the gate allows; only a
+  real style-gate verdict blocks. Setup errors include an unreadable or
+  non-UTF-8 file, a corpus with the wrong shape or an invalid regex, and an
+  invalid `gate.allow` regex; the measure script exits 2 for every failure
+  that is not a verdict, uncaught exceptions included, because CPython's
+  exit 1 for a traceback would otherwise read as a verdict.
   `RESPEAK_GATE_TRACE=1` makes the hook say on stderr which of those
   happened, and a test suite pins each case. The Stop hook has one layer
   that needs no YAML, the install-time `auto_narrative` knob, and honours
