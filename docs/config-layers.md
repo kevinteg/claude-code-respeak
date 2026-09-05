@@ -499,6 +499,16 @@ above a checkout.
   On older versions the skill's `--launch-dir` is empty. The project root
   then comes from rule 2 or rule 4 above, which is still the answer the
   hook gives.
+- **The plugin must be installed under a path without spaces.** The
+  skills pre-approve their own scripts with `allowed-tools: Bash(<plugin
+  root>/scripts/respeak-config.sh *)`, and Claude Code's Bash permission
+  matcher (2.1.261) cannot match a command whose script path contains a
+  space, quoted or escaped, with an absolute or a wildcard rule. Under
+  such a root the `!` preamble fails its permission check and Claude Code
+  aborts the invocation with zero turns; the hooks, which take no
+  permission check, keep working. The default plugin cache path
+  qualifies. The SessionStart hook says so when it sees a spaced root, and
+  `/respeak:init` reports it.
 
 ## Design notes
 

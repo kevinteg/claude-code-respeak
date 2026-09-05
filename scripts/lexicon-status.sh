@@ -19,12 +19,21 @@ proposals=0
 [ -d ".claude/respeak/proposals" ] && proposals=$(find .claude/respeak/proposals -name '*.yaml' 2>/dev/null | wc -l)
 version=$(grep -m1 '^version:' "$lexicon" 2>/dev/null | awk '{print $2}')
 
-python3 - "$lexicon" "${version:-0}" "$ratified" "$proposals" <<'PY' 2>/dev/null || exit 0
+# Claude Code's Bash permission matcher cannot pre-approve a script whose
+# path contains a space, so under such a plugin root the /respeak:respeak
+# preamble aborts its invocation (docs/config-layers.md, "Upgrading"). Say
+# so once, at session start, instead of letting the skill fail silently.
+space_note=""
+case "${CLAUDE_PLUGIN_ROOT:-}" in
+  *" "*) space_note=" NOTE: the respeak plugin root contains a space, so /respeak:respeak will fail its permission check and abort under default permissions; reinstall the plugin under a path without spaces (the hooks still work)." ;;
+esac
+
+python3 - "$lexicon" "${version:-0}" "$ratified" "$proposals" "$space_note" <<'PY' 2>/dev/null || exit 0
 import json, sys
-lexicon, version, ratified, proposals = sys.argv[1:5]
+lexicon, version, ratified, proposals, space_note = sys.argv[1:6]
 ctx = (f"The respeak shorthand lexicon (v{version}) is at {lexicon} with "
        f"{ratified} ratified terms; only ratified terms may be used as shorthand. "
-       f"{proposals} proposals are pending human ratification.")
+       f"{proposals} proposals are pending human ratification.{space_note}")
 print(json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": ctx}}))
 PY
 exit 0

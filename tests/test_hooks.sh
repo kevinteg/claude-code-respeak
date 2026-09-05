@@ -101,4 +101,15 @@ printf 'narrative: {auto_narrative: null}\n' > "$nullproj/.claude/respeak/config
 out="$(stop_json "$nullproj" "$MILESTONE" | CLAUDE_PLUGIN_OPTION_AUTO_NARRATIVE=true CLAUDE_PROJECT_DIR="$nullproj" bash "$STOP")"
 check_out "stop: a resolved null is off; the knob does not sneak back in" '' "$out"
 
+# ----- v0.4.3: SessionStart hook warns about a plugin root with a space -----
+LEXSTAT="$REPO_ROOT/scripts/lexicon-status.sh"
+sp_root="$work/plug in"; mkdir -p "$sp_root/corpus"; cp "$REPO_ROOT/corpus/lexicon.yaml" "$sp_root/corpus/"
+out="$(cd "$proj" && printf '{}' | CLAUDE_PLUGIN_ROOT="$sp_root" bash "$LEXSTAT")"
+check_out "session-start: a plugin root with a space is called out" 'plugin root contains a space' "$out"
+check_out "session-start: ...and the lexicon status is still there" 'ratified terms' "$out"
+out="$(cd "$proj" && printf '{}' | CLAUDE_PLUGIN_ROOT="$REPO_ROOT" bash "$LEXSTAT")"
+if printf '%s' "$out" | grep -q 'contains a space'; then fail=$((fail + 1)); echo "FAIL - session-start: false space warning"; else pass=$((pass + 1)); echo "ok   - session-start: no warning for a normal root"; fi
+out="$(cd "$proj" && printf '{}' | CLAUDE_PLUGIN_ROOT="$REPO_ROOT" bash "$LEXSTAT" | /usr/bin/python3 -c 'import json,sys; json.load(sys.stdin); print("json-ok")')"
+check_out "session-start: output is valid hook JSON" 'json-ok' "$out"
+
 echo; echo "$pass passed, $fail failed"; [ "$fail" -eq 0 ]

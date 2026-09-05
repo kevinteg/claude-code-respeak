@@ -234,8 +234,10 @@ or manifest), run `claude plugin update respeak` (or reinstall) so the
 ## Install
 
 Prerequisites: Claude Code ≥ 2.1.196 (for `${CLAUDE_PROJECT_DIR}` in
-skills; older 2.1 works with discovery alone), bash, and a python3 with
-PyYAML. The scripts pick the first interpreter that can import it
+skills; older 2.1 works with discovery alone), a plugin path without
+spaces (Claude Code's permission matcher cannot pre-approve a script under
+one, so the skills would abort; hooks are unaffected), bash, and a python3
+with PyYAML. The scripts pick the first interpreter that can import it
 (`python3`, `/usr/bin/python3`, the brew pythons; override with
 `RESPEAK_PYTHON`) and cache the answer per `PATH`, so a pyenv shim without
 PyYAML on PATH neither disables the hooks nor taxes every call. The translator runs as a Sonnet subagent in its own context

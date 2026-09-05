@@ -57,8 +57,11 @@ Perform these steps in the current project, reporting each as done/skipped:
    segment shows the effective mode and, when a nearer layer decided it,
    which file: `respeak bluf/t1 exec @docs/exec/.respeak.yaml · lexicon v0 · 0 proposals`.
 8. Report: paths created, seeds copied, digest entry count, the layers
-   `explain` found, which integrations the user accepted, and the gate's
-   current state (`gate: disabled (default) — enable in
+   `explain` found, which integrations the user accepted, whether the
+   plugin root `${CLAUDE_PLUGIN_ROOT}` contains a space (if it does, say
+   that `/respeak:respeak` will abort its permission check under default
+   permissions until the plugin is reinstalled under a space-free path;
+   the hooks still work), and the gate's current state (`gate: disabled (default) — enable in
    .claude/respeak/config.yaml` or, if the user asks to turn it on now, edit
    `gate.enabled: true` there and confirm `gate.include`/`gate.exclude`
    match the project's layout).
