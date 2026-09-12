@@ -23,18 +23,6 @@
           }
         ]
       }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Write|Edit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/respeak-gate.sh\"",
-            "timeout": 20
-          }
-        ]
-      }
     ]
   }
 }
