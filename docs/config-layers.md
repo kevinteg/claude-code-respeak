@@ -2,7 +2,7 @@
 
 Respeak resolves its configuration from layers, and the layer nearest the
 file being written or rendered wins. A personal default in
-`~/.claude/respeak/config.yaml`, a team baseline in a repo's
+`~/.claude/respeak/config.yaml`, a project baseline in a repo's
 `.claude/respeak/config.yaml`, and a three-line `.respeak.yaml` in
 `docs/exec/` compose into one effective configuration per target path. One
 command shows the result and which layer decided each key:
@@ -49,7 +49,7 @@ Lowest precedence first. "May set" is explained under
 | 2 | userConfig | `claude plugin install respeak --config default_mode=bluf` | you, at install | no | `default_mode`, `tech_level`, `auto_narrative` |
 | 3 | user | `${CLAUDE_CONFIG_DIR:-~/.claude}/respeak/config.yaml` | you | your dotfiles | tone keys |
 | 4 | ancestors | `<dir>/.respeak.yaml` in every directory above the project root, outermost first | you | no | tone keys |
-| 5 | project | `<project>/.claude/respeak/config.yaml` | the team | yes | everything |
+| 5 | project | `<project>/.claude/respeak/config.yaml` | the project | yes | everything |
 | 6 | project local | `<project>/.claude/respeak/config.local.yaml` | you | gitignored | everything |
 | 7 | folders | `<dir>/.respeak.yaml` and `.respeak.local.yaml` from the project root down to the target's directory, nearest last | folder owners | yes / gitignored | tone keys |
 | 8 | env | files listed in `RESPEAK_CONFIG` (colon-separated) | CI, one-off runs | no | everything |
@@ -69,7 +69,7 @@ level is not a mapping, is skipped with a warning that `explain` prints.
 **Nearest wins.** The stack is one walk from the filesystem root down to
 the target's directory, with the user file before it and the invocation
 after it. The project's two files sit at the project root's position in the
-walk, so an ancestor `.respeak.yaml` in `~/code/` is below the project file
+walk, so an ancestor `.respeak.yaml` in `~/src/` is below the project file
 and a `.respeak.yaml` in `docs/exec/` is above it.
 
 **Maps merge, scalars replace.** `narrative: {tone: {formality: 0.9}}` in a
@@ -164,7 +164,7 @@ enforcement is on and the tool that enforces never disagree:
 2. The nearest ancestor of the target (its own directory included) holding
    `.claude/respeak/config.yaml`. In a monorepo a package's own file is the
    project for the files under it. A file in a parent directory, such as
-   `~/code/.claude/respeak/config.yaml`, governs every repo below it, the
+   `~/src/.claude/respeak/config.yaml`, governs every repo below it, the
    way a parent `CLAUDE.md` does. The user config directory is never a
    project: `~/.claude/respeak/config.yaml` is the user layer and is not
    loaded a second time at project grade, even for a session launched in
@@ -176,8 +176,8 @@ enforcement is on and the tool that enforces never disagree:
 
 `explain` prints which rule chose the root next to `project:`. Paths are
 compared after symlink resolution, and on macOS and Windows after case and
-Unicode folding as well, so `/tmp` and `/private/tmp`, a `~/code` symlink,
-and `~/Code/Proj` typed for `~/code/proj` all name the same project. A file
+Unicode folding as well, so `/tmp` and `/private/tmp`, a `~/src` symlink,
+and `~/Src/Proj` typed for `~/src/proj` all name the same project. A file
 counts as inside the project when either its path as given or its resolved
 path is under the root: a symlink inside the project that points elsewhere
 is still the project's file and is still gated.
@@ -209,7 +209,7 @@ narrative: { default_mode: bluf, tech_level: 2 }
 profiles:
   household: { tech_level: 2, default_mode: eli5, lexicon_access: forbidden, reading_level_grade: 8, address: you }
 scopes:
-  - paths: ["~/code/legal-records/**"]
+  - paths: ["~/src/some-repo/**"]
     narrative: { tone: { formality: 0.9, directness: 1.0 } }
 gate: { allow: ["spine"] }
 
@@ -255,7 +255,7 @@ inside the plugin checkout):
 
 ```
 respeak config for docs/exec/q3-summary.md
-project: ~/code/claude-code-respeak/examples/layered/project (--project)
+project: <checkout>/examples/layered/project (--project)
 
 layers, lowest precedence first (* = present and applied):
   * plugin         <plugin>/config/respeak.config.yaml
@@ -307,7 +307,7 @@ examples/layered/project/notes/.respeak.yaml [folder]: ERROR
   error: <checkout>/examples/layered/project/notes/.respeak.yaml: gate.enabled is project-only; ignored
 $ bash scripts/respeak-config.sh explain --brief --project $P --for $P/notes/scratch.md --walk-from $P
 respeak config for notes/scratch.md
-project: ~/code/claude-code-respeak/examples/layered/project (--project)
+project: <checkout>/examples/layered/project (--project)
 layers applied: plugin, user <plugin>/examples/layered/home/.claude/respeak/config.yaml, project .claude/respeak/config.yaml, project-local .claude/respeak/config.local.yaml, folder notes/.respeak.yaml
 effective narrative: mode=technical tech_level=5 profile=author context=routine tone(f=0.2 d=0.9 c=0.8) auto_narrative=false lexicon_access=inline
 gate: enabled=true fail_on=error applies=false (matched by gate.exclude)
@@ -371,7 +371,7 @@ project scope, or `.respeak.local.yaml` beside a folder file.
 project under it, tone keys only:
 
 ```yaml
-# ~/code/.respeak.yaml
+# ~/src/.respeak.yaml
 narrative: { context_default: routine }
 style: { budgets: { emdash_per_1000_words: 2 } }
 ```
@@ -381,7 +381,7 @@ Or the same from the user file, keyed by absolute path:
 ```yaml
 # ~/.claude/respeak/config.yaml
 scopes:
-  - paths: ["~/code/legal-records/**"]
+  - paths: ["~/src/some-repo/**"]
     narrative: { tone: { formality: 0.9, directness: 1.0 } }
 ```
 
@@ -439,18 +439,48 @@ names the layer that decided.
 the tests use it for determinism and CI can use it to ignore whatever sits
 above a checkout.
 
+## Session overrides
+
+The layers say what respeak should do in a place. Two overrides say what it
+does in the session you are in, without touching any file in the project.
+The plugin manifest registers all three hooks for every installer; these
+are how one session declines them.
+
+| Override | Scope | Set by | Effect |
+| --- | --- | --- | --- |
+| session marker | one Claude Code session | `/respeak:off [gate]`, `/respeak:on [gate]` (`scripts/respeak-session.sh`) | `off`: every hook silent; `gate-off`: only the gate; `gate-on`: the gate runs as if `gate.enabled` were true |
+| environment | one launch, or wherever the variable is exported | `RESPEAK_HOOKS=off`, `RESPEAK_GATE=off` or `RESPEAK_GATE=on` | same three effects |
+
+Precedence: marker, then environment, then the layers. `RESPEAK_GATE=on`
+and the `gate-on` marker apply the resolved project configuration with
+`gate.enabled` forced true, so `include`, `exclude`, `fail_on`, and
+`allow` still hold. The `--file` form of the gate has no session, so only
+the environment applies to it (CI is the intended user).
+
+Markers live under `${RESPEAK_CACHE_DIR:-${XDG_CACHE_HOME:-~/.cache}/respeak}/session/<session_id>`,
+hold one word, and are swept when older than 24 hours, so a session that
+crashed never leaves a silent hook behind. A marker with any other content
+is ignored. The session id is the one Claude Code hands to hooks on stdin
+and to skills as `CLAUDE_SESSION_ID`; without one, `/respeak:off` refuses
+and points at the environment variables.
+
+`respeak-config.sh explain` ends with a `session overrides:` line, so the
+tool that shows the effective configuration also shows the override the
+hooks saw. A durable personal preference is not a session override: put it
+in `config.local.yaml`.
+
 ## Trust boundaries
 
 - **A folder or user file cannot change enforcement or governance.** The
   key policy above is enforced in the resolver. The gate hook, the skill,
   and the headless renderer all see the same dropped keys.
 - **Ancestor files above the project apply,** like parent-directory
-  `CLAUDE.md` files. A `.respeak.yaml` in `~/code/` shapes tone for every
+  `CLAUDE.md` files. A `.respeak.yaml` in `~/src/` shapes tone for every
   repo under it; it still cannot enable the gate. `explain` lists it.
 - **Personal files stay personal.** `/respeak:init` offers the two
   gitignore lines; the plugin repo's own `.gitignore` carries them.
 - **A parent directory's `.claude/respeak/config.yaml` is a project file.**
-  Whoever creates `~/code/.claude/respeak/config.yaml` has opted every repo
+  Whoever creates `~/src/.claude/respeak/config.yaml` has opted every repo
   below it into that file's gate settings, the way a parent `CLAUDE.md`
   applies to every repo below it. `explain` names the file next to
   `project:`; `/respeak:init` reports when the root it found is not the

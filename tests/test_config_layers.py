@@ -603,7 +603,7 @@ class Discovery(unittest.TestCase):
         self.assertTrue(rc.gate_decision(res)["applies"])
 
     def test_parent_project_config_governs_a_repo_launched_below_it(self):
-        # ~/code/.claude/respeak/config.yaml + session launched in ~/code/repo
+        # ~/src/.claude/respeak/config.yaml + session launched in ~/src/repo
         code = os.path.join(self.fx.home, "code")
         write(os.path.join(code, ".claude", "respeak", "config.yaml"), "gate: {enabled: true}\n")
         os.makedirs(os.path.join(self.fx.project, ".git"))

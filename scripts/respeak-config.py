@@ -107,7 +107,7 @@ _Loader = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
 
 def real(path):
     """Absolute path with symlinks resolved, so /tmp and /private/tmp (or a
-    ~/code symlink) never make an in-project file look like an outsider."""
+    ~/src symlink) never make an in-project file look like an outsider."""
     return os.path.realpath(os.path.abspath(os.path.expanduser(path)))
 
 

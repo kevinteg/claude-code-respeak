@@ -76,7 +76,7 @@ class TestFailOnSemantics(unittest.TestCase):
 
 class TestExceptions(unittest.TestCase):
     """The motivating false positive: literal "spine switch" networking
-    prose vs. the owner-banned "the spine" structure metaphor."""
+    prose vs. the project-banned "the spine" structure metaphor."""
 
     def test_spine_switch_literal_passes(self):
         doc = write_tmp("The spine switch peers with every leaf switch over eBGP.\n")
@@ -267,7 +267,7 @@ class StdinAndEncoding(unittest.TestCase):
         self.assertEqual(r.returncode, 2)
 
     def test_non_utf8_stdout_does_not_crash_a_warn_only_report(self):
-        doc = write_tmp("# T\n\nThe team said “hello” on Monday. Nothing else changed.\n")
+        doc = write_tmp("# T\n\nThe reviewer said “hello” on Monday. Nothing else changed.\n")
         for enc in ("ascii", "latin-1"):
             r = subprocess.run([sys.executable, MEASURE_PATH, doc, "--fail-on", "error"],
                                capture_output=True, text=True, env=dict(os.environ, PYTHONIOENCODING=enc))

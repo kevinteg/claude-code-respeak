@@ -34,7 +34,7 @@ callers that only want the report. Exit 2 is reserved for usage/IO errors
 Per-entry `exceptions:` (list of regexes, already in the corpus) exempt a
 hit whose surrounding sentence also matches one of the entry's exceptions —
 this is what lets "the spine switch" pass while "the spine of the argument"
-still flags the owner-banned metaphor.
+still flags the project-banned metaphor.
 """
 import argparse
 import json

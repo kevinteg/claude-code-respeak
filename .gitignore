@@ -1,5 +1,4 @@
 # run artifacts
-fanout-runs/
 *.pyc
 __pycache__/
 .DS_Store

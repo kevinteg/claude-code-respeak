@@ -1,4 +1,4 @@
-# respeak project layer (git-tracked). Layers: ~/code/claude-code-respeak/docs/config-layers.md
+# respeak project layer (git-tracked). Layers: docs/config-layers.md
 version: 3
 
 # Dogfood: this plugin's own prose is gated by its own scanner.

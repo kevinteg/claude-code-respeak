@@ -24,7 +24,7 @@ editorial_pass:
   # restructure:
   #   advise — never move sections; when the buried-lede test fails, report a
   #            structure advisory: the proposed section order plus a drafted
-  #            lead paragraph the owner can paste in. Headings stay stable, so
+  #            lead paragraph the author can paste in. Headings stay stable, so
   #            anchors and inbound links survive.
   #   apply  — may reorder sections, retitle headings, and rewrite the lead.
   #            Only when the caller owns relinking (e.g. a whole-wiki pass);

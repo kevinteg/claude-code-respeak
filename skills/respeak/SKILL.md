@@ -4,7 +4,7 @@ description: >
   Translate agent/swarm output into a human-facing narrative. Fires on
   /respeak:respeak [mode] [source], and on natural-language asks like
   "explain that to my manager", "give me the ELI5", "make this readable",
-  "what would I tell the team", "translate this for the docs".
+  "what would I tell the reviewers", "translate this for the docs".
 argument-hint: "[eli5|bluf|technical] [text or file path — defaults to this session's latest outcome]"
 arguments: [mode, source]
 allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/scripts/respeak-config.sh *) Bash(${CLAUDE_PLUGIN_ROOT}/scripts/respeak-py.sh *)
@@ -38,7 +38,7 @@ Steps:
    `"${CLAUDE_PLUGIN_ROOT}/scripts/respeak-config.sh" resolve --for "<target>" --launch-dir "${CLAUDE_PROJECT_DIR}" [--mode <mode>] --format yaml --out "/tmp/respeak-${CLAUDE_SESSION_ID}.yaml"`
    Add `--profile <name>` when the user named an audience that matches a
    profile the config defines under `profiles:` (for example "for the exec
-   team" → `exec`, or a household profile the user defined at user level);
+   audience" → `exec`, or a household profile the user defined at user level);
    run `"${CLAUDE_PLUGIN_ROOT}/scripts/respeak-config.sh" explain --for "<target>" --launch-dir "${CLAUDE_PROJECT_DIR}"`
    when you need the full layer-by-layer listing.
 4. Delegate to the `respeak:respeak` agent with: the mode, the contents of

@@ -2,7 +2,9 @@
 
 Research for respeak corpus/banned-phrases.yaml. Compiled 2026-08-31.
 
-## 1. Wikipedia "Signs of AI writing" (WP:AISIGNS) — full catalog
+## 1. Wikipedia "Signs of AI writing" (WP:AISIGNS) — condensed catalog
+
+> Attribution: this section condenses a page written by Wikipedia contributors and licensed [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). The condensed version is available under the same license; the rest of this repository is MIT.
 
 Fetched 2026-08-31 from https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing. This is the single richest curated catalog; maintained by WikiProject AI Cleanup. Key caveats the page itself gives: detection tools (GPTZero, Pangram) have non-trivial error rates; average humans detect AI text near chance, but heavy LLM users hit ~90% accuracy (Russell, Karpinska & Iyyer 2025, arXiv:2501.15654); human language is drifting toward LLM style (arXiv:2409.01754), so tells decay over time.
 

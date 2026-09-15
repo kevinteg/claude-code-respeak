@@ -12,7 +12,7 @@ profiles:
     address: you
 scopes:
   # user-level scope paths must be absolute or ~-prefixed
-  - paths: ["~/code/legal-records/**"]
+  - paths: ["~/src/some-repo/**"]
     narrative:
       tone: { formality: 0.9, directness: 1.0 }
 gate:

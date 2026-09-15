@@ -61,7 +61,7 @@ the repo root are the same files — use them directly.
 ## Input gate
 
 Before you extract claim structure, scan the source material itself for
-owner-banned terms (`corpus/banned-phrases.yaml`, category `user_banned`,
+project-banned terms (`corpus/banned-phrases.yaml`, category `user_banned`,
 and any other `error`-severity entry). Never carry a banned term into your
 output because the source used it — not even when the caller asks you to
 preserve the source's wording. The corpus governs the output regardless of
@@ -151,7 +151,7 @@ the config's `editorial_pass` block:
    first.
 2. If it fails and `restructure: advise` — do not move anything. Append a
    **structure advisory** to your edit report: the proposed section order and
-   a drafted lead paragraph the owner can paste in.
+   a drafted lead paragraph the author can paste in.
 3. If it fails and `restructure: apply` — reorder, retitle, or add a lead
    abstract (`prefer_abstract_over_reorder` says which to favor). List every
    moved or retitled heading in your report so the caller can relink, and

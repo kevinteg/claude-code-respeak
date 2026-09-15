@@ -1,8 +1,12 @@
 # Banned and flagged phrases for respeak narratives.
-# v1: v0 seed (owner bans + well-documented AI-isms) merged with the reviewed
+# v1: v0 seed (project bans + well-documented AI-isms) merged with the reviewed
 # expansion in research/synthesis/corpus-expansion.md, which is traceable to
 # research/sources/deai-language-landscape.md (cited `deai §n`) and
 # research/sources/style-as-code-tooling.md (cited `sac §n`).
+# Attribution: `deai §1` condenses Wikipedia's "Signs of AI writing" (CC BY-SA
+# 4.0) and `deai §7` summarizes the antislop-sampler project (Apache-2.0); both
+# are sources of ideas and short phrases here, and no text or code from either
+# is reproduced.
 #
 # --- matching ---
 # Matching is case-insensitive. `phrase` is a literal; `pattern` is regex.
@@ -23,8 +27,8 @@
 #             does not flag. Every surveyed linter has this (Vale
 #             `exceptions`, write-good `whitelist`, alex `allow` — sac §10).
 # provenance: `evidence` (default, omitted) or `owner-preference`. The latter
-#             marks entries the project owner banned that no research catalog
-#             lists; they stand on owner authority, not measurement (sac §9
+#             marks entries the adopting project banned that no research catalog
+#             lists; they stand on the project's authority, not measurement (sac §9
 #             gap 8 asks for exactly this rationale link).
 # tier:       `density` marks common-overuse words that flag by DENSITY
 #             against config style.budgets.warn_phrases_per_1000_words, not
@@ -36,7 +40,7 @@ version: 1
 
 categories:
   user_banned:
-    note: Terms the project owner has explicitly banned from all narratives.
+    note: Terms this project has banned from all narratives (severity error).
     entries:
       - phrase: load-bearing
         severity: error
@@ -55,7 +59,7 @@ categories:
         # Literal networking sense (leaf-spine fabrics: spine switches, spine1,
         # spine ASN, a spine peering/advertising/draining/reflecting/forwarding/
         # receiving) is legitimate domain language, not the structure metaphor.
-        # A wiki pilot on eBGP-in-the-datacenter lessons false-positived here
+        # Literal networking prose false-positived here
         # (sac §10 pattern: literal-terrain exceptions, same fix as `landscape`
         # above). The metaphor ban itself stands — "the spine of the argument"
         # still flags.
@@ -78,7 +82,7 @@ categories:
         provenance: owner-preference
         # No research catalog lists `crisp` as an AI tell; Microsoft's *human*
         # style guide calls its own voice "crisp and clear" (sac §6). Kept on
-        # owner authority — it belongs to the self_grading family (deai §4).
+        # project authority; it belongs to the self_grading family (deai §4).
 
   pleasantries:
     note: Openers/closers that spend the reader's attention on nothing.
@@ -378,10 +382,10 @@ categories:
     note: >
       Editorial frames that announce the prose's quality instead of exhibiting
       it — extensions of the user_banned family. Source: deai §4 ("Self-grading
-      editorial frames"; analysis of the owner-ban generator).
+      editorial frames"; analysis of the project-ban generator).
     entries:
-      - { pattern: '\bthe honest version\b', severity: error }                    # extends the owner-banned "the honest (assessment|take|…)" root
-      - { pattern: '\bthe sharpest version\b', severity: error }                  # extends the owner-banned "sharpest (part|point|…)" root
+      - { pattern: '\bthe honest version\b', severity: error }                    # extends the project-banned "the honest (assessment|take|…)" root
+      - { pattern: '\bthe sharpest version\b', severity: error }                  # extends the project-banned "sharpest (part|point|…)" root
       - { pattern: 'a sharper way to (say|put)', severity: warn }
       - { pattern: "if I('m| am) being honest", severity: warn }
       - { pattern: '\bto be blunt\b', severity: warn }
@@ -395,13 +399,13 @@ categories:
       - { pattern: 'a cleaner way to (put|say)', severity: warn }
       - { pattern: '\bpunch(y|ier)\b', severity: warn }
       - { pattern: "(this|that) (lands|doesn't land)\\b", severity: warn }
-      - { pattern: '\bdoes a lot of (the )?work\b', severity: warn }              # cousin of the owner-banned "load-bearing"
+      - { pattern: '\bdoes a lot of (the )?work\b', severity: warn }              # cousin of the project-banned "load-bearing"
       - { pattern: '\bcarries the weight\b', severity: warn }
       - { pattern: '\bearns (its place|the reader)', severity: warn }
 
   anatomy_metaphors:
     note: >
-      Structure-as-body metaphors — same generator as the owner-banned
+      Structure-as-body metaphors — same generator as the project-banned
       "spine"/"load-bearing" family. Source: deai §4 ("Structure-as-anatomy
       metaphors", with proposed severities followed here).
     entries:
@@ -458,7 +462,7 @@ categories:
       - { pattern: '(🧠|🧱|🚨|🧭|📌|🚀|✨|💡)', severity: error, fix: no emoji decoration }
         # ✅ removed from the pattern 2026-09-01: paired ✅/❌ as boolean marks in
         # capability tables is legitimate data, and ❌ was never matched (wiki
-        # pilot finding — the rule flagged 4 table cells, zero decorations).
+        # field finding: the rule flagged 4 table cells, zero decorations).
       - { pattern: '^-{3,}$', severity: warn, fix: "thematic-break litter; cut" }
 
   narrative_slop:

@@ -4,11 +4,14 @@
 #
 # Usage:
 #   respeak-render.sh --mode {eli5|bluf|technical} --source <file> --out <file>
-#                      [--contract <file>] [--max-rounds 2] [--budget-usd 1.50]
+#                      [--contract <file>] [--max-rounds 2]
 #
-# Requires `claude-api-agent` on PATH — a headless, non-interactive wrapper
-# over the Claude Agent SDK. It is NOT part of this plugin; install it
-# separately. This script fails fast with a clear message if it is missing.
+# Runner: Claude Code's print mode (`claude -p`) by default, which every
+# installer already has. RESPEAK_RENDER_CMD names another runner that
+# accepts the same flags (-p, --model, --allowedTools, --output-format json,
+# --system-prompt-file, --add-dir; prompt on stdin, JSON with a `result`
+# string on stdout). RESPEAK_RENDER_MODEL picks the model (default
+# claude-sonnet-5). --max-rounds bounds the spend.
 #
 # What it does:
 #   1. Builds a system prompt from agents/respeak.md: strips the YAML
@@ -20,10 +23,9 @@
 #      above the output file, with --mode applied on top. The resolved YAML
 #      goes into the prompt as the agent's configuration (so a folder's tone
 #      applies headlessly too) and into every measure call as --config.
-#   2. Runs claude-api-agent non-interactively, piping a prompt (mode +
-#      resolved config + optional contract notes + the source material) on
-#      stdin.
-#   3. Extracts the `.result` string from the agent's --output-format json
+#   2. Runs the runner non-interactively, piping a prompt (mode + resolved
+#      config + optional contract notes + the source material) on stdin.
+#   3. Extracts the `.result` string from the runner's --output-format json
 #      output, strips any preamble before the first real content line (a
 #      leading `---` front-matter fence or a `#` heading) — belt-and-suspenders
 #      against a chatty preamble the agent's own output contract forbids but
@@ -34,8 +36,8 @@
 #      retry). Exits nonzero if still failing after the last round.
 #
 # Exit codes: 0 = wrote a passing narrative. 1 = still failing the gate
-# after --max-rounds. 2 = usage/setup error (missing claude-api-agent, bad
-# args, missing files, agent/parse failure).
+# after --max-rounds. 2 = usage/setup error (missing runner, bad args,
+# missing files, runner/parse failure).
 #
 # bash 3.2 compatible (macOS default): indexed arrays only, no associative
 # arrays, no mapfile.
@@ -50,7 +52,8 @@ SOURCE=""
 OUT=""
 CONTRACT=""
 MAX_ROUNDS=2
-BUDGET_USD="1.50"
+RENDER_CMD="${RESPEAK_RENDER_CMD:-claude}"
+RENDER_MODEL="${RESPEAK_RENDER_MODEL:-claude-sonnet-5}"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -59,13 +62,12 @@ while [ $# -gt 0 ]; do
     --out) OUT="$2"; shift 2 ;;
     --contract) CONTRACT="$2"; shift 2 ;;
     --max-rounds) MAX_ROUNDS="$2"; shift 2 ;;
-    --budget-usd) BUDGET_USD="$2"; shift 2 ;;
     *) echo "respeak-render: unknown argument $1" >&2; exit 2 ;;
   esac
 done
 
 if [ -z "$MODE" ] || [ -z "$SOURCE" ] || [ -z "$OUT" ]; then
-  echo "usage: respeak-render.sh --mode {eli5|bluf|technical} --source <file> --out <file> [--contract <file>] [--max-rounds N] [--budget-usd N]" >&2
+  echo "usage: respeak-render.sh --mode {eli5|bluf|technical} --source <file> --out <file> [--contract <file>] [--max-rounds N]" >&2
   exit 2
 fi
 
@@ -74,8 +76,8 @@ fi
   exit 2
 }
 
-command -v claude-api-agent >/dev/null 2>&1 || {
-  echo "respeak-render: claude-api-agent not found on PATH — install the headless Claude Agent SDK wrapper this script depends on before using the API lane (see docs/architecture.md for the entry-points table)." >&2
+command -v "$RENDER_CMD" >/dev/null 2>&1 || {
+  echo "respeak-render: runner '$RENDER_CMD' not found on PATH (Claude Code's 'claude' is the default; set RESPEAK_RENDER_CMD to use another runner with the same flags)." >&2
   exit 2
 }
 
@@ -140,22 +142,18 @@ prompt_body > "$PROMPT_FILE"
 # --- add-dir: plugin root (config/corpus) + the source and output dirs ---
 src_dir="$(cd "$(dirname "$SOURCE")" && pwd)"
 out_dir="$(cd "$(dirname "$OUT")" 2>/dev/null && pwd || pwd)"
-ADD_DIRS="$PLUGIN_ROOT"
-[ "$src_dir" != "$PLUGIN_ROOT" ] && ADD_DIRS="$ADD_DIRS,$src_dir"
-[ "$out_dir" != "$PLUGIN_ROOT" ] && [ "$out_dir" != "$src_dir" ] && ADD_DIRS="$ADD_DIRS,$out_dir"
+ADD_DIRS=("$PLUGIN_ROOT")
+[ "$src_dir" != "$PLUGIN_ROOT" ] && ADD_DIRS+=("$src_dir")
+[ "$out_dir" != "$PLUGIN_ROOT" ] && [ "$out_dir" != "$src_dir" ] && ADD_DIRS+=("$out_dir")
 
 run_agent() {
   # $1 = prompt file, $2 = destination for raw --output-format json
-  claude-api-agent \
-    --tag phase=render \
-    --model claude-sonnet-5 \
-    --tools "Read Grep Glob" \
-    --permission-mode dontAsk \
-    --max-budget-usd "$BUDGET_USD" \
+  "$RENDER_CMD" -p \
+    --model "$RENDER_MODEL" \
+    --allowedTools Read Grep Glob \
     --output-format json \
-    -p \
     --system-prompt-file "$SYSTEM_PROMPT" \
-    --add-dir "$ADD_DIRS" \
+    --add-dir "${ADD_DIRS[@]}" \
     < "$1" > "$2"
 }
 
@@ -168,11 +166,11 @@ raw = open(src).read()
 try:
     data = json.loads(raw)
 except json.JSONDecodeError as e:
-    sys.stderr.write(f"respeak-render: could not parse claude-api-agent output as JSON: {e}\n")
+    sys.stderr.write(f"respeak-render: could not parse the runner output as JSON: {e}\n")
     sys.exit(2)
 result = data.get("result", "")
 if not isinstance(result, str) or not result.strip():
-    sys.stderr.write("respeak-render: no non-empty string .result in claude-api-agent output\n")
+    sys.stderr.write("respeak-render: no non-empty string .result in the runner output\n")
     sys.exit(2)
 m = re.search(r"^(?:---|#)", result, re.M)
 if m:
@@ -193,7 +191,7 @@ while [ "$round" -le "$MAX_ROUNDS" ]; do
   run_agent "$PROMPT_FILE" "$raw_out" 2> "$err_log"
   agent_status=$?
   if [ "$agent_status" -ne 0 ]; then
-    echo "respeak-render: claude-api-agent exited $agent_status (round $round)" >&2
+    echo "respeak-render: runner '$RENDER_CMD' exited $agent_status (round $round)" >&2
     cat "$err_log" >&2
     exit 2
   fi

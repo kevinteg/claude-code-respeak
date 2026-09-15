@@ -27,7 +27,8 @@ Perform these steps in the current project, reporting each as done/skipped:
      `~/.claude/respeak/config.yaml` (docs/config-layers.md, "Upgrading").
      The PostToolUse style gate (`scripts/respeak-gate.sh`) is seeded OFF; a
      human turns it on by editing `gate.enabled` to `true` once the project
-     trusts its excludes/allow list. Only this file (or `config.local.yaml`)
+     trusts its excludes/allow list. `/respeak:on gate` runs it for one session
+     first, as a trial, without editing anything. Only this file (or `config.local.yaml`)
      can turn it on.
    - `.claude/respeak/lexicon.yaml` ← `${CLAUDE_PLUGIN_ROOT}/corpus/lexicon.yaml`
 3. Generate the lexicon digest: run

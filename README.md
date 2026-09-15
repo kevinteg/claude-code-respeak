@@ -79,11 +79,11 @@ Nobody fights the optimization, and nobody gets locked out of it.
 
 ## Does it work?
 
-One field test so far (2026-08-31, n=1, our own doc — sizing evidence, not a
-benchmark): the translator ran a technical-mode editorial pass over a real
-4,000-word design doc from our wiki. The before/after pair, both measurement
-outputs, and reproduce-it-yourself commands are checked in at
-[`research/pilot/`](research/pilot/).
+One field test so far (2026-08-31, n=1): the translator ran a technical-mode
+editorial pass over a 4,000-word internal design document. That document
+cannot be published, so treat these numbers as sizing evidence, not a
+benchmark, and reproduce the method on your own documents with the scanner
+and verifier below.
 
 | Metric | Before | After |
 | --- | --- | --- |
@@ -96,8 +96,8 @@ outputs, and reproduce-it-yourself commands are checked in at
 The part worth reading the diff for was judgment: the pass kept "a genuine
 platform gap" because the corpus bans `genuinely`, not `genuine`; kept the
 author's own contract wording that merely resembled a banned pattern; and
-kept table-cell dashes that carry real value breaks. The edited page also
-still builds and renders correctly under mkdocs.
+kept table-cell dashes that carry real value breaks. Numbers are as measured
+with the corpus of that date.
 
 ## Is an edit safe?
 
@@ -124,7 +124,7 @@ the caller owns relinking, as in a whole-wiki run), `--allow-restructure`
 downgrades heading, admonition-type, and front-matter changes to reported
 warnings; link targets, code, and numbers stay hard failures.
 
-The scanner that produced the pilot numbers is also local and free:
+The scanner is local and free:
 
 ```sh
 python3 scripts/respeak-measure.py path/to/doc.md
@@ -132,15 +132,15 @@ python3 scripts/respeak-measure.py path/to/doc.md
 
 ## Enforcement
 
-The pilot above measured after the fact. In practice every style gate was
-still a prose instruction to the model, and nothing ran the scanner against
-what actually shipped: 14 rendered pages went out with 7 hits of the
-owner-banned phrase `load-bearing`, other error- and warn-severity hits, and
-15–29 em-dashes per 1000 words. Separately, the owner-banned "the spine"
-metaphor rule false-positived on literal networking prose ("spine
-switches"), because the corpus had no exceptions for the literal sense —
-and the banned term was present in the *source* brief, so it propagated
-into every page rendered from it. This section closes both gaps.
+The field test above measured after the fact. In practice every style gate
+was still a prose instruction to the model, and nothing ran the scanner
+against what actually shipped: a rendered set of pages went out with error-
+and warn-severity hits and an em-dash density several times the budget.
+Separately, the "the spine" metaphor rule false-positived on literal
+networking prose ("spine switches"), because the corpus had no exceptions
+for the literal sense, and the banned term was present in the *source*
+brief, so it propagated into every page rendered from it. This section
+closes both gaps.
 
 **The gate hook** (`scripts/respeak-gate.sh`) is a `PostToolUse` hook on
 `Write|Edit` (`hooks/hooks.json`) that runs `respeak-measure.py` against any
@@ -154,7 +154,9 @@ unless the project layer (`<project>/.claude/respeak/config.yaml` or its
 gitignored `config.local.yaml`) sets `gate.enabled: true`; a user-level
 file or a folder `.respeak.yaml` cannot turn it on, though they can soften
 `fail_on` and add `allow` regexes for their own files (see "Where the tone
-comes from"). Configure it there:
+comes from"). For one session, `/respeak:off gate` silences it and
+`/respeak:on gate` runs it where it is off (see "Turning respeak off for a
+session"). Configure it there:
 
 ```yaml
 gate:
@@ -186,7 +188,7 @@ as a warn-level hit for `--fail-on`.
 **Exceptions and allow** are two escape hatches at different scopes. A
 corpus entry's own `exceptions:` (list of regexes) is scoped to that rule
 and ships with the corpus — this is the actual fix for the "spine switches"
-false positive: the owner-banned `the spine` metaphor rule now exempts
+false positive: the project-banned `the spine` metaphor rule now exempts
 literal networking senses (`spine switch`, `leaf-spine`, `spine1`, `spine
 ASN`, a spine peering/draining/reflecting, …), so a networking-heavy doc
 keeps the metaphor ban without losing the literal term. `gate.allow`
@@ -200,21 +202,22 @@ no longer relays a rendered narrative on trust: it writes the agent's output
 to a temp file, runs `respeak-measure.py --fail-on error` against it, and on
 failure sends the report back to the agent for a rewrite — up to 2 rounds —
 before relaying. The `respeak:respeak` agent itself now runs an **input
-gate** first: it scans the source material for owner-banned terms before
+gate** first: it scans the source material for project-banned terms before
 rendering, so a banned term in a brief cannot propagate into the output even
 when asked to preserve the source's wording; a passing render reports `gate:
 N banned terms removed from source` when it removed any.
 
 **Headless rendering** (`scripts/respeak-render.sh`) runs the same
 verify-then-relay loop for the API lane, where there is no interactive skill
-to do it — CI, or a swarm's own automation. It wraps `claude-api-agent` (not
-part of this plugin — install it separately), builds the system prompt from
-`agents/respeak.md`, and gates + retries the same way the skill does:
+to do it: CI, or a swarm's own automation. It drives Claude Code's print
+mode (`claude -p`) with the system prompt built from `agents/respeak.md`,
+read-only tools, and the resolved configuration, then gates and retries the
+same way the skill does. `RESPEAK_RENDER_CMD` substitutes any runner that
+accepts the same flags; `RESPEAK_RENDER_MODEL` picks the model:
 
 ```sh
 scripts/respeak-render.sh --mode technical \
-  --source notes/draft.md --out wiki/learning/path/03-lesson.md \
-  --max-rounds 2 --budget-usd 1.50
+  --source notes/draft.md --out docs/guide/03-lesson.md --max-rounds 2
 ```
 
 **CI usage** — the hook is also a command. Gate a whole tree after a render
@@ -236,30 +239,35 @@ or manifest), run `claude plugin update respeak` (or reinstall) so the
 Prerequisites: Claude Code ≥ 2.1.196 (for `${CLAUDE_PROJECT_DIR}` in
 skills; older 2.1 works with discovery alone), a plugin path without
 spaces (Claude Code's permission matcher cannot pre-approve a script under
-one, so the skills would abort; hooks are unaffected), bash, a python3
-with PyYAML, and the GitHub CLI (`gh`) only if you use `/respeak:report`. The scripts pick the first interpreter that can import it
-(`python3`, `/usr/bin/python3`, the brew pythons; override with
-`RESPEAK_PYTHON`) and cache the answer per `PATH`, so a pyenv shim without
-PyYAML on PATH neither disables the hooks nor taxes every call. The translator runs as a Sonnet subagent in its own context
-window, so each translation costs one subagent invocation proportional to the
-source material — the swarm's context never pays for wordsmithing.
+one, so the skills would abort; hooks are unaffected), bash 3.2 or newer, a
+python3 (3.9 or newer) with PyYAML, and the GitHub CLI (`gh`) only if you
+use `/respeak:report`. The scripts pick the first interpreter that can
+import PyYAML (`python3`, `/usr/bin/python3`, the brew pythons; override
+with `RESPEAK_PYTHON`) and cache the answer per `PATH`, so a pyenv shim
+without PyYAML on PATH neither disables the hooks nor taxes every call. If
+none has it: `python3 -m pip install pyyaml`. The translator runs as a
+Sonnet subagent in its own context window, so each translation costs one
+subagent invocation proportional to the source material; the swarm's
+context never pays for wordsmithing.
 
-Try it in one session, in any repository (the flag itself changes nothing
-persistent; project files appear only if you later run init):
-
-```sh
-claude --plugin-dir ~/code/claude-code-respeak
-```
-
-Install it for every session (these write to your `~/.claude` config):
+Install from GitHub (these write to your `~/.claude` config):
 
 ```sh
-claude plugin marketplace add ~/code/claude-code-respeak
+claude plugin marketplace add kevinteg/claude-code-respeak
 claude plugin install respeak@respeak
 # optionally: --config default_mode=bluf --config tech_level=2
 ```
 
-Then set up each project once:
+Or try it for one session from a local checkout, which changes nothing
+persistent (`RESPEAK_SRC` is wherever you keep source):
+
+```sh
+git clone https://github.com/kevinteg/claude-code-respeak "$RESPEAK_SRC"
+claude --plugin-dir "$RESPEAK_SRC"
+```
+
+Translation works at once in any repository. The lexicon, the style gate,
+and a project baseline need a one-time setup per project:
 
 ```
 /respeak:init
@@ -268,7 +276,7 @@ Then set up each project once:
 This creates `.claude/respeak/` (a sparse project config that states only
 what the project changes, the lexicon, proposals), generates the
 ratified-lexicon digest, shows the effective configuration stack, and
-offers — never forces — three integrations: gitignore entries for the
+offers, never forces, three integrations: gitignore entries for the
 personal `*.local.yaml` overrides, the one-line CLAUDE.md import that makes
 every session load the digest, and a statusline segment showing
 `mode/tech_level [@deciding file] · lexicon version · pending proposals`.
@@ -294,6 +302,25 @@ bash scripts/render-lexicon-digest.sh
 
 Both files are ordinary git-tracked YAML, so ratification can ride your
 normal code review.
+
+**Turning respeak off for a session.** The manifest declares what the
+plugin can do; configuration and these overrides decide what it does right
+now. Nothing here edits a file in your project.
+
+```
+/respeak:off            # every respeak hook stays quiet this session
+/respeak:off gate       # only the style gate
+/respeak:on             # back to what the configuration says
+/respeak:on gate        # run the gate this session even where it is off
+```
+
+The same from the shell, for one launch: `RESPEAK_HOOKS=off claude`, or
+`RESPEAK_GATE=off claude` (or `=on`). A session marker outranks the
+environment, the environment outranks configuration, and
+`respeak-config.sh explain` ends with the override in force. A durable
+personal preference belongs in the gitignored
+`.claude/respeak/config.local.yaml`; turning the whole plugin off is
+`claude plugin disable respeak@respeak`.
 
 **Reporting a bug or asking for a feature:**
 
@@ -347,7 +374,7 @@ tech levels map to the behavior tables in
 Tone depends on where the writing lives. An executive brief under
 `docs/exec/` and an API note under `docs/api/` in the same repo have
 different readers, and one person's default across every repo differs from
-a team's default for one of them. Respeak resolves its configuration the
+a project's default for one of them. Respeak resolves its configuration the
 way Claude Code resolves settings and CLAUDE.md files: from layers, and the
 layer nearest the target wins.
 
@@ -356,11 +383,12 @@ layer nearest the target wins.
 | plugin defaults | `config/respeak.config.yaml` in the plugin | the shipped contract |
 | plugin userConfig | `claude plugin install respeak --config default_mode=bluf` | a quick personal default |
 | user | `~/.claude/respeak/config.yaml` | your default across every repo, plus profiles you define |
-| project | `.claude/respeak/config.yaml` | the team's baseline; the only place the gate turns on |
+| project | `.claude/respeak/config.yaml` | the project's baseline; the only place the gate turns on |
 | project local | `.claude/respeak/config.local.yaml` (gitignored) | your personal override for one repo |
 | scopes | `scopes:` entries with `paths:` globs inside any file above, applied right after that file | central, path-keyed overrides, like `.claude/rules` |
 | folder | `.respeak.yaml` in any folder from the project root down | a folder's own audience |
 | invocation | `/respeak:respeak bluf`, `--mode`, `--set` | this one render |
+| session | `/respeak:off`, `/respeak:on [gate]`, `RESPEAK_HOOKS`, `RESPEAK_GATE` | hooks on or off for this session; outranks every file |
 
 A folder file is three lines:
 
@@ -401,26 +429,29 @@ The design's own risk register
 confident wrong BLUF is worse than shorthand. The mitigations are the
 `never_compress` passthrough (error text, quotes, and numbers survive any
 rewrite verbatim), the facts-before-stories and delete-test checks, the
-`UNVERIFIED` fence for speculation — and practice. In the pilot we read the
-full diff before trusting it, and the verifier exists so that reading is
+`UNVERIFIED` fence for speculation, and practice. In the field test we read
+the full diff before trusting it, and the verifier exists so that reading is
 cheap. Treat translated narratives the way you treat any report: spot-check
 against the evidence it cites.
 
-## Honest status (v0.4.3)
+## Honest status (v0.5.0)
 
 Working today: the translator and modes, the style gates and corpus, the
 buried-lede test with structure advisories and the data-rendering contract,
-the lexicon proposal flow, `/respeak:init`, the session-start lexicon hook,
-the statusline script, the measure and verify tools with their test suite
-(a bash end-to-end suite for the gate hook alongside the unittest cases),
-the opt-in PostToolUse enforcement gate and its `--fail-on`/budgets/
-`gate.allow` knobs, the verify-then-relay loop in the `respeak:respeak`
-skill and agent, the headless `respeak-render.sh` wrapper for the API lane,
+the lexicon proposal flow, `/respeak:init`, the session-start lexicon hook
+(in projects that ran init), the statusline script, the measure and verify
+tools with their test suite (bash end-to-end suites for the gate hook, the
+Stop hook and statusline, the session overrides, and the report footer,
+alongside the unittest cases), the opt-in PostToolUse enforcement gate and
+its `--fail-on`/budgets/`gate.allow` knobs, the session overrides
+(`/respeak:off`, `/respeak:on`, `RESPEAK_HOOKS`, `RESPEAK_GATE`),
+`/respeak:report`, the verify-then-relay loop in the `respeak:respeak`
+skill and agent, the headless `respeak-render.sh` wrapper over `claude -p`,
 the optional milestone-narrative Stop hook (off by default), and the
 layered configuration resolver (`respeak-config.sh resolve|explain|gate|
 validate`) that every hook, the skill, the statusline, and the headless
-renderer now read through, including audience profiles, which the
-resolver expands. v0.4.1 is the result of an adversarial review of v0.4.0
+renderer read through, including audience profiles, which the resolver
+expands. v0.4.1 is the result of an adversarial review of v0.4.0
 (six lenses, two skeptics per finding): one project-root rule for every
 consumer, the user file never promoted to project grade, symlink-safe path
 comparison, fail-open on setup errors, a Markdown-only gate contract, and
@@ -434,6 +465,10 @@ macOS, a symlinked `~/.claude` never mistaken for a project, in-project
 symlinks still gated, a trust-bounded interpreter cache under `~/.cache`,
 a statusline that survives spaces in paths, quoted skill commands, and
 stdin input for the scanner so the skill verifies without a temp file.
+v0.5.0 restores the gate hook to the manifest (a follow-up had removed it
+for one person's convenience, which is what the session overrides are for),
+adds those overrides, `/respeak:report`, the MIT license, a `claude -p`
+runner for headless rendering, and a clean-room pass over the docs.
 
 Declared in config but not yet enforced by tooling: the lexicon entry cap,
 edit-distance check, usage-based expiry, auto-ratification gate, and
@@ -451,31 +486,35 @@ transcript keeps the shorthand.
 agents/respeak.md          the translator (Sonnet, isolated context window)
 skills/respeak/            /respeak:respeak — the translation entry point
 skills/init/               /respeak:init — per-project setup
+skills/off/ skills/on/     /respeak:off and /respeak:on — hooks off or on for this session
 skills/report/             /respeak:report — file an issue upstream (gh; privacy by default)
 hooks/hooks.json           session-start lexicon status; optional milestone narrative;
                            opt-in PostToolUse style gate on Write/Edit
 scripts/                   config resolver (respeak-config.py + .sh), measure, verify-edit,
                            gate hook, headless render, statusline, lexicon digest renderer,
                            PyYAML-aware interpreter finder (respeak-python.sh, respeak-py.sh),
-                           issue-report environment footer (report-env.sh)
+                           issue-report environment footer (report-env.sh), session
+                           overrides (respeak-override.sh, respeak-session.sh)
 tests/                     edit-safety + measure/gate + config-layer suites (markdown, code,
                            py, html, yaml, json), bash end-to-end suites for the gate hook,
-                           the Stop hook, the statusline, and the report footer
+                           the Stop hook, the statusline, the session overrides, and the
+                           report footer
 config/respeak.config.yaml the influence surface (plugin defaults, lowest layer)
 config/project-seed.yaml   the sparse file /respeak:init drops into a project
 corpus/                    banned phrases, replacements, lexicon, style maps
 docs/architecture.md       the design, with resolved questions
 docs/config-layers.md      the layered configuration contract, with examples
 examples/layered/          a runnable project tree the config tests pin
-research/                  11 source studies, 4 synthesis passes, the pilot artifacts
+research/                  11 source studies, 4 synthesis passes
 LICENSE                    MIT
 ```
 
 The design decisions are argued, with citations, in
 [`research/synthesis/design-principles.md`](research/synthesis/design-principles.md):
 twelve principles and five named risks. This README was itself measured with
-the bundled scanner (zero error hits, zero warn hits) and adversarially
-reviewed against the repo before you read it.
+the bundled scanner (zero error and warn hits; the sentence-length budgets
+are not met yet) and adversarially reviewed against the repo before you read
+it.
 
 ## References
 
@@ -585,3 +624,13 @@ research runs (2026-08-31); the eleven distilled source studies live in
 ## License
 
 [MIT](LICENSE). Copyright (c) 2026 Kevin Tegtmeier.
+
+Third-party material: the research notes summarize published sources under
+their own terms, with links. The catalog of AI-writing tells condensed in
+[`research/sources/deai-language-landscape.md`](research/sources/deai-language-landscape.md)
+§1 derives from Wikipedia's
+["Signs of AI writing"](https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing)
+by Wikipedia contributors (CC BY-SA 4.0); that section is available under
+the same license. Some banned-phrase categories were informed by the
+[antislop-sampler](https://github.com/sam-paech/antislop-sampler) project
+(Apache-2.0); no code or text from it is included.

@@ -228,7 +228,7 @@ categories:
     note: >
       Editorial frames that announce the prose's quality instead of exhibiting
       it — extensions of the user_banned family. Source: deai §4 ("Self-grading
-      editorial frames"; analysis of the owner-ban generator).
+      editorial frames"; analysis of the project-ban generator).
     entries:
       - { pattern: '\bthe honest version\b', severity: error }                    # extends banned root, seed line 21
       - { pattern: '\bthe sharpest version\b', severity: error }                  # extends banned root, seed line 24
@@ -251,7 +251,7 @@ categories:
 
   anatomy_metaphors:
     note: >
-      Structure-as-body metaphors — same generator as the owner-banned
+      Structure-as-body metaphors — same generator as the project-banned
       "spine"/"load-bearing" family. Source: deai §4 ("Structure-as-anatomy
       metaphors", with proposed severities followed here).
     entries:
