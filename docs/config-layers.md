@@ -421,6 +421,7 @@ folder's tone applies and `--mode` sits on top of it.
 | `respeak-config.sh gate --for FILE [--write-config PATH]` | the gate hook's decision as JSON (`applies`, `fail_on`, `reason`), optionally writing the resolved YAML |
 | `respeak-config.sh validate FILE...` | parse, unknown top-level keys, scope shape, and key policy for the file's kind (guessed from its path, or `--kind`); exits 1 on a policy violation |
 | `respeak-gate.sh --file PATH` | the hook's decision and verdict for one file, as an exit code (0 allow, 2 block); `RESPEAK_GATE_TRACE=1` adds a one-line reason on stderr |
+| `respeak-check.sh [--verify REF] [FILE...]` | the gate over every Markdown file git knows about, tracked or new and not ignored (or the files named) as a CI command, ignoring session overrides; `--verify REF` also runs `respeak-verify-edit.py` on each file changed since REF. Exit 1 on a block or a changed invariant |
 | `respeak-session.sh off\|on [gate]`, `respeak-session.sh status` | write, replace, or remove this session's override marker, or show it beside any environment override; these are the commands behind `/respeak:off` and `/respeak:on` |
 
 Every command takes `--launch-dir DIR` (the directory Claude Code was

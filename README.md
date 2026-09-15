@@ -236,13 +236,15 @@ scripts/respeak-render.sh --mode technical \
   --source notes/draft.md --out docs/guide/03-lesson.md --max-rounds 2
 ```
 
-**CI usage**: the hook is also a command. Gate a whole tree after a render
-step with exactly the layers and verdict an editor session would see:
+**CI usage**: the hook is also a command. `scripts/respeak-check.sh` runs
+it over every Markdown file git knows about, tracked or new, with the layers
+and verdict an editor session would see. With `--verify <ref>` it also requires every edit since
+that ref to be meaning-invariant. This repository runs it on its own docs;
+`CLAUDE.md` states the procedure a session here follows.
 
 ```sh
-find wiki -name '*.md' -print0 | while IFS= read -r -d '' f; do
-  bash scripts/respeak-gate.sh --file "$f" || exit 1
-done
+bash scripts/respeak-check.sh --verify origin/main   # exit 1 on a block or a changed invariant
+bash scripts/respeak-gate.sh --file docs/guide.md    # one file: the hook's verdict as an exit code
 ```
 
 **Upgrading**: the installed copy under `~/.claude/plugins/cache` is a
@@ -494,6 +496,8 @@ See CHANGELOG.md for what each version changed and why.
 
 ```
 .claude-plugin/            manifest + marketplace + userConfig
+.claude/respeak/           this repo's own respeak layer: the human-lane scope, the lexicon digest
+CLAUDE.md                  how a session in this repo writes and checks the docs
 agents/respeak.md          the translator (Sonnet, isolated context window)
 skills/respeak/            /respeak:respeak — the translation entry point
 skills/init/               /respeak:init — per-project setup
@@ -506,11 +510,12 @@ scripts/                   config resolver (respeak-config.py + .sh), measure, v
                            gate hook, headless render, statusline, lexicon digest renderer,
                            PyYAML-aware interpreter finder (respeak-python.sh, respeak-py.sh),
                            issue-report environment footer (report-env.sh), session
-                           overrides (respeak-override.sh, respeak-session.sh)
+                           overrides (respeak-override.sh, respeak-session.sh), the CI
+                           check over tracked docs (respeak-check.sh)
 tests/                     edit-safety + measure/gate + config-layer suites (markdown, code,
                            py, html, yaml, json), bash end-to-end suites for the gate hook,
-                           the Stop hook, the statusline, the session overrides, and the
-                           report footer
+                           the Stop hook, the statusline, the session overrides, the report
+                           footer, and the CI check
 config/respeak.config.yaml the influence surface (plugin defaults, lowest layer)
 config/project-seed.yaml   the sparse file /respeak:init drops into a project
 corpus/                    banned phrases, replacements, lexicon, style maps

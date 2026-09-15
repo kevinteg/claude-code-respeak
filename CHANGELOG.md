@@ -8,6 +8,16 @@ Versions follow `.claude-plugin/plugin.json`. Dates are commit dates.
   table of surfaces and their state, the unenforced config keys as a list,
   and version history delegated to this file. Its former heading announced
   honesty instead of showing it, and its first sentence ran 136 words.
+- `scripts/respeak-check.sh`: the CI form of the gate. It runs the hook's
+  verdict over every Markdown file git knows about, ignores session overrides on
+  purpose, and with `--verify <ref>` requires each edit since that ref to be
+  meaning-invariant. 16 checks in tests/test_check.sh, one of which is
+  this repository's own docs passing its own gate.
+- The repository configures respeak on itself: `.claude/respeak/config.yaml`
+  names the human lane (README, CHANGELOG, CLAUDE.md, docs/) as a scope in
+  technical mode for a peer engineer with structure advised, never applied;
+  `CLAUDE.md` states how a session edits and checks those files and imports
+  the lexicon digest generated from the corpus.
 - The whole README went through the translator's editorial pass in
   technical mode: sentences over 25 words split, em-dashes removed from
   prose, walls of text broken at their seams. Every heading, link, code
