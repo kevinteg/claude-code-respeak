@@ -9,3 +9,6 @@ __pycache__/
 .respeak.local.yaml
 !examples/layered/**/config.local.yaml
 !examples/layered/**/.respeak.local.yaml
+
+# /respeak:report drafts (written only after a failed post)
+.claude/respeak/drafts/

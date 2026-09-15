@@ -236,8 +236,8 @@ or manifest), run `claude plugin update respeak` (or reinstall) so the
 Prerequisites: Claude Code ≥ 2.1.196 (for `${CLAUDE_PROJECT_DIR}` in
 skills; older 2.1 works with discovery alone), a plugin path without
 spaces (Claude Code's permission matcher cannot pre-approve a script under
-one, so the skills would abort; hooks are unaffected), bash, and a python3
-with PyYAML. The scripts pick the first interpreter that can import it
+one, so the skills would abort; hooks are unaffected), bash, a python3
+with PyYAML, and the GitHub CLI (`gh`) only if you use `/respeak:report`. The scripts pick the first interpreter that can import it
 (`python3`, `/usr/bin/python3`, the brew pythons; override with
 `RESPEAK_PYTHON`) and cache the answer per `PATH`, so a pyenv shim without
 PyYAML on PATH neither disables the hooks nor taxes every call. The translator runs as a Sonnet subagent in its own context
@@ -294,6 +294,21 @@ bash scripts/render-lexicon-digest.sh
 
 Both files are ordinary git-tracked YAML, so ratification can ride your
 normal code review.
+
+**Reporting a bug or asking for a feature:**
+
+```
+/respeak:report                         # kind, title, body, one at a time
+/respeak:report bug "gate blocks .mdx"  # kind and title preset
+```
+
+It files a GitHub issue against this repository with the GitHub CLI. The
+body is your text plus an environment footer (plugin version and commit,
+Claude Code version, python and PyYAML state, OS). Nothing from your
+project is attached unless you pass `--include-content` and confirm each
+named file after seeing exactly what would be posted. Without `gh`, or
+signed out, it prints the finished body for you to paste. The skill
+pre-approves only `gh auth status` and `gh issue create`.
 
 ## The knobs
 
@@ -436,14 +451,16 @@ transcript keeps the shorthand.
 agents/respeak.md          the translator (Sonnet, isolated context window)
 skills/respeak/            /respeak:respeak — the translation entry point
 skills/init/               /respeak:init — per-project setup
+skills/report/             /respeak:report — file an issue upstream (gh; privacy by default)
 hooks/hooks.json           session-start lexicon status; optional milestone narrative;
                            opt-in PostToolUse style gate on Write/Edit
 scripts/                   config resolver (respeak-config.py + .sh), measure, verify-edit,
                            gate hook, headless render, statusline, lexicon digest renderer,
-                           PyYAML-aware interpreter finder (respeak-python.sh, respeak-py.sh)
+                           PyYAML-aware interpreter finder (respeak-python.sh, respeak-py.sh),
+                           issue-report environment footer (report-env.sh)
 tests/                     edit-safety + measure/gate + config-layer suites (markdown, code,
                            py, html, yaml, json), bash end-to-end suites for the gate hook,
-                           the Stop hook, and the statusline
+                           the Stop hook, the statusline, and the report footer
 config/respeak.config.yaml the influence surface (plugin defaults, lowest layer)
 config/project-seed.yaml   the sparse file /respeak:init drops into a project
 corpus/                    banned phrases, replacements, lexicon, style maps

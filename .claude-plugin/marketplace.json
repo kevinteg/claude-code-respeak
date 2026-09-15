@@ -9,7 +9,7 @@
     {
       "name": "respeak",
       "source": ".",
-      "description": "Translator subagent rendering agent/swarm output as ELI5, BLUF, or technical narratives with configurable tone and tech level, resolved from a layered config (user, project, per-folder .respeak.yaml; nearest wins); a ratified shorthand lexicon with proposal workflow; style gates (234 banned AI-isms, replacement rules) compilable to Vale. Provides /respeak:respeak, /respeak:init, hooks, a statusline segment, and the respeak-config resolver."
+      "description": "Translator subagent rendering agent/swarm output as ELI5, BLUF, or technical narratives with configurable tone and tech level, resolved from a layered config (user, project, per-folder .respeak.yaml; nearest wins); a ratified shorthand lexicon with proposal workflow; style gates (234 banned AI-isms, replacement rules) compilable to Vale. Provides /respeak:respeak, /respeak:init, /respeak:report (file a GitHub issue upstream), hooks, a statusline segment, and the respeak-config resolver."
     }
   ]
 }
