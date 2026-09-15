@@ -463,7 +463,7 @@ the field test we read the full diff before trusting it, and the verifier
 exists so that reading is cheap. Treat translated narratives the way you
 treat any report: spot-check against the evidence it cites.
 
-## Status (v0.5.1)
+## Status (v0.5.2)
 
 Every surface below works today.
 

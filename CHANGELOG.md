@@ -2,7 +2,7 @@
 
 Versions follow `.claude-plugin/plugin.json`. Dates are commit dates.
 
-## Unreleased
+## 0.5.2 (2026-09-15)
 
 - The README status section is rewritten through the translator itself: a
   table of surfaces and their state, the unenforced config keys as a list,
