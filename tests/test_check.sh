@@ -57,8 +57,10 @@ check "usage: an unknown ref exits 2" 2 "$rc"
 out="$(cd "$proj" && bash "$CHECK" --bogus 2>&1)"; rc=$?
 check "usage: an unknown option exits 2" 2 "$rc"
 
-# Dogfood: this repository's own tracked docs pass its own gate.
-out="$(cd "$REPO_ROOT" && bash "$CHECK" --quiet)"; rc=$?
+# Dogfood: this repository's own tracked docs pass its own gate. Tracked files
+# are named explicitly so a developer's local untracked notes cannot fail the suite.
+tracked=(); while IFS= read -r f; do [ -n "$f" ] && tracked+=("$f"); done < <(cd "$REPO_ROOT" && git ls-files -- '*.md')
+out="$(cd "$REPO_ROOT" && bash "$CHECK" --quiet "${tracked[@]}")"; rc=$?
 check "dogfood: the plugin's own docs pass its own gate" 0 "$rc"
 check_out "dogfood: ...with nothing blocked" ' 0 blocked' "$out"
 
