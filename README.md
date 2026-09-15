@@ -451,6 +451,7 @@ docs/architecture.md       the design, with resolved questions
 docs/config-layers.md      the layered configuration contract, with examples
 examples/layered/          a runnable project tree the config tests pin
 research/                  11 source studies, 4 synthesis passes, the pilot artifacts
+LICENSE                    MIT
 ```
 
 The design decisions are argued, with citations, in
@@ -563,3 +564,7 @@ research runs (2026-08-31); the eleven distilled source studies live in
   <https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents>
 - Claude Code docs (skills, subagents, hooks, plugins): the integration
   surfaces. <https://code.claude.com/docs>
+
+## License
+
+[MIT](LICENSE). Copyright (c) 2026 Kevin Tegtmeier.
