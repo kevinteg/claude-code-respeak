@@ -175,6 +175,9 @@ if not isinstance(result, str) or not result.strip():
 m = re.search(r"^(?:---|#)", result, re.M)
 if m:
     result = result[m.start():]
+# The agent opens with an activation marker for interactive readers; a
+# rendered file does not want it.
+result = re.sub(r"\A\s*\U0001F4E3[^\n]*\n+", "", result)
 with open(dest, "w") as f:
     f.write(result)
 PY

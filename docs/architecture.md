@@ -101,6 +101,11 @@ Three modes with distinct contracts (see `config/respeak.config.yaml` and
 - **bluf** — first sentence is the result/decision/ask; forwardable unedited.
 - **technical** — conclusion first, evidence as file:line, open questions last.
 
+Every rendered narrative opens with a marker line, `📣 respeak · <mode>`,
+the human lane's counterpart to the machine lane's `register_marker`: the
+reader always knows which voice is speaking. The headless renderer strips
+it from files.
+
 All modes pass the same gates: replacements first, banned-phrase scan second,
 tone-axis behaviors throughout. The gates are data (`corpus/*.yaml`), not
 prompt prose, so they are versionable, lintable (Vale-compilable), and

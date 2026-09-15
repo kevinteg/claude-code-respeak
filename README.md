@@ -1,3 +1,5 @@
+<img src="assets/respeak-icon.svg" alt="" width="56" align="left">
+
 # respeak
 
 Two-lane communication for AI agent swarms in Claude Code: let the agents
@@ -293,6 +295,9 @@ every session load the digest, and a statusline segment showing
 
 Or say it: "explain that last change to my manager," "give me the ELI5,"
 "make this readable." The skill infers the mode from the audience you name.
+Every translation opens with a `📣 respeak · <mode>` line, so you can tell
+the translator's voice from the agent's own; the milestone narrative from
+the Stop hook carries the same marker.
 
 **Ratifying shorthand**, day to day: the translator writes proposals to
 `.claude/respeak/proposals/<term>.yaml`. Review one; if you accept it, move
@@ -336,9 +341,12 @@ It files a GitHub issue against this repository with the GitHub CLI. The
 body is your text plus an environment footer (plugin version and commit,
 Claude Code version, python and PyYAML state, OS). Nothing from your
 project is attached unless you pass `--include-content` and confirm each
-named file after seeing exactly what would be posted. Without `gh`, or
-signed out, it prints the finished body for you to paste. The skill
-pre-approves only `gh auth status` and `gh issue create`.
+named file after seeing exactly what would be posted. Every report gets
+a privacy pass before you see the final body: names, addresses, hosts,
+home paths, organizations, and anything token-shaped are replaced with
+neutral placeholders, and you confirm nothing privileged remains before it
+posts. Without `gh`, or signed out, it prints the finished body for you to
+paste. The skill pre-approves only `gh auth status` and `gh issue create`.
 
 ## The knobs
 
@@ -437,7 +445,7 @@ the full diff before trusting it, and the verifier exists so that reading is
 cheap. Treat translated narratives the way you treat any report: spot-check
 against the evidence it cites.
 
-## Honest status (v0.5.0)
+## Honest status (v0.5.1)
 
 Working today: the translator and modes, the style gates and corpus, the
 buried-lede test with structure advisories and the data-rendering contract,
@@ -510,6 +518,7 @@ docs/architecture.md       the design, with resolved questions
 docs/config-layers.md      the layered configuration contract, with examples
 examples/layered/          a runnable project tree the config tests pin
 research/                  11 source studies, 4 synthesis passes
+assets/respeak-icon.svg    the megaphone
 CHANGELOG.md               what changed in each version
 LICENSE                    MIT
 ```

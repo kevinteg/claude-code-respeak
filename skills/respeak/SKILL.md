@@ -59,14 +59,15 @@ Steps:
    ```
    (the resolved config carries every layer's `gate.allow` and
    `style.budgets`, so a project's or folder's exceptions apply).
-   - Exit 0: relay the narrative verbatim — do not re-wrap, soften, or
-     append commentary.
+   - Exit 0: relay the narrative verbatim, its opening `📣 respeak · <mode>`
+     marker line included — do not re-wrap, soften, or append commentary.
+     If the agent omitted the marker, add it as the first line.
    - Exit 1: send the printed report back to the `respeak:respeak` agent and
      ask for a rewrite that clears every error-severity hit; run the check
      again. Allow at most 2 rounds total.
-   - Still exit 1 after 2 rounds: relay the narrative anyway, with the final
-     measure report appended under a `respeak gate: still failing after 2
-     rounds` heading — the human sees exactly what did not clear, instead of
+   - Still exit 1 after 2 rounds: relay the narrative anyway (marker line
+     first), with the final measure report appended under a `respeak gate:
+     still failing after 2 rounds` heading — the human sees exactly what did not clear, instead of
      a silently-shipped violation. Do not attempt a 3rd round yourself.
 6. If the agent reports lexicon proposals, list the proposed terms in one
    line and note that ratification is pending per the shorthand config.

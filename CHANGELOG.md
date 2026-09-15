@@ -2,6 +2,21 @@
 
 Versions follow `.claude-plugin/plugin.json`. Dates are commit dates.
 
+## 0.5.1 (2026-09-15)
+
+- `/respeak:report` runs a privacy pass on every report: identifying
+  details (names, addresses, usernames, hosts, home paths, organizations,
+  identifiers, anything token-shaped) are replaced with neutral
+  placeholders, and the user confirms nothing privileged remains before the
+  post. The environment footer shows a python under the home directory as
+  `~/...`.
+- A black-and-white megaphone icon at `assets/respeak-icon.svg`, shown at
+  the top of the README.
+- Every translation opens with a `📣 respeak · <mode>` marker line (the
+  translator emits it, the skill relays it, the Stop-hook nudge asks for
+  it), so a reader can tell the translator's voice from the agent's own.
+  The headless renderer strips it from output files.
+
 ## 0.5.0 (2026-09-15)
 
 - The PostToolUse style gate hook is registered again in `hooks/hooks.json`.

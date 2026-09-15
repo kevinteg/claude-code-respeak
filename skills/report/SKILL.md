@@ -54,13 +54,25 @@ Steps:
       internet can read it. Confirm? [y/N]"
    4. On yes, append it inside `<details><summary>Attached content</summary>`
       so it is searchable without dominating the issue. On no, drop it.
-7. **Show the final body** (kind and title as the heading, then the body,
+7. **Privacy pass, every time.** Before showing the body, read it once for
+   details that identify a person, an organization, or a machine, or that
+   are privileged: personal names, email addresses, usernames, hostnames,
+   IP addresses, internal URLs, file paths under a home directory, company,
+   client or customer names, ticket or account identifiers, and anything
+   that looks like a token, key, or password. Replace each with a neutral
+   placeholder such as `<name>`, `<host>`, `<path>`, `<org>`, and prefer
+   `~/...` over an absolute home path. Never redact the substance of the
+   report, only what identifies. Then tell the user what changed, or that
+   nothing needed to, in one line, and ask: "Confirm the body contains
+   nothing privileged or sensitive and is ready to be public? [y/N]" A
+   yes is required to continue; a no returns to the previous step.
+8. **Show the final body** (kind and title as the heading, then the body,
    footer, and any attachment) and ask "Post? [y/N]". On no, ask what to
    change: title, body, attachments, or cancel. If `gh` is missing or not
    authenticated, print instead: "gh is not configured. Paste this into
    <owner_repo>'s issue tracker:" followed by the full body, and stop. No
    draft is written on that path.
-8. **Post.** Feed the body on stdin so quoting never mangles it:
+9. **Post.** Feed the body on stdin so quoting never mangles it:
 
    ```sh
    gh issue create --repo <owner_repo> --title "<title>" --label <kind> --body-file - <<'RESPEAK_EOF'
@@ -88,6 +100,10 @@ Guardrails:
   named and confirmed in step 6.
 - **Write nothing** except a draft after a failed post. A cancelled report
   is dropped, not saved.
+- **Identifying detail is replaced, not posted.** The privacy pass in step
+  7 runs on every report, attachment or not, and its confirmation is not
+  optional. Keep the wording neutral: no employer, client, or colleague
+  names, even when the user typed them.
 - **Never fire from conversation.** This skill runs only when invoked as
   `/respeak:report`. When a user complains about respeak in chat, name the
   command once and continue; do not start the flow.

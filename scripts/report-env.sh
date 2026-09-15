@@ -60,12 +60,15 @@ else
 fi
 
 esc() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
+# The footer is posted publicly: never let it carry a home directory (a
+# username). Anything under $HOME is shown as ~/...
+tilde() { local t='~'; if [ -n "${HOME:-}" ]; then printf '%s' "${1//"$HOME"/$t}"; else printf '%s' "$1"; fi; }
 
 if [ "${1:-}" = "--footer" ]; then
   printf -- '---\n_Environment_\n'
   printf -- '- respeak plugin: %s (%s)\n' "$version" "$plugin_sha"
   printf -- '- Claude Code: %s\n' "$claude_version"
-  printf -- '- python3: %s\n' "$python"
+  printf -- '- python3: %s\n' "$(tilde "$python")"
   printf -- '- OS: %s\n' "$os"
   exit 0
 fi

@@ -63,5 +63,13 @@ check "degraded PATH still yields JSON" "kevinteg/claude-code-respeak" "$(jget "
 cv="$(jget "$out" claude_version)"; [ -n "$cv" ] && cv=nonempty
 check "claude_version is never empty" nonempty "$cv"
 
+# 7. The footer never carries a home directory: a python under $HOME shows as ~/...
+# A symlinked python under a fake HOME, given a stub `yaml` module on PYTHONPATH so the
+# override is accepted whether or not this machine has PyYAML installed.
+fakehome="$work/home"; mkdir -p "$fakehome/bin" "$fakehome/lib"; ln -s /usr/bin/python3 "$fakehome/bin/python3"; : > "$fakehome/lib/yaml.py"
+footer="$(HOME="$fakehome" PYTHONPATH="$fakehome/lib" RESPEAK_PYTHON="$fakehome/bin/python3" RESPEAK_CACHE_DIR="$work/cache7" bash "$ENV_SH" --footer)"
+check "footer shows a home-directory python as ~/..." 1 "$(printf '%s\n' "$footer" | grep -c -- '- python3: .*(~/bin/python3)')"
+check "footer contains no literal home path" 0 "$(printf '%s\n' "$footer" | grep -c -F -- "$fakehome")"
+
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

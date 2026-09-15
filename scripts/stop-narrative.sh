@@ -100,7 +100,9 @@ if profile or tech is not None:
     audience += " (profile %s, tech_level %s)" % (profile or "-", tech if tech is not None else "-")
 ctx = ("Respeak auto-narrative is enabled (mode: %s). This turn crossed a "
        "milestone. Append one short paragraph rendering the outcome for the "
-       "%s, following the respeak skill's mode contract." % (mode, audience))
+       "%s, following the respeak skill's mode contract, and begin it with "
+       "the marker line \"\U0001F4E3 respeak \u00b7 %s\" so the reader can tell "
+       "the translation from your own voice." % (mode, audience, mode))
 print(json.dumps({"hookSpecificOutput": {"hookEventName": "Stop", "additionalContext": ctx}}))
 PY
 )
