@@ -11,6 +11,12 @@
 # resolver cannot run (no PyYAML-capable python), the install-time knob
 # alone decides — the one layer that needs no YAML — so the hook still
 # honours `claude plugin install --config auto_narrative=true`.
+#
+# RESPEAK_HOOKS=off, or a session marker from /respeak:off, silences it
+# (scripts/respeak-override.sh). Config strings that reach the model are
+# whitelisted first: an unknown mode falls back to technical and a profile
+# name is limited to [A-Za-z0-9_-], so a stray .respeak.yaml cannot inject
+# instructions through additionalContext.
 set -u
 
 HOOK_JSON="$(cat)"
@@ -18,16 +24,26 @@ HOOK_JSON="$(cat)"
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 RESPEAK_PY=""; RESPEAK_PY_STD=""
 [ -f "$script_dir/respeak-python.sh" ] && . "$script_dir/respeak-python.sh"
+[ -f "$script_dir/respeak-override.sh" ] && . "$script_dir/respeak-override.sh"
 pyj="${RESPEAK_PY:-$RESPEAK_PY_STD}"
 [ -n "$pyj" ] || exit 0
 
-cwd="$(printf '%s' "$HOOK_JSON" | "$pyj" -c '
+parsed="$(printf '%s' "$HOOK_JSON" | "$pyj" -c '
 import json, sys
 try:
-    print(json.load(sys.stdin).get("cwd") or "")
+    d = json.load(sys.stdin)
 except Exception:
-    print("")
+    d = {}
+print(d.get("cwd") or "")
+print(str(d.get("session_id") or ""))
 ' 2>/dev/null)"
+cwd="$(printf '%s\n' "$parsed" | sed -n '1p')"
+session_id="$(printf '%s\n' "$parsed" | sed -n '2p')"
+
+if command -v respeak_override >/dev/null 2>&1; then
+  ov="$(respeak_override stop "$session_id")"
+  case "${ov%% *}" in off) exit 0 ;; esac
+fi
 
 cfg_json=""
 if [ -n "$RESPEAK_PY" ] && [ -f "$script_dir/respeak-config.py" ]; then
@@ -71,8 +87,14 @@ markers = re.compile(r"\b(done|completed?|fixed|merged|deployed|passing)\b")
 if not (len(msg) > 1500 or markers.search(msg.lower())):
     sys.exit(0)
 mode = narrative.get("default_mode") or os.environ.get("CLAUDE_PLUGIN_OPTION_DEFAULT_MODE", "technical")
+if mode not in ("eli5", "bluf", "technical"):
+    mode = "technical"
 profile = narrative.get("profile")
+if not (isinstance(profile, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,32}", profile)):
+    profile = None
 tech = narrative.get("tech_level")
+if not isinstance(tech, int) or isinstance(tech, bool) or not 1 <= tech <= 5:
+    tech = None
 audience = "%s audience" % mode
 if profile or tech is not None:
     audience += " (profile %s, tech_level %s)" % (profile or "-", tech if tech is not None else "-")
