@@ -414,13 +414,14 @@ folder's tone applies and `--mode` sits on top of it.
 
 | Command | Use |
 | --- | --- |
-| `respeak-config.sh explain [--for PATH]` | the layer stack (present and absent), which rule chose the project root, the effective narrative and gate, warnings, then every override with the layer that set it |
+| `respeak-config.sh explain [--for PATH]` | the layer stack (present and absent), which rule chose the project root, the effective narrative and gate, warnings, then every override with the layer that set it, and a final `session overrides:` line |
 | `respeak-config.sh explain --brief [--for PATH]` | the same in a few lines: project, layers applied, effective narrative, gate, override count, warnings. The `/respeak:respeak` skill injects this at the top of every invocation |
 | `respeak-config.sh resolve --for PATH --format yaml\|json [--out FILE]` | the full effective config, for `respeak-measure.py --config` or for a prompt; `--out` writes it without a shell redirect, which a skill's `allowed-tools` rule would not cover |
 | `respeak-config.sh resolve --for PATH --format line\|statusline` | one-line summaries; the statusline form is `bluf/t1 exec @docs/exec/.respeak.yaml` |
 | `respeak-config.sh gate --for FILE [--write-config PATH]` | the gate hook's decision as JSON (`applies`, `fail_on`, `reason`), optionally writing the resolved YAML |
 | `respeak-config.sh validate FILE...` | parse, unknown top-level keys, scope shape, and key policy for the file's kind (guessed from its path, or `--kind`); exits 1 on a policy violation |
 | `respeak-gate.sh --file PATH` | the hook's decision and verdict for one file, as an exit code (0 allow, 2 block); `RESPEAK_GATE_TRACE=1` adds a one-line reason on stderr |
+| `respeak-session.sh off\|on [gate]`, `respeak-session.sh status` | write, replace, or remove this session's override marker, or show it beside any environment override; these are the commands behind `/respeak:off` and `/respeak:on` |
 
 Every command takes `--launch-dir DIR` (the directory Claude Code was
 started in, the same role as `CLAUDE_PROJECT_DIR`; an empty value means
@@ -500,6 +501,17 @@ in `config.local.yaml`.
   `RESPEAK_PYTHON` overrides) and parse hook JSON with the same one. A
   `python3` shim without PyYAML, or one that exits 127, used to make every
   hook a silent no-op.
+- **A session override can only silence a hook or run the gate.** Markers
+  live in the same trust-bounded cache directory as the interpreter cache,
+  hold one of three fixed words, are ignored with any other content, and
+  are swept after 24 hours. `RESPEAK_GATE=on` and the `gate-on` marker
+  cannot change what the gate checks: they apply the project's resolved
+  `include`, `exclude`, `fail_on`, and `allow` with `enabled` forced true.
+- **Config strings reach the model whitelisted.** The Stop hook accepts a
+  mode only from `eli5 | bluf | technical`, a profile name only from
+  `[A-Za-z0-9_-]`, and a tech level only from 1 to 5, so a stray
+  `.respeak.yaml` in a parent directory cannot inject instructions through
+  `additionalContext`.
 - **The interpreter cache cannot be used to run arbitrary code.** It lives
   in `${XDG_CACHE_HOME:-~/.cache}/respeak/` (or `RESPEAK_CACHE_DIR`), a
   directory created `0700` that must be owned by the caller and not a
@@ -539,6 +551,23 @@ in `config.local.yaml`.
   permission check, keep working. The default plugin cache path
   qualifies. The SessionStart hook says so when it sees a spaced root, and
   `/respeak:init` reports it.
+
+## Upgrading from v0.4
+
+- **The PostToolUse gate hook is registered again.** A v0.4.3 follow-up had
+  removed it from `hooks/hooks.json`, which made every documented gate knob
+  a no-op for every installer. What that removal wanted is now a session
+  override (`/respeak:off gate`) or a personal `config.local.yaml`. Run
+  `claude plugin update respeak` so the cached copy loads the manifest.
+- **The SessionStart hook speaks only in projects with `.claude/respeak/`.**
+  A repository that never ran `/respeak:init` gets no respeak context at
+  session start.
+- **Session overrides** (above) outrank every layer for the current
+  session. Nothing else in this document changes for them, because they
+  are not a layer.
+- **The headless renderer drives `claude -p`.** `RESPEAK_RENDER_CMD` and
+  `RESPEAK_RENDER_MODEL` replace the removed `--budget-usd`; `--max-rounds`
+  bounds the spend.
 
 ## Design notes
 

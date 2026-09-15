@@ -19,6 +19,9 @@ is `docs/config-layers.md`):
 
 !`"${CLAUDE_PLUGIN_ROOT}/scripts/respeak-config.sh" explain --brief --launch-dir "${CLAUDE_PROJECT_DIR}"`
 
+The last line above names any session override in force. Overrides silence
+hooks; they never change this skill, which runs because the user asked.
+
 Steps:
 
 1. Determine the mode. `$mode` if given and one of `eli5|bluf|technical`;

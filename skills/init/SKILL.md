@@ -37,8 +37,8 @@ Perform these steps in the current project, reporting each as done/skipped:
 4. Show the effective configuration stack: run
    `"${CLAUDE_PLUGIN_ROOT}/scripts/respeak-config.sh" explain --launch-dir "${CLAUDE_PROJECT_DIR}"`
    and report which layers exist (a user-level `~/.claude/respeak/config.yaml`,
-   an ancestor `.respeak.yaml` above the project, the file just seeded) and
-   any warnings. If `project:` names a directory other than this one (a
+   an ancestor `.respeak.yaml` above the project, the file just seeded), any
+   warnings, and the closing `session overrides:` line. If `project:` names a directory other than this one (a
    parent directory carries its own `.claude/respeak/config.yaml`, or a
    nested package does), say so: that file, not the seeded one, governs
    the files under it. If the user wants a folder-specific tone now, create
@@ -65,4 +65,7 @@ Perform these steps in the current project, reporting each as done/skipped:
    the hooks still work), and the gate's current state (`gate: disabled (default) — enable in
    .claude/respeak/config.yaml` or, if the user asks to turn it on now, edit
    `gate.enabled: true` there and confirm `gate.include`/`gate.exclude`
-   match the project's layout).
+   match the project's layout). Close by naming the two ways to change
+   respeak's behavior later without editing this file: `/respeak:off` and
+   `/respeak:on [gate]` for the current session, and the gitignored
+   `.claude/respeak/config.local.yaml` for a durable personal preference.

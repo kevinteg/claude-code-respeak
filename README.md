@@ -41,8 +41,9 @@ The **machine lane** stays efficient. Agents may use any shorthand that is
 *ratified* in a lexicon file; everything else gets written out in full. To be
 clear about the mechanism: nothing intercepts agent traffic. The lane works
 by convention plus context: every session loads a digest of the ratified
-lexicon (via a CLAUDE.md import you accept at setup), and a session-start
-hook states the lexicon version as fact. The governance model comes from the
+lexicon (via a CLAUDE.md import you accept at setup), and, in projects that
+ran `/respeak:init`, a session-start hook states the lexicon version as
+fact. The governance model comes from the
 shorthand systems that survived a century of expert use: aviation
 phraseology, brevity codes, Q codes. Entries are proposed, ratified, or
 retired, never silently edited. Some content may never be compressed at
@@ -109,6 +110,8 @@ python3 scripts/respeak-verify-edit.py <before> <after>   # exit 0 = safe
 python3 -m unittest discover tests                        # edit-safety, measure/gate, config layers
 bash tests/test_gate_hook.sh                                # gate hook end-to-end (bash, not unittest)
 bash tests/test_hooks.sh                                    # Stop hook + statusline end-to-end
+bash tests/test_overrides.sh                                # session overrides + the hooks.json event pin
+bash tests/test_report_env.sh                               # /respeak:report environment footer
 ```
 
 | Format | An edit may change | Invariant (checked) |
@@ -488,8 +491,9 @@ skills/respeak/            /respeak:respeak — the translation entry point
 skills/init/               /respeak:init — per-project setup
 skills/off/ skills/on/     /respeak:off and /respeak:on — hooks off or on for this session
 skills/report/             /respeak:report — file an issue upstream (gh; privacy by default)
-hooks/hooks.json           session-start lexicon status; optional milestone narrative;
-                           opt-in PostToolUse style gate on Write/Edit
+hooks/hooks.json           session-start lexicon status (respeak projects only); optional
+                           milestone narrative; opt-in PostToolUse style gate on Write/Edit;
+                           all three honor the session overrides
 scripts/                   config resolver (respeak-config.py + .sh), measure, verify-edit,
                            gate hook, headless render, statusline, lexicon digest renderer,
                            PyYAML-aware interpreter finder (respeak-python.sh, respeak-py.sh),
@@ -506,6 +510,7 @@ docs/architecture.md       the design, with resolved questions
 docs/config-layers.md      the layered configuration contract, with examples
 examples/layered/          a runnable project tree the config tests pin
 research/                  11 source studies, 4 synthesis passes
+CHANGELOG.md               what changed in each version
 LICENSE                    MIT
 ```
 

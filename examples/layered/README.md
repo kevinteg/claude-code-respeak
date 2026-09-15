@@ -26,6 +26,7 @@ bash scripts/respeak-config.sh gate    --project $P --for $P/notes/scratch.md
 bash scripts/respeak-config.sh validate $P/notes/.respeak.yaml            # exits 1: gate.enabled is project-only
 bash scripts/respeak-config.sh validate --kind user examples/layered/home/.claude/respeak/config.yaml
 CLAUDE_PROJECT_DIR=$P RESPEAK_GATE_TRACE=1 bash scripts/respeak-gate.sh --file $P/docs/overview.md   # the hook, as a command
+RESPEAK_GATE=on CLAUDE_PROJECT_DIR=$P RESPEAK_GATE_TRACE=1 bash scripts/respeak-gate.sh --file $P/notes/scratch.md   # session override: forced on for this run
 ```
 
 What each file gets, and which layer decided it:

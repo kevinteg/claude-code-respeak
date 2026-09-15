@@ -79,10 +79,18 @@ Entry points, cheapest first:
 
 | Surface | When it fires | Cost profile |
 | --- | --- | --- |
-| `/respeak [mode]` command | user asks | one subagent turn, on demand |
-| `respeak` skill | natural-language ask ("explain to my manager") | same, model-triggered |
-| milestone auto-narrative | harness hook at commit/phase boundaries (planned) | background, per milestone |
+| `/respeak:respeak [mode] [source]` | user asks | one subagent turn, on demand |
+| `respeak` skill, natural language | "explain to my manager" and similar asks | same, model-triggered |
+| `respeak-render.sh` (headless) | CI or a swarm's own automation, through `claude -p` | one print-mode call per round, gated and retried |
+| Stop hook (milestone auto-narrative) | after a substantive turn, when `narrative.auto_narrative` resolves true (off by default) | one short paragraph of context per milestone |
+| SessionStart hook | session start, only in a project with `.claude/respeak/` | one sentence of context |
+| PostToolUse gate | Write or Edit of a Markdown file in a project with `gate.enabled: true` | a local scanner run; blocks only on a verdict |
+| `/respeak:init`, `/respeak:off [gate]`, `/respeak:on [gate]`, `/respeak:report` | user asks | local script runs, no model turn |
 | lexicon proposals | as a side effect of translation | file writes only |
+
+Every hook honors the session overrides (resolved question 7): a marker from
+`/respeak:off` or `/respeak:on`, or `RESPEAK_HOOKS=off` and
+`RESPEAK_GATE=off|on` in the environment, is read before any work.
 
 ### The human lane
 
@@ -168,6 +176,17 @@ No agent both proposes and ratifies a convention.
    directory, then the launch directory, then `.git`), so `explain` shows
    the truth each of them saw. `narrative.profile` is expanded by the resolver, which wires
    the audience profiles into the skill surface for the first time.
+7. **Session-scoped control → overrides above the layers, never a layer**
+   (v0.5; contract in `docs/config-layers.md`, "Session overrides"). The
+   manifest registers every hook for every installer; a session that does
+   not want one declines it with a marker (`/respeak:off [gate]`,
+   `/respeak:on [gate]`, written by `scripts/respeak-session.sh`) or with
+   the environment (`RESPEAK_HOOKS=off`, `RESPEAK_GATE=off|on`), and each
+   hook reads `scripts/respeak-override.sh` before doing anything else.
+   Precedence is marker, then environment, then the layers. The layers stay
+   about place and the overrides about time, so a personal preference never
+   has to be expressed by editing the manifest (which reaches every
+   installer), and `explain` still shows what the hooks saw.
 
 ## Refinements the research forced (v0 → v1)
 

@@ -63,7 +63,9 @@ narrative:
   mode_select: fixed      # fixed | compass (Diátaxis 2-question classifier, opt-in)
   auto_narrative: false   # Stop hook nudges a one-paragraph narrative after
                           # milestone turns (scripts/stop-narrative.sh); also
-                          # settable at install: --config auto_narrative=true
+                          # settable at install: --config auto_narrative=true.
+                          # RESPEAK_HOOKS=off or /respeak:off silences the hook
+                          # for one session (docs/config-layers.md, Session overrides)
   context_default: routine # per-invocation: incident | routine | celebration
                            # (Mailchimp: tone conditions on reader state;
                            #  incident forces plain language + decompression)
@@ -217,6 +219,11 @@ gate:
   # seeds that file from this one, with the gate left off; a human turns it
   # on once the project trusts its excludes/allow list). This file is never
   # the one the hook reads for enforcement decisions on someone else's repo.
+  #
+  # Session overrides sit above every layer (docs/config-layers.md, "Session
+  # overrides"): RESPEAK_GATE=off|on and RESPEAK_HOOKS=off for one launch,
+  # /respeak:off [gate] and /respeak:on [gate] for the session you are in.
+  # `on` applies this block with `enabled` forced true; nothing else changes.
   enabled: false        # project-only: a user or folder layer cannot turn it on
   include: ["**/*.md"] # project-only. globs, matched relative to the project dir.
                         # The gate covers Markdown files only (.md .markdown .mdx,

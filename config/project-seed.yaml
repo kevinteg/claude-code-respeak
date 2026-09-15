@@ -15,7 +15,8 @@ version: 3
 #   tech_level: 3
 
 gate:
-  enabled: false           # the PostToolUse style gate is opt-in per project
+  enabled: false           # the PostToolUse style gate is opt-in per project;
+                           # /respeak:on gate tries it for one session first
   include: ["**/*.md"]     # add "**/*.mdx" / "**/*.markdown" to cover those; never non-Markdown
   exclude: []
   fail_on: error           # none | warn | error
