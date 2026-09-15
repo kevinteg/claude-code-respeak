@@ -10,25 +10,25 @@ talk in governed shorthand, and give every human a narrative worth reading.
 Put two people in a room and have them describe the same abstract picture to
 each other, over and over. In Clark and Wilkes-Gibbs' classic experiment they
 start at about forty words ("the one that looks like a person kneeling with
-an arm out...") and finish, six rounds later, at two: "the skater." That
+an arm out..."). They finish, six rounds later, at two: "the skater." That
 compression is automatic and useful. A follow-on line of research (Garrod's
-graphical-convention studies) measured its cost: outsiders shown the evolved
+graphical-convention studies) measured its cost. Outsiders shown the evolved
 signs struggle to interpret them, because the meaning has moved out of the
 signs and into the pair's shared history.
 
 Agent swarms do the same thing. A long-running session develops
 abbreviations, back-references, and codewords, because every token of
-inter-agent traffic is taxed twice: it spends context window, and attention
+inter-agent traffic is taxed twice. It spends context window, and attention
 cost grows quadratically with sequence length. Compression pressure is
 structural. Left alone, the swarm's dialect gets cheaper for the agents and
-more alien to you, and the person supervising the work becomes the outsider
+more alien to you. The person supervising the work becomes the outsider
 in that experiment, permanently.
 
 Today you get two bad choices. Force the agents to write prose, and you pay
 the attention tax on every message, forever. Let the dialect drift, and you
 lose the ability to audit your own automation. When Facebook's 2017
 negotiation bots drifted out of English, the researchers' fix was to reward
-staying in English, which restored legibility by giving up the compression.
+staying in English. That restored legibility by giving up the compression.
 
 ## What respeak does
 
@@ -36,23 +36,24 @@ Respeak splits the traffic instead of compromising one channel, and connects
 the two lanes with a feedback loop. Our research pass found tools that
 compress (Caveman, LLMLingua), tools that narrate (PagerDuty Advance,
 LangSmith Insights), and one protocol with the right economics (Oxford's
-Agora); it found none that close this loop. The full landscape review is in
+Agora). It found none that close this loop. The full landscape review is in
 [`research/synthesis/solutions-and-media.md`](research/synthesis/solutions-and-media.md).
 
 The **machine lane** stays efficient. Agents may use any shorthand that is
 *ratified* in a lexicon file; everything else gets written out in full. To be
 clear about the mechanism: nothing intercepts agent traffic. The lane works
-by convention plus context: every session loads a digest of the ratified
-lexicon (via a CLAUDE.md import you accept at setup), and, in projects that
-ran `/respeak:init`, a session-start hook states the lexicon version as
-fact. The governance model comes from the
-shorthand systems that survived a century of expert use: aviation
-phraseology, brevity codes, Q codes. Entries are proposed, ratified, or
-retired, never silently edited. Some content may never be compressed at
-all — error messages, security findings, user quotes, numbers with units.
-Medicine keeps a "do not use" abbreviation list because compression harmed
-patients; the `never_compress` config block copies that pattern, including
-recording *why* each class is banned.
+by convention plus context. Every session loads a digest of the ratified
+lexicon, via a CLAUDE.md import you accept at setup. In projects that ran
+`/respeak:init`, a session-start hook also states the lexicon version as
+fact.
+
+The governance model comes from the shorthand systems that survived a
+century of expert use: aviation phraseology, brevity codes, Q codes. Entries
+are proposed, ratified, or retired, never silently edited. Some content may
+never be compressed at all: error messages, security findings, user quotes,
+numbers with units. Medicine keeps a "do not use" abbreviation list because
+compression harmed patients. The `never_compress` config block copies that
+pattern, including recording *why* each class is banned.
 
 The **human lane** reads well. A translator subagent renders the swarm's work
 as a narrative in one of three modes:
@@ -63,19 +64,21 @@ as a narrative in one of three modes:
 | `bluf` | Sentence one is the result, decision, or ask, with owner and deadline. A manager can forward it unedited. |
 | `technical` | Conclusion first, then evidence as `file:line`, then open questions. Technical readers get no fluff; they resent it most. |
 
-Every mode passes the same style gates: 234 banned phrases across 22
-categories (the catalog of AI tells, from `delve` to `load-bearing`, each
-with severity, and marked `owner-preference` where an entry rests on taste
-rather than research), 60 replacement rules, sentence and paragraph budgets
-taken from Simplified Technical English and federal plain-language standards,
-and tone axes documented as behavior tables. The config's standing rule: a
-field that maps to no observable behavior gets deleted — the `warmth` axis
-already died this way and was replaced by Radical Candor's three checkable
-switches.
+Every mode passes the same style gates. There are 234 banned phrases across
+22 categories: the catalog of AI tells, from `delve` to `load-bearing`. Each
+entry carries a severity, and is marked `owner-preference` where it rests on
+taste rather than research. The gates also include 60 replacement rules and
+sentence and paragraph budgets taken from Simplified Technical English and
+federal plain-language standards. They also include tone axes documented as
+behavior tables.
+
+The config's standing rule: a field that maps to no observable behavior gets
+deleted. The `warmth` axis already died this way and was replaced by Radical
+Candor's three checkable switches.
 
 The **loop** is where the two lanes meet. While translating, the agent
-tallies unratified shorthand it had to decode and files proposal entries,
-preferring whichever variant of a convention reads closest to plain English.
+tallies unratified shorthand it had to decode and files proposal entries. It
+prefers whichever variant of a convention reads closest to plain English.
 A human ratifies. Over a long session the swarm's dialect drifts toward
 needing less translation, because the librarian keeps nudging it there.
 Nobody fights the optimization, and nobody gets locked out of it.
@@ -85,7 +88,7 @@ Nobody fights the optimization, and nobody gets locked out of it.
 One field test so far (2026-08-31, n=1): the translator ran a technical-mode
 editorial pass over a 4,000-word internal design document. That document
 cannot be published, so treat these numbers as sizing evidence, not a
-benchmark, and reproduce the method on your own documents with the scanner
+benchmark. Reproduce the method on your own documents with the scanner
 and verifier below.
 
 | Metric | Before | After |
@@ -96,11 +99,11 @@ and verifier below.
 | Average sentence length | 32.1 words | 24.5 words |
 | Headings, links, code, numbers changed | n/a | zero (`respeak-verify-edit.py` passes) |
 
-The part worth reading the diff for was judgment: the pass kept "a genuine
-platform gap" because the corpus bans `genuinely`, not `genuine`; kept the
-author's own contract wording that merely resembled a banned pattern; and
-kept table-cell dashes that carry real value breaks. Numbers are as measured
-with the corpus of that date.
+The part worth reading the diff for was judgment. The pass kept "a genuine
+platform gap" because the corpus bans `genuinely`, not `genuine`. It kept
+the author's own contract wording that merely resembled a banned pattern.
+And it kept table-cell dashes that carry real value breaks. Numbers are as
+measured with the corpus of that date.
 
 ## Is an edit safe?
 
@@ -124,10 +127,11 @@ bash tests/test_report_env.sh                               # /respeak:report en
 | `.html` | text nodes | tag skeleton and attributes; `script/style/pre/code` byte-identical |
 | `.yaml .json` | comments / whitespace | parsed data, deep equality |
 
-For passes allowed to restructure (`editorial_pass: restructure: apply`, when
-the caller owns relinking, as in a whole-wiki run), `--allow-restructure`
-downgrades heading, admonition-type, and front-matter changes to reported
-warnings; link targets, code, and numbers stay hard failures.
+Passes allowed to restructure (`editorial_pass: restructure: apply`) are for
+when the caller owns relinking, as in a whole-wiki run. For those,
+`--allow-restructure` downgrades heading, admonition-type, and front-matter
+changes to reported warnings. Link targets, code, and numbers stay hard
+failures.
 
 The scanner is local and free:
 
@@ -139,29 +143,31 @@ python3 scripts/respeak-measure.py path/to/doc.md
 
 The field test above measured after the fact. In practice every style gate
 was still a prose instruction to the model, and nothing ran the scanner
-against what actually shipped: a rendered set of pages went out with error-
+against what actually shipped. A rendered set of pages went out with error-
 and warn-severity hits and an em-dash density several times the budget.
 Separately, the "the spine" metaphor rule false-positived on literal
 networking prose ("spine switches"), because the corpus had no exceptions
-for the literal sense, and the banned term was present in the *source*
+for the literal sense. The banned term was also present in the *source*
 brief, so it propagated into every page rendered from it. This section
 closes both gaps.
 
 **The gate hook** (`scripts/respeak-gate.sh`) is a `PostToolUse` hook on
 `Write|Edit` (`hooks/hooks.json`) that runs `respeak-measure.py` against any
-Markdown file a tool call just wrote (`.md` by default; `.markdown` and
-`.mdx` when `gate.include` lists them), and blocks
-the tool result (exit 2, report on stderr — Claude Code feeds that back to
-the model as a correctable error) on a failing report. Setup problems (no
-PyYAML, a corrupt corpus, an unreadable file) never block: the hook fails
-open, and `RESPEAK_GATE_TRACE=1` says so on stderr. It is **opt-in per project**: it does nothing
-unless the project layer (`<project>/.claude/respeak/config.yaml` or its
-gitignored `config.local.yaml`) sets `gate.enabled: true`; a user-level
-file or a folder `.respeak.yaml` cannot turn it on, though they can soften
-`fail_on` and add `allow` regexes for their own files (see "Where the tone
-comes from"). For one session, `/respeak:off gate` silences it and
-`/respeak:on gate` runs it where it is off (see "Turning respeak off for a
-session"). Configure it there:
+Markdown file a tool call just wrote. By default that means `.md`;
+`.markdown` and `.mdx` count too when `gate.include` lists them. On a
+failing report, it blocks the tool result with exit code 2 and puts the
+report on stderr. Claude Code feeds that back to the model as a correctable
+error. Setup problems (no PyYAML, a corrupt corpus, an unreadable file)
+never block: the hook fails open, and `RESPEAK_GATE_TRACE=1` says so on
+stderr.
+
+It is **opt-in per project**: it does nothing unless the project layer
+(`<project>/.claude/respeak/config.yaml` or its gitignored
+`config.local.yaml`) sets `gate.enabled: true`. A user-level file or a
+folder `.respeak.yaml` cannot turn it on. They can, though, soften `fail_on`
+and add `allow` regexes for their own files (see "Where the tone comes
+from"). For one session, `/respeak:off gate` silences it and `/respeak:on gate` runs it where it is off (see "Turning respeak off for a session").
+Configure it there:
 
 ```yaml
 gate:
@@ -173,7 +179,7 @@ gate:
 ```
 
 **`--fail-on`**: `respeak-measure.py --fail-on {none,error,warn}`. `none`
-(default) only reports — the pre-enforcement behavior. `error` exits 1 if
+(default) only reports: the pre-enforcement behavior. `error` exits 1 if
 any document has a banned-phrase error hit. `warn` also trips on
 warn-severity hits, density-tier hits, or a budget failure. Exit 2 is
 reserved for usage/IO errors. `--json` now emits a list, one entry per
@@ -184,48 +190,53 @@ python3 scripts/respeak-measure.py wiki/**/*.md --fail-on error
 ```
 
 **Budgets** (`style.budgets` in `respeak.config.yaml`, read via
-`--config`): `emdash_per_1000_words`, `warn_phrases_per_1000_words` (checked
-against the corpus's `tier: density` hits — the common-but-excess words that
-flag on density, not per occurrence), `avg_sentence_words`,
-`max_sentence_words`. Each is measured and reported PASS/FAIL; a FAIL counts
-as a warn-level hit for `--fail-on`.
+`--config`) are `emdash_per_1000_words`, `warn_phrases_per_1000_words`,
+`avg_sentence_words`, and `max_sentence_words`. The second of those
+is checked against the corpus's `tier: density` hits, the common-but-excess
+words that flag on density, not per occurrence. Each is measured and
+reported PASS/FAIL; a FAIL counts as a warn-level hit for `--fail-on`.
 
 **Exceptions and allow** are two escape hatches at different scopes. A
 corpus entry's own `exceptions:` (list of regexes) is scoped to that rule
-and ships with the corpus — this is the actual fix for the "spine switches"
-false positive: the project-banned `the spine` metaphor rule now exempts
+and ships with the corpus. This is the actual fix for the "spine switches"
+false positive. The project-banned `the spine` metaphor rule now exempts
 literal networking senses (`spine switch`, `leaf-spine`, `spine1`, `spine
-ASN`, a spine peering/draining/reflecting, …), so a networking-heavy doc
-keeps the metaphor ban without losing the literal term. `gate.allow`
-(project config) is scoped to one project — it skips a rule entirely for
-that project's runs, for a domain term the shared `exceptions:` list doesn't
-cover yet. Treat `allow` as a stopgap: file the missing exception upstream
-rather than leaving a project-local silence as the permanent fix.
+ASN`, a spine peering/draining/reflecting, …). So a networking-heavy doc
+keeps the metaphor ban without losing the literal term.
 
-**Verify-then-relay** closes the input-side gap. The `respeak:respeak` skill
-no longer relays a rendered narrative on trust: it writes the agent's output
-to a temp file, runs `respeak-measure.py --fail-on error` against it, and on
-failure sends the report back to the agent for a rewrite — up to 2 rounds —
-before relaying. The `respeak:respeak` agent itself now runs an **input
-gate** first: it scans the source material for project-banned terms before
-rendering, so a banned term in a brief cannot propagate into the output even
-when asked to preserve the source's wording; a passing render reports `gate:
-N banned terms removed from source` when it removed any.
+`gate.allow` (project config) is scoped to one project. It skips a rule
+entirely for that project's runs, for a domain term the shared
+`exceptions:` list doesn't cover yet. Treat `allow` as a stopgap: file the
+missing exception upstream rather than leaving a project-local silence as
+the permanent fix.
+
+**Verify-then-relay** closes the input-side gap. The `respeak:respeak`
+skill no longer relays a rendered narrative on trust. It writes the agent's
+output to a temp file and runs `respeak-measure.py --fail-on error` against
+it. On failure, it sends the report back to the agent for a rewrite, up to
+2 rounds, before relaying.
+
+The `respeak:respeak` agent itself now runs an **input gate** first: it
+scans the source material for project-banned terms before rendering. So a
+banned term in a brief cannot propagate into the output even when asked to
+preserve the source's wording. A passing render reports `gate: N banned
+terms removed from source` when it removed any.
 
 **Headless rendering** (`scripts/respeak-render.sh`) runs the same
-verify-then-relay loop for the API lane, where there is no interactive skill
-to do it: CI, or a swarm's own automation. It drives Claude Code's print
-mode (`claude -p`) with the system prompt built from `agents/respeak.md`,
-read-only tools, and the resolved configuration, then gates and retries the
-same way the skill does. `RESPEAK_RENDER_CMD` substitutes any runner that
-accepts the same flags; `RESPEAK_RENDER_MODEL` picks the model:
+verify-then-relay loop for the API lane, where there is no interactive
+skill to do it. That means CI, or a swarm's own automation. It drives
+Claude Code's print mode (`claude -p`) with the system prompt built from
+`agents/respeak.md`, read-only tools, and the resolved configuration. Then
+it gates and retries the same way the skill does. `RESPEAK_RENDER_CMD`
+substitutes any runner that accepts the same flags; `RESPEAK_RENDER_MODEL`
+picks the model:
 
 ```sh
 scripts/respeak-render.sh --mode technical \
   --source notes/draft.md --out docs/guide/03-lesson.md --max-rounds 2
 ```
 
-**CI usage** — the hook is also a command. Gate a whole tree after a render
+**CI usage**: the hook is also a command. Gate a whole tree after a render
 step with exactly the layers and verdict an editor session would see:
 
 ```sh
@@ -235,25 +246,28 @@ done
 ```
 
 **Upgrading**: the installed copy under `~/.claude/plugins/cache` is a
-snapshot, not a live link — after pulling a change here (corpus, gate hook,
-or manifest), run `claude plugin update respeak` (or reinstall) so the
-`PostToolUse` gate hook and corpus edits actually load.
+snapshot, not a live link. After pulling a change here (corpus, gate hook,
+or manifest), run `claude plugin update respeak` (or reinstall). That way
+the `PostToolUse` gate hook and corpus edits actually load.
 
 ## Install
 
-Prerequisites: Claude Code ≥ 2.1.196 (for `${CLAUDE_PROJECT_DIR}` in
-skills; older 2.1 works with discovery alone), a plugin path without
-spaces (Claude Code's permission matcher cannot pre-approve a script under
-one, so the skills would abort; hooks are unaffected), bash 3.2 or newer, a
-python3 (3.9 or newer) with PyYAML, and the GitHub CLI (`gh`) only if you
-use `/respeak:report`. The scripts pick the first interpreter that can
-import PyYAML (`python3`, `/usr/bin/python3`, the brew pythons; override
-with `RESPEAK_PYTHON`) and cache the answer per `PATH`, so a pyenv shim
-without PyYAML on PATH neither disables the hooks nor taxes every call. If
-none has it: `python3 -m pip install pyyaml`. The translator runs as a
-Sonnet subagent in its own context window, so each translation costs one
-subagent invocation proportional to the source material; the swarm's
-context never pays for wordsmithing.
+Prerequisites: Claude Code ≥ 2.1.196, a plugin path without spaces, bash
+3.2 or newer, and a python3 (3.9 or newer) with PyYAML. The Claude Code floor
+is for `${CLAUDE_PROJECT_DIR}` in skills; older 2.1 works with discovery
+alone. The plugin path must have no spaces: Claude Code's
+permission matcher cannot pre-approve a script under one, so the skills
+would abort. Hooks are unaffected. You also need the GitHub CLI (`gh`), but
+only if you use `/respeak:report`.
+
+The scripts pick the first interpreter that can import PyYAML (`python3`,
+`/usr/bin/python3`, the brew pythons; override with `RESPEAK_PYTHON`) and
+cache the answer per `PATH`. So a pyenv shim without PyYAML on PATH neither
+disables the hooks nor taxes every call. If none has it: `python3 -m pip install pyyaml`.
+
+The translator runs as a Sonnet subagent in its own context window, so each
+translation costs one subagent invocation proportional to the source
+material. The swarm's context never pays for wordsmithing.
 
 Install from GitHub (these write to your `~/.claude` config):
 
@@ -278,13 +292,13 @@ and a project baseline need a one-time setup per project:
 /respeak:init
 ```
 
-This creates `.claude/respeak/` (a sparse project config that states only
-what the project changes, the lexicon, proposals), generates the
-ratified-lexicon digest, shows the effective configuration stack, and
-offers, never forces, three integrations: gitignore entries for the
-personal `*.local.yaml` overrides, the one-line CLAUDE.md import that makes
-every session load the digest, and a statusline segment showing
-`mode/tech_level [@deciding file] · lexicon version · pending proposals`.
+This creates `.claude/respeak/`: a sparse project config that states only
+what the project changes, the lexicon, and proposals. It generates the
+ratified-lexicon digest and shows the effective configuration stack. It
+also offers, never forces, three integrations. The first is gitignore
+entries for the personal `*.local.yaml` overrides. The second is the
+one-line CLAUDE.md import that makes every session load the digest. The
+third is a statusline segment showing `mode/tech_level [@deciding file] · lexicon version · pending proposals`.
 
 ## Use
 
@@ -296,7 +310,7 @@ every session load the digest, and a statusline segment showing
 Or say it: "explain that last change to my manager," "give me the ELI5,"
 "make this readable." The skill infers the mode from the audience you name.
 Every translation opens with a `📣 respeak · <mode>` line, so you can tell
-the translator's voice from the agent's own; the milestone narrative from
+the translator's voice from the agent's own. The milestone narrative from
 the Stop hook carries the same marker.
 
 **Ratifying shorthand**, day to day: the translator writes proposals to
@@ -341,51 +355,53 @@ It files a GitHub issue against this repository with the GitHub CLI. The
 body is your text plus an environment footer (plugin version and commit,
 Claude Code version, python and PyYAML state, OS). Nothing from your
 project is attached unless you pass `--include-content` and confirm each
-named file after seeing exactly what would be posted. Every report gets
-a privacy pass before you see the final body: names, addresses, hosts,
-home paths, organizations, and anything token-shaped are replaced with
-neutral placeholders, and you confirm nothing privileged remains before it
-posts. Without `gh`, or signed out, it prints the finished body for you to
-paste. The skill pre-approves only `gh auth status` and `gh issue create`.
+named file after seeing exactly what would be posted.
+
+Every report gets a privacy pass before you see the final body. Names,
+addresses, hosts, home paths, organizations, and anything token-shaped are
+replaced with neutral placeholders. You confirm nothing privileged remains
+before it posts. Without `gh`, or signed out, it prints the finished body
+for you to paste. The skill pre-approves only `gh auth status` and `gh issue create`.
 
 ## The knobs
 
 Everything a human should be able to turn lives in
 [`config/respeak.config.yaml`](config/respeak.config.yaml), the plugin
-defaults that every nearer layer overrides (next section); tone axes and
+defaults that every nearer layer overrides (next section). Tone axes and
 tech levels map to the behavior tables in
 [`corpus/style/tone-mapping.md`](corpus/style/tone-mapping.md).
 
 - Tone axes: formality, directness, confidence, each with per-band behavior.
 - `tech_level` 1–5, plus audience profiles (`exec`, `peer-engineer`,
   `author`) that set lexicon access: `forbidden`, `expand-first-use`, or
-  `inline`. Only the `author` profile, level 5, ever sees raw shorthand,
-  because jargon is licensed by membership, and a reader who ratifies the
-  lexicon is a member.
+  `inline`. Only the `author` profile, level 5, ever sees raw shorthand:
+  jargon is licensed by membership, and a reader who ratifies the lexicon is
+  a member.
 - Per-mode budgets: sentence caps (20 words BLUF, 25 technical, per the
   standards), paragraph caps, metaphor budgets, structure checks like BLUF's
   delete test.
-- Shorthand governance: ratification mode, legibility floor, entry cap,
-  minimum edit distance between terms, review cadence, the never-compress
-  classes, and reserved repair words (`CORRECTION`, `SAY-AGAIN`,
-  `UNVERIFIED`) that no one may repurpose.
-- Bottom-line-first for existing docs (`editorial_pass`): every in-place pass
-  runs a buried-lede test: a reader who stops at the first paragraph must
-  know the outcome and whether to keep reading. On failure, `advise` mode
-  reports a structure advisory (proposed order plus a drafted lead paragraph)
-  without moving a thing; `apply` mode may reorder and retitle, for callers
-  who own relinking.
-- Data visibility (`data`): four or more homogeneous items render as a table,
-  never prose; the decision column leads; the summary or verdict row comes
-  before detail rows; outliers get named in a sentence above the table. eli5
-  is the exception: it states the one comparison the reader cares about.
+- Shorthand governance covers ratification mode, legibility floor, entry
+  cap, minimum edit distance between terms, review cadence, and the
+  never-compress classes. It also reserves repair words (`CORRECTION`,
+  `SAY-AGAIN`, `UNVERIFIED`) that no one may repurpose.
+- Bottom-line-first for existing docs (`editorial_pass`): every in-place
+  pass runs a buried-lede test. A reader who stops at the first paragraph
+  must know the outcome and whether to keep reading. On failure, `advise`
+  mode reports a structure advisory (proposed order plus a drafted lead
+  paragraph) without moving a thing. `apply` mode may reorder and retitle,
+  for callers who own relinking.
+- Data visibility (`data`): four or more homogeneous items render as a
+  table, never prose. The decision column leads. The summary or verdict row
+  comes before detail rows. Outliers get named in a sentence above the
+  table. eli5 is the exception: it states the one comparison the reader
+  cares about.
 
 ## Where the tone comes from
 
 Tone depends on where the writing lives. An executive brief under
 `docs/exec/` and an API note under `docs/api/` in the same repo have
-different readers, and one person's default across every repo differs from
-a project's default for one of them. Respeak resolves its configuration the
+different readers. One person's default across every repo differs from a
+project's default for one of them. Respeak resolves its configuration the
 way Claude Code resolves settings and CLAUDE.md files: from layers, and the
 layer nearest the target wins.
 
@@ -411,24 +427,24 @@ narrative:
 
 Folder and user files may set tone (`narrative`, `modes`, `style` budgets,
 `profiles`, `gate.fail_on`, `gate.allow`). They may not enable the gate,
-choose which files it covers, or touch shorthand governance: those keys are
-project-only and are dropped with a warning anywhere else, so a stray file
-in a subfolder cannot switch enforcement on or off for a repo.
+choose which files it covers, or touch shorthand governance. Those keys are
+project-only, and they are dropped with a warning anywhere else. So a stray
+file in a subfolder cannot switch enforcement on or off for a repo.
 
 Every consumer, the gate hook included, finds the project root the same
-way: the nearest `.claude/respeak/config.yaml` above the file (a package's
-own in a monorepo, a parent directory's for every repo below it), then the
-directory Claude Code was launched in, then the nearest `.git`. The user
-file under `~/.claude` is never mistaken for a project file. See what
-applies to a file, which rule chose the root, and which layer decided
-each key:
+way. It looks for the nearest `.claude/respeak/config.yaml` above the file
+(a package's own in a monorepo, a parent directory's for every repo below
+it). Failing that, it uses the directory Claude Code was launched in, then
+the nearest `.git`. The user file under `~/.claude` is never mistaken for a
+project file. See what applies to a file, which rule chose the root, and
+which layer decided each key:
 
 ```sh
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/respeak-config.sh" explain --for docs/exec/q3.md
 ```
 
 The contract, the merge rules, and worked examples are in
-[`docs/config-layers.md`](docs/config-layers.md); a runnable example tree
+[`docs/config-layers.md`](docs/config-layers.md). A runnable example tree
 with its outcomes pinned by the test suite is in
 [`examples/layered/`](examples/layered/).
 
@@ -436,59 +452,43 @@ with its outcomes pinned by the test suite is in
 
 The design's own risk register
 ([`research/synthesis/design-principles.md`](research/synthesis/design-principles.md)
-§4) puts translator error near the top: the human lane is your window, and a
-confident wrong BLUF is worse than shorthand. The mitigations are the
+§4) puts translator error near the top. The human lane is your window, and
+a confident wrong BLUF is worse than shorthand. The mitigations are the
 `never_compress` passthrough (error text, quotes, and numbers survive any
-rewrite verbatim), the facts-before-stories and delete-test checks, the
-`UNVERIFIED` fence for speculation, and practice. In the field test we read
-the full diff before trusting it, and the verifier exists so that reading is
-cheap. Treat translated narratives the way you treat any report: spot-check
-against the evidence it cites.
+rewrite verbatim) and the facts-before-stories and delete-test checks. Two
+more mitigations are the `UNVERIFIED` fence for speculation and practice. In
+the field test we read the full diff before trusting it, and the verifier
+exists so that reading is cheap. Treat translated narratives the way you
+treat any report: spot-check against the evidence it cites.
 
-## Honest status (v0.5.1)
+## Status (v0.5.1)
 
-Working today: the translator and modes, the style gates and corpus, the
-buried-lede test with structure advisories and the data-rendering contract,
-the lexicon proposal flow, `/respeak:init`, the session-start lexicon hook
-(in projects that ran init), the statusline script, the measure and verify
-tools with their test suite (bash end-to-end suites for the gate hook, the
-Stop hook and statusline, the session overrides, and the report footer,
-alongside the unittest cases), the opt-in PostToolUse enforcement gate and
-its `--fail-on`/budgets/`gate.allow` knobs, the session overrides
-(`/respeak:off`, `/respeak:on`, `RESPEAK_HOOKS`, `RESPEAK_GATE`),
-`/respeak:report`, the verify-then-relay loop in the `respeak:respeak`
-skill and agent, the headless `respeak-render.sh` wrapper over `claude -p`,
-the optional milestone-narrative Stop hook (off by default), and the
-layered configuration resolver (`respeak-config.sh resolve|explain|gate|
-validate`) that every hook, the skill, the statusline, and the headless
-renderer read through, including audience profiles, which the resolver
-expands. v0.4.1 is the result of an adversarial review of v0.4.0
-(six lenses, two skeptics per finding): one project-root rule for every
-consumer, the user file never promoted to project grade, symlink-safe path
-comparison, fail-open on setup errors, a Markdown-only gate contract, and
-`allowed-tools` on the skills so the preamble runs under default
-permissions. A re-break pass on those fixes then found that measure setup
-errors surfacing as uncaught exceptions still blocked writes; v0.4.2 makes
-every non-verdict failure exit 2 and validates the corpus shape and
-`gate.allow` regexes up front. A second re-break and regression round on
-that produced v0.4.3: paths compared after case and Unicode folding on
-macOS, a symlinked `~/.claude` never mistaken for a project, in-project
-symlinks still gated, a trust-bounded interpreter cache under `~/.cache`,
-a statusline that survives spaces in paths, quoted skill commands, and
-stdin input for the scanner so the skill verifies without a temp file.
-v0.5.0 restores the gate hook to the manifest (a follow-up had removed it
-for one person's convenience, which is what the session overrides are for),
-adds those overrides, `/respeak:report`, the MIT license, a `claude -p`
-runner for headless rendering, and a clean-room pass over the docs.
+Every surface below works today.
 
-Declared in config but not yet enforced by tooling: the lexicon entry cap,
-edit-distance check, usage-based expiry, auto-ratification gate, and
-fresh-decoder audits. The config is the
-contract. The enforcement scripts are the next milestone, alongside a
-`respeak compile` step that emits the corpus as a [Vale](https://vale.sh/)
-style package for CI (the corpus is already RE2-safe for it) and a
-display-only translation hook that shows you plain English while the
-transcript keeps the shorthand.
+| Surface | State |
+|---|---|
+| Translator subagent and its three modes (eli5, bluf, technical) | Working |
+| Style gates and corpus (banned phrases, replacements, tone mapping) | Working |
+| Buried-lede test with structure advisories, plus the data-rendering contract | Working |
+| Lexicon proposal flow | Working |
+| Skills and agent: `respeak:respeak` (verify-then-relay loop), `/respeak:init`, `/respeak:report`, `/respeak:off` and `/respeak:on` (also `RESPEAK_HOOKS`/`RESPEAK_GATE` env overrides) | Working |
+| Hooks: SessionStart lexicon status (projects that ran init), PostToolUse style gate (opt-in; `--fail-on`, budgets, `gate.allow`), Stop milestone-narrative nudge (off by default) | Working |
+| Statusline script | Working |
+| Measure and verify tools, with bash end-to-end suites and unittest coverage | Working |
+| Headless renderer: `respeak-render.sh` wraps `claude -p` | Working |
+| Configuration resolver: `respeak-config.sh resolve\|explain\|gate\|validate` (read by every hook, skill, statusline, and the headless renderer; expands audience profiles) | Working |
+
+The config declares governance rules no script checks yet, and two pieces of tooling are still ahead:
+
+- Lexicon entry cap (150 terms)
+- Edit-distance check between near-neighbor shorthand (minimum distance 2)
+- Usage-based expiry (180 days unused)
+- Auto-ratification gate (5 clean uses required)
+- Fresh-decoder legibility audits (30-day cadence)
+- `respeak compile`: emits the corpus as a Vale style package for CI (already RE2-safe for it)
+- A display-only translation hook: plain English on screen, shorthand in the transcript
+
+See CHANGELOG.md for what each version changed and why.
 
 ## Layout
 
@@ -525,10 +525,11 @@ LICENSE                    MIT
 
 The design decisions are argued, with citations, in
 [`research/synthesis/design-principles.md`](research/synthesis/design-principles.md):
-twelve principles and five named risks. This README was itself measured with
-the bundled scanner (zero error and warn hits; the sentence-length budgets
-are not met yet) and adversarially reviewed against the repo before you read
-it.
+twelve principles and five named risks. This README was itself edited by
+the translator's editorial pass, and every edit was verified
+meaning-invariant with `respeak-verify-edit.py`. The bundled scanner reports
+zero error and warn hits on it, and every budget passes except the
+sentence-length cap, which the scanner trips on wide table rows.
 
 ## References
 

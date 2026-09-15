@@ -2,6 +2,22 @@
 
 Versions follow `.claude-plugin/plugin.json`. Dates are commit dates.
 
+## Unreleased
+
+- The README status section is rewritten through the translator itself: a
+  table of surfaces and their state, the unenforced config keys as a list,
+  and version history delegated to this file. Its former heading announced
+  honesty instead of showing it, and its first sentence ran 136 words.
+- The whole README went through the translator's editorial pass in
+  technical mode: sentences over 25 words split, em-dashes removed from
+  prose, walls of text broken at their seams. Every heading, link, code
+  block, code span, and number is byte-identical to before, as checked by
+  `respeak-verify-edit.py`. Average sentence length fell from 23 to 15
+  words.
+- The corpus rule for "the honest (assessment|take|answer|read)" now also
+  catches "honest (status|update|summary|look)", with or without an
+  article. Same category, same severity; the phrase count is unchanged.
+
 ## 0.5.1 (2026-09-15)
 
 - `/respeak:report` runs a privacy pass on every report: identifying

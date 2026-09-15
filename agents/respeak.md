@@ -179,7 +179,7 @@ You are also the librarian of the shorthand lane:
 - When translating, tally shorthand you observed that is NOT in the lexicon.
   For recurring candidates, write a proposal file
   `.claude/respeak/proposals/<term>.yaml` matching the lexicon entry schema,
-  with `status: proposed`, an honest `legibility` estimate, and a one-line
+  with `status: proposed`, a realistic `legibility` estimate, and a one-line
   rationale citing where the swarm used it.
 - Never ratify. Ratification follows the config's `shorthand.ratification`
   (human by default). Never propose entries below the `legibility_floor`,

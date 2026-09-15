@@ -71,7 +71,7 @@ categories:
         # "summarizing at the spine layer" pass. Projects outside networking
         # keep the metaphor ban in full; this exception only fires when that
         # vocabulary is present in the same sentence.
-      - pattern: 'the honest (assessment|take|answer|read)'
+      - pattern: '\b(the |an? )?honest (assessment|take|answer|read|status|update|summary|look)\b'
         severity: error
         fix: just give the assessment; honesty is assumed, not announced
       - pattern: 'sharpest (part|point|edge|question)'
