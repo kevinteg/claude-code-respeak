@@ -520,13 +520,31 @@ categories:
     entries:
       - { pattern: ' — ', severity: warn, tier: density,
           fix: "restructure the sentence; Claude-specific tell" }
-      - { pattern: '[“”]', severity: warn, fix: "straight quotes; curly quotes signal pasted ChatGPT/DeepSeek text" }
+      - pattern: '[“”]'
+        severity: warn
+        tier: density
+        fix: "straight quotes; curly quotes signal pasted ChatGPT/DeepSeek text"
+        # Density for the same reason as the thematic break below: on books,
+        # 296 of these sit inside publisher blurbs the pass must not reword,
+        # so per-hit counting graded a page on text it could not touch. A page
+        # that pastes curly quotes throughout still trips the budget.
       - { pattern: '^\s*[-•*]\s*\*\*[^*]+\*\*:', severity: warn, fix: "bold-label bullets read as AI; write prose" }
       - { pattern: '(🧠|🧱|🚨|🧭|📌|🚀|✨|💡)', severity: error, fix: no emoji decoration }
         # ✅ removed from the pattern 2026-09-01: paired ✅/❌ as boolean marks in
         # capability tables is legitimate data, and ❌ was never matched (wiki
         # field finding: the rule flagged 4 table cells, zero decorations).
-      - { pattern: '^-{3,}$', severity: warn, fix: "thematic-break litter; cut" }
+      - pattern: '^-{3,}$'
+        severity: warn
+        tier: density
+        fix: "thematic-break litter in prose; a template or footer rule is layout, so change the generator or leave it"
+        # Density, not per hit. Site generators and vendored footers emit one
+        # `---` per page: 539 of gaming's 565 hits are the catalog card rule,
+        # 356 of yard's are the shared footer, and podcasts, cooking and
+        # activities count the same footer. Per-hit counting made this rule
+        # the top warn on every site and pushed the 2026-09-21 pass into
+        # deleting layout it was not asked to touch. Counted against the
+        # density budget, a document that litters its own prose with breaks
+        # still trips it.
 
   narrative_slop:
     note: >
