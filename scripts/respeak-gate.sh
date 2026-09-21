@@ -46,7 +46,10 @@
 #
 # Exit 0 = allow (not applicable, gate off, overridden off, the file passed,
 #          or a setup problem — the gate fails OPEN; set RESPEAK_GATE_TRACE=1
-#          to get a one-line stderr note saying which).
+#          to get a one-line stderr note saying which). A pass over a file
+#          that still carries hits the write did not introduce prints one
+#          line of JSON on stdout naming them, as PostToolUse
+#          additionalContext.
 # Exit 2 = block; stderr carries the measure report, which Claude Code feeds
 #          back to the model as the error to fix. In CI, `|| exit 1` on it.
 #
@@ -218,6 +221,33 @@ if [ "$status" -ne 0 ]; then
   trace "measure exited $status (setup error, not a verdict); allowing $file_path"
   [ "${RESPEAK_GATE_TRACE:-0}" = "1" ] && echo "$report" >&2
   exit 0
+fi
+# A pass with notes: the write introduced nothing, but the document still
+# carries hits it inherited. Blocking on those is the trap block_on exists
+# to remove, so instead they reach the model as PostToolUse
+# additionalContext — the hook reference's field for feedback that does not
+# block — and the session decides whether the pass can reach them. The
+# --file form has no model to tell, so it says the same thing in prose.
+if [ -n "$baseline" ] && ! printf '%s\n' "$report" | grep -q '^baseline: 0 pre-existing'; then
+  printf '%s\n' "$report" | "$RESPEAK_PY" -c '
+import json, re, sys
+path, form = sys.argv[1], sys.argv[2]
+report = sys.stdin.read()
+m = re.search(r"^baseline: (\d+) pre-existing hit\(s\)", report, re.M)
+n = int(m.group(1)) if m else 0
+if n <= 0:
+    sys.exit(0)
+rules = [r.group(1) for r in
+         (re.match(r"^\s+\d+\s+(\[.+\].*?)\s+\[new \d+, pre-existing [1-9]\d*\]$", line)
+          for line in report.splitlines()) if r]
+msg = ("respeak gate: %s passed; %d pre-existing style hit(s) remain, not introduced by "
+       "this edit: %s" % (path, n, ", ".join(rules) if rules else "see the gate report"))
+if form == "json":
+    print(json.dumps({"hookSpecificOutput": {"hookEventName": "PostToolUse",
+                                             "additionalContext": msg}}))
+else:
+    print(msg)
+' "$file_path" "$([ "$cli_mode" -eq 1 ] && echo text || echo json)" 2>/dev/null
 fi
 trace "checked $file_path (fail-on: ${fail_on:-error}): pass"
 exit 0
