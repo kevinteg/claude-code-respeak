@@ -80,6 +80,17 @@ categories:
         severity: warn
         fix: short, exact, or specific — pick the one you mean
         provenance: owner-preference
+        exceptions:
+          - '\bcrisp(y|ed|er|est)?\s+(skin|crust|bark|crackling|edges?|leaves|foliage|margins?|lettuce|greens?|apples?|pickles?)\b'
+          - '\b(skin|crust|bark|crackling|batter|pastry|lettuce|greens?|pickles?|cukes?|cucumbers?|ferments?|fermented)\b'
+          - '\bcrisp\s+(air|morning|mornings|evening|evenings|night|nights|day|days|autumn|fall|weather)\b'
+        # Food and texture senses are literal: cooking's
+        # techniques/bbq-whole-chicken.md rests the bird "uncovered to keep
+        # skin crisp", and yard writes "cukes ferment far crisper" (vego-3)
+        # and "crisped margins" for leaf scorch (taxa pages). The third
+        # exception is the weather sense (crisp air, a crisp morning), the
+        # same literal family. The self-grading adjective ("a crisp summary")
+        # still flags.
         # No research catalog lists `crisp` as an AI tell; Microsoft's *human*
         # style guide calls its own voice "crisp and clear" (sac §6). Kept on
         # project authority; it belongs to the self_grading family (deai §4).
@@ -115,7 +126,15 @@ categories:
     entries:
       # --- v0 seed ---
       - { phrase: delve, severity: error, fix: examine / look at / dig into }     # affirmed: r=28.0 (deai §2.1)
-      - { phrase: tapestry, severity: error }
+      - phrase: tapestry
+        severity: error
+        exceptions:
+          - '\btapestry (lawn|hedge)s?\b'
+          - '\b(sempervivum|sedum|succulent|groundcover|moss|thyme) tapestry\b'
+        # Horticultural senses: a tapestry lawn and a tapestry hedge are named
+        # planting styles, and yard plants a "sempervivum tapestry" on
+        # beds/zone-alley-bed.md (design/arrangements/zone-alley-bed--sempervivum-tapestry.yaml).
+        # "a rich tapestry of" still flags.
       - { pattern: '\ba testament to\b', severity: error, fix: shows / proves }
       - { phrase: multifaceted, severity: error }
       - { phrase: nestled, severity: error }
@@ -123,7 +142,12 @@ categories:
       - { pattern: 'plays? a (crucial|vital|pivotal|key) role', severity: error, fix: name the mechanism instead of grading its importance }
       - { pattern: "it('s| is) (important|worth) (to note|noting)", severity: error, fix: "delete; if it matters, say it plainly" }
       - { pattern: 'in today.s fast-paced world', severity: error }               # kept; the *attested* variants are the digital-age entries below (deai §7)
-      - { pattern: '\bseamless(ly)?\b', severity: error }                         # re-scored warn -> error: Kobak rare style list, per-occurrence tier (deai §2.1)
+      - pattern: '\bseamless(ly)?\b'
+        severity: error                     # re-scored warn -> error: Kobak rare style list, per-occurrence tier (deai §2.1)
+        exceptions:
+          - '\bSeamless HD( Project)?\b'
+        # The mod name: the Resident Evil 2 "Seamless HD Project", on gaming's
+        # library/best-hd-enhancements page. "works seamlessly" still flags.
       - { pattern: '\bleverage[sd]?\b', severity: warn, fix: use }
       - { pattern: '\brobust\b', severity: warn, fix: say what it survives, tier: density }   # common-but-excess tier (deai §2.1): flag at density, not per hit
       - { pattern: '\bdive (in|into|deeper)\b', severity: warn }
@@ -160,14 +184,38 @@ categories:
       - { pattern: '\bempower(s|ing|ed)?\b', severity: warn }
       - { pattern: '\bharness(es|ing)? the\b', severity: warn }
       - { pattern: '\bunlock(s|ing)? the\b', severity: warn }
-      - { pattern: '\bjourney\b', severity: warn, fix: process / work — unless someone is traveling }
+      - pattern: '\bjourney\b'
+        severity: warn
+        fix: process / work — unless someone is traveling
+        exceptions:
+          - '\bJourney of the Cursed King\b'
+        # The subtitle of Dragon Quest VIII, a game title gaming's catalog
+        # prints in full. "the journey to a working build" still flags.
       # --- v1 additions: WP:AIVOCAB (deai §1.2), Kobak 2025 excess-vocab list
       #     (deai §2.1), WP:AIPUFFERY (deai §1.1), antislop corpus (deai §7) ---
       - { pattern: '\bpivotal\b', severity: error, fix: name what it decides }    # deai §1.2 + §2.1 (Liang top-4 word)
       - { pattern: '\bintricate(ly)?\b|\bintricac(y|ies)\b', severity: error }    # deai §1.2, §2.1 (Gray 2024: 2x in 2023)
       - { pattern: '\bmeticulous(ly)?\b', severity: error, fix: careful(ly) }     # deai §1.2, §2.2 (arXiv:2508.01930)
-      - { pattern: '\bunderscor(e|es|ed|ing)\b', severity: error, fix: shows / stresses }  # deai §2.1 (r=13.8)
-      - { pattern: '\bshowcas(e|es|ed|ing)\b', severity: error, fix: shows }      # deai §2.1 (r=10.7)
+      - pattern: '\bunderscor(e|es|ed|ing)\b'
+        severity: error
+        fix: shows / stresses               # deai §2.1 (r=13.8)
+        exceptions:
+          - '\bunderscores?\s+character\b'
+          - '\bunderscores?\s+in\s+(the\s+|an?\s+)?(name|file|filename|path|url|slug|identifier)s?\b'
+          - '\b(hyphens?|dashes?|snake.?case|kebab.?case|filenames?|slugs?)\b'
+        # The literal character. podcasts catalog/shows/datanauts.md writes
+        # "hyphen, not underscore, and lowercase" about an episode filename;
+        # books-v2.md writes "no underscores in ints". The third exception is
+        # that context (another separator or a filename named in the same
+        # sentence), the same design as the spine rule's networking exception.
+        # "The numbers underscore the risk" still flags.
+      - pattern: '\bshowcas(e|es|ed|ing)\b'
+        severity: error
+        fix: shows                          # deai §2.1 (r=10.7)
+        exceptions:
+          - '\b(character|in.game) showcases?\b'
+        # Genshin's in-game Character Showcase, the panel Enka.Network reads,
+        # named on gaming's genshin primer. "showcases the range" still flags.
       - { pattern: '\brevolutioniz(e|es|ed|ing)\b', severity: error }             # deai §2.1, §7
       - { pattern: '\bvaluable insights\b', severity: error }                     # deai §1.1 WP:SUPERFICIAL
       - { pattern: '\bdiverse array\b', severity: error, fix: list them }         # deai §1.1 WP:AIPUFFERY
@@ -175,9 +223,19 @@ categories:
       - { pattern: '\b(breathtaking|stunning natural beauty)\b', severity: error } # deai §1.1 WP:AIPUFFERY
       - { pattern: '\bever.?(evolving|changing)\b', severity: error }             # deai §7 antislop
       - { pattern: "(today's|in today's) digital (age|era)", severity: error }    # deai §7 antislop (attested forms of the fast-paced-world entry)
-      - { pattern: '\bindelible( mark)?\b', severity: error }                     # deai §1.1 WP:AILEGACY + §7
+      - pattern: '\bindelible( mark)?\b'
+        severity: error                     # deai §1.1 WP:AILEGACY + §7
+        exceptions:
+          - '\bIndelible Coterie\b'
+        # A Honkai: Star Rail event name, on gaming's hsr/kodakian page.
+        # "left an indelible mark" still flags.
       - { pattern: '\bkaleidoscope\b', severity: error }                          # deai §7 antislop
-      - { pattern: '\bsymphony of\b', severity: error }                           # deai §7 antislop
+      - pattern: '\bsymphony of\b'
+        severity: error                     # deai §7 antislop
+        exceptions:
+          - '\bSymphony of the Night\b'
+        # The Castlevania title, which gaming's catalog prints on 21 pages.
+        # "a symphony of moving parts" still flags.
       - { pattern: '\bdeep dive\b', severity: warn, fix: close look }             # deai §1.2 WP:AIVOCAB
       - { pattern: '\bbolster(s|ed|ing)?\b', severity: warn, fix: support }       # deai §1.2 (2023-2025 era lists)
       - { pattern: '\bgarner(s|ed|ing)?\b', severity: warn, fix: get / win }      # deai §1.2
