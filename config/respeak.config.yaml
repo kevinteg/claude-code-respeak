@@ -233,6 +233,17 @@ gate:
   fail_on: error         # none | warn | error — passed straight to
                         # respeak-measure.py --fail-on. Any layer may set it,
                         # so a folder can soften to `warn` for its own files.
+  block_on: introduced   # introduced | any — what the verdict is measured
+                        # against. `introduced` hands measure a --baseline of
+                        # the file as it was (the committed version, else the
+                        # pre-edit text rebuilt from the Edit, else empty) and
+                        # blocks only on hits the write added, so a document
+                        # that already carries one — a banned term inside a
+                        # heading, which the editorial pass may not move —
+                        # stays editable, and the model is told about the
+                        # leftovers instead. `any` gates the whole file, the
+                        # behavior before v0.6. Any layer may set it.
+                        # `respeak-gate.sh --file` is whole-file either way.
   allow: []              # regexes; appends across layers (a user-level allow
                         # for a domain vocabulary is legitimate). A corpus
                         # rule whose pattern/phrase matches
