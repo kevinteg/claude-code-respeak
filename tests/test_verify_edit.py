@@ -215,6 +215,83 @@ def get(key):
         self.assertTrue(ve.check_py(before, after))
 
 
+class TestPythonAllowStrings(unittest.TestCase):
+    """--allow-strings: the display text in a page generator may be edited."""
+
+    BEFORE = '''"""Render the cards."""
+LABELS = {"season": "Best in 3 seasons", "cost": "Costs %s per night"}
+
+
+def render(rows):
+    """Build the page. >>> render([])"""
+    note = "See [the guide](../guide.md) and run `make site` for 2 runs."
+    return "%d of %d rows" % (len(rows), 12), note, LABELS
+'''
+
+    OPTS = ve.Options(allow_strings=True)
+
+    def test_string_edit_passes(self):
+        after = self.BEFORE.replace(
+            '"Best in 3 seasons"', '"At its best in 3 seasons"'
+        ).replace(
+            "See [the guide](../guide.md) and run `make site` for 2 runs.",
+            "Read [the guide](../guide.md), then run `make site`; it takes 2 runs.",
+        )
+        self.assertEqual(ve.check_py(self.BEFORE, after, self.OPTS), [])
+
+    def test_new_dict_entry_fails(self):
+        after = self.BEFORE.replace(
+            '"cost": "Costs %s per night"}',
+            '"cost": "Costs %s per night", "gear": "Bring boots"}',
+        )
+        problems = ve.check_py(self.BEFORE, after, self.OPTS)
+        self.assertTrue(any("python code changed" in p for p in problems))
+
+    def test_lost_placeholder_fails(self):
+        after = self.BEFORE.replace('"Costs %s per night"', '"Costs that much per night"')
+        problems = ve.check_py(self.BEFORE, after, self.OPTS)
+        self.assertTrue(any("%-placeholders" in p for p in problems))
+
+    def test_changed_number_in_string_fails(self):
+        after = self.BEFORE.replace('"Best in 3 seasons"', '"Best in 4 seasons"')
+        problems = ve.check_py(self.BEFORE, after, self.OPTS)
+        self.assertTrue(any("numbers" in p for p in problems))
+
+    def test_changed_link_target_in_string_fails(self):
+        after = self.BEFORE.replace("(../guide.md)", "(../handbook.md)")
+        problems = ve.check_py(self.BEFORE, after, self.OPTS)
+        self.assertTrue(any("link targets" in p for p in problems))
+
+    def test_doctest_docstring_edit_fails(self):
+        after = self.BEFORE.replace(
+            '"""Build the page. >>> render([])"""', '"""Builds the page. >>> render([])"""'
+        )
+        problems = ve.check_py(self.BEFORE, after, self.OPTS)
+        self.assertTrue(any("doctest" in p for p in problems))
+
+    def test_plain_docstring_edit_passes(self):
+        after = self.BEFORE.replace('"""Render the cards."""', '"""Renders the cards."""')
+        self.assertEqual(ve.check_py(self.BEFORE, after, self.OPTS), [])
+
+    def test_changed_call_fails(self):
+        after = self.BEFORE.replace("len(rows)", "len(rows) + 1")
+        self.assertTrue(ve.check_py(self.BEFORE, after, self.OPTS))
+
+    def test_fstring_literal_edit_passes(self):
+        before = 'def f(n, m):\n    return f"We walked {n} of the {m} trails, 2 of them twice."\n'
+        after = 'def f(n, m):\n    return f"We walked {n} of the {m} trails; 2 were repeats."\n'
+        self.assertEqual(ve.check_py(before, after, self.OPTS), [])
+
+    def test_fstring_expression_change_fails(self):
+        before = 'def f(n, m):\n    return f"We walked {n} of the {m} trails."\n'
+        after = 'def f(n, m):\n    return f"We walked {m} of the {n} trails."\n'
+        self.assertTrue(ve.check_py(before, after, self.OPTS))
+
+    def test_without_the_flag_a_string_edit_still_fails(self):
+        after = self.BEFORE.replace('"Best in 3 seasons"', '"At its best in 3 seasons"')
+        self.assertTrue(ve.check_py(self.BEFORE, after))
+
+
 class TestHtml(unittest.TestCase):
     BEFORE = """<div class="hero"><h1>We leverage synergy — seamlessly!</h1>
 <p>Latency is 250 ms.</p>
