@@ -340,6 +340,87 @@ class TestYamlJson(unittest.TestCase):
         self.assertTrue(ve.check_json('{"a": 1}', '{"a": 2}'))
 
 
+class TestProseKeys(unittest.TestCase):
+    """--prose-keys: the display strings in front matter and yaml catalogs."""
+
+    OPTS = ve.Options(prose_keys={"pitch", "best_window"})
+    BEFORE = '''---
+title: Cape Trail
+pitch: "A 3 mile loop with the best view in the county."
+best_window: April to June
+distance_km: 5
+---
+
+# Cape Trail
+
+The loop takes 2 hours.
+'''
+
+    def test_edited_pitch_passes(self):
+        after = self.BEFORE.replace(
+            '"A 3 mile loop with the best view in the county."',
+            '"A 3 mile loop, and the county\'s best view."',
+        )
+        self.assertEqual(ve.check_md(self.BEFORE, after, self.OPTS), [])
+
+    def test_dropped_number_fails(self):
+        after = self.BEFORE.replace(
+            '"A 3 mile loop with the best view in the county."',
+            '"A short loop with the best view in the county."',
+        )
+        problems = ve.check_md(self.BEFORE, after, self.OPTS)
+        self.assertTrue(any("numbers" in p for p in problems))
+
+    def test_unlisted_key_change_fails(self):
+        after = self.BEFORE.replace("title: Cape Trail", "title: The Cape Trail")
+        problems = ve.check_md(self.BEFORE, after, self.OPTS)
+        self.assertTrue(any("not a prose key" in p for p in problems))
+
+    def test_quote_style_change_fails(self):
+        after = self.BEFORE.replace(
+            'pitch: "A 3 mile loop with the best view in the county."',
+            "pitch: A 3 mile loop with the best view in the county.",
+        )
+        problems = ve.check_md(self.BEFORE, after, self.OPTS)
+        self.assertTrue(any("quote style changed at pitch" in p for p in problems))
+
+    def test_without_the_flag_front_matter_stays_byte_invariant(self):
+        after = self.BEFORE.replace("in the county", "in the whole county")
+        self.assertTrue(any(p == "front matter changed" for p in ve.check_md(self.BEFORE, after)))
+
+    def test_body_is_still_checked(self):
+        after = self.BEFORE.replace("The loop takes 2 hours.", "The loop takes 3 hours.")
+        problems = ve.check_md(self.BEFORE, after, self.OPTS)
+        self.assertTrue(any("numeric tokens" in p for p in problems))
+
+    YAML = ("shows:\n"
+            "  - name: Datanauts\n"
+            "    blurb: A show about 3 kinds of data work.\n"
+            "    feed: https://example.com/feed.xml\n")
+
+    def test_yaml_star_narrative_edit_passes(self):
+        after = self.YAML.replace(
+            "blurb: A show about 3 kinds of data work.",
+            "blurb: A show that covers 3 kinds of data work.",
+        )
+        self.assertEqual(ve.check_yaml(self.YAML, after, ve.Options(prose_keys="*")), [])
+
+    def test_yaml_star_changed_key_fails(self):
+        after = self.YAML.replace("blurb:", "summary:")
+        problems = ve.check_yaml(self.YAML, after, ve.Options(prose_keys="*"))
+        self.assertTrue(any("keys changed" in p for p in problems))
+
+    def test_yaml_star_lost_url_fails(self):
+        after = self.YAML.replace("https://example.com/feed.xml", "https://example.com/rss.xml")
+        problems = ve.check_yaml(self.YAML, after, ve.Options(prose_keys="*"))
+        self.assertTrue(any("URLs" in p for p in problems))
+
+    def test_parse_prose_keys(self):
+        self.assertIsNone(ve.parse_prose_keys(None))
+        self.assertEqual(ve.parse_prose_keys("*"), "*")
+        self.assertEqual(ve.parse_prose_keys("pitch, summary"), {"pitch", "summary"})
+
+
 class TestRestructureMode(unittest.TestCase):
     def test_heading_change_relaxes_to_warning(self):
         before = "# Old title\n\nBody stays with 3 items.\n"

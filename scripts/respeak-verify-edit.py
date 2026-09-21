@@ -12,7 +12,7 @@ Format policies (what an edit MAY change / what must be invariant):
         table rows, definition lines), link and
         image targets, reference-link definitions, fenced code blocks (byte),
         inline code spans (multiset), numeric tokens outside fences (multiset),
-        YAML front matter (byte), admonition types.
+        YAML front matter (byte, or --prose-keys), admonition types.
   code  (.ts .tsx .js .jsx .c .h .cpp .go .java .rs) comments may change;
         invariant: everything outside comments (byte), numeric tokens inside
         comments (multiset — numbers never change, per never_compress).
@@ -22,7 +22,8 @@ Format policies (what an edit MAY change / what must be invariant):
   html  text nodes may change; invariant: tag skeleton with attributes,
         <script>/<style>/<pre>/<code> content (byte), numeric tokens in text
         (multiset).
-  yaml  comments may change; invariant: parsed data (deep equality).
+  yaml  comments may change; invariant: parsed data (deep equality), or the
+        structure minus the --prose-keys leaves.
   json  whitespace only; invariant: parsed data.
 
 --allow-restructure (md only): for passes run under `editorial_pass:
@@ -37,6 +38,13 @@ changed call, a moved statement, or a changed number still fails. A paired
 string may then differ only with its numbers, %-placeholders, {} format
 fields, URLs, Markdown link targets, and inline code spans intact, and a
 docstring carrying a doctest (>>>) stays byte-identical.
+
+--prose-keys k1,k2 (or *) (md front matter, yaml files): the named leaf keys
+hold display prose the reader sees, so their string values may be rewritten;
+* names every string leaf. Structure, key order, every other value, and each
+scalar's quoting style stay invariant, and a rewritten value keeps its
+numbers, URLs, inline code spans, and link targets. For md this replaces the
+"front matter changed" failure; the body is checked as before.
 
 Exit 0 = safe (warnings allowed), 1 = violation(s), 2 = usage/parse error.
 Known limit: the `code` comment walker tracks ' " ` strings and //, /* */
@@ -175,6 +183,11 @@ def md_blocks(nofence):
     return counts
 
 
+def fm_body(fm):
+    """The YAML inside a front-matter block, without its `---` fences."""
+    return re.sub(r"---\n?$", "", re.sub(r"^---\n", "", fm))
+
+
 def md_facts(text):
     fm = ""
     m = re.match(r"^---\n.*?\n---\n", text, re.S)
@@ -201,9 +214,15 @@ def md_facts(text):
 
 def check_md(before, after, opts=None):
     b, a = md_facts(before), md_facts(after)
+    keys = _opts(opts).prose_keys
     problems = []
     if b["front_matter"] != a["front_matter"]:
-        problems.append("front matter changed")
+        if keys is None:
+            problems.append("front matter changed")
+        else:
+            problems.extend(
+                "front matter changed: " + p for p in
+                check_prose_yaml(fm_body(b["front_matter"]), fm_body(a["front_matter"]), keys))
     if b["headings"] != a["headings"]:
         problems.append(f"headings changed: {[h for h in b['headings'] if h not in a['headings']] + [h for h in a['headings'] if h not in b['headings']]}")
     moved = [f"{kind} {b['blocks'][kind]} -> {a['blocks'][kind]}"
@@ -401,8 +420,110 @@ def check_html(before, after, opts=None):
 
 # --- yaml / json --------------------------------------------------------
 
+PROSE_ALL = "*"
+KEY_LINE_RE = re.compile(r"^\s*(?:-\s+)?([\w.\-]+):(?:\s+(\S)|\s*$)")
+
+
+def parse_prose_keys(value):
+    """--prose-keys: None (absent), "*" (every string leaf), or a set of names."""
+    if value is None:
+        return None
+    if value.strip() == PROSE_ALL:
+        return PROSE_ALL
+    return {k.strip() for k in value.split(",") if k.strip()}
+
+
+def yaml_key_names(data):
+    """Every mapping key in a parsed document."""
+    names, stack = set(), [data]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, dict):
+            for key, value in node.items():
+                names.add(str(key))
+                stack.append(value)
+        elif isinstance(node, list):
+            stack.extend(node)
+    return names
+
+
+def scalar_styles(text, names):
+    """(key, style) for each `key: value` line, in document order.
+
+    The style is the first non-space character after the colon — a quote, a
+    block indicator, or "plain" — so a pass cannot requote a scalar. Lines
+    whose key is not a key of the parsed document are ignored: they are prose
+    inside a block scalar that happens to carry a colon.
+    """
+    styles = []
+    for line in text.split("\n"):
+        m = KEY_LINE_RE.match(line)
+        if not m or m.group(1) not in names:
+            continue
+        first = m.group(2)
+        if first is None:
+            style = "nested"
+        elif first in "\"'>|":
+            style = first
+        else:
+            style = "plain"
+        styles.append((m.group(1), style))
+    return styles
+
+
+def prose_walk(before, after, path, key, keys, problems):
+    """Compare two parsed documents, letting the listed leaf keys hold prose."""
+    where = path or "the root"
+    if isinstance(before, dict) and isinstance(after, dict):
+        if list(before) != list(after):
+            problems.append(f"keys changed at {where}: {list(before)} -> {list(after)}")
+            return
+        for k in before:
+            prose_walk(before[k], after[k], f"{path}.{k}" if path else str(k),
+                       str(k), keys, problems)
+    elif isinstance(before, list) and isinstance(after, list):
+        if len(before) != len(after):
+            problems.append(f"list length changed at {where}: {len(before)} -> {len(after)}")
+            return
+        for i, (b, a) in enumerate(zip(before, after)):
+            prose_walk(b, a, f"{path}[{i}]", key, keys, problems)
+    elif isinstance(before, str) and isinstance(after, str):
+        if before == after:
+            return
+        if keys != PROSE_ALL and key not in keys:
+            problems.append(f"value changed at {where}, which is not a prose key")
+            return
+        token_diff(f"value at {where}", before, after, SCALAR_TOKEN_KINDS, problems)
+    elif before != after:
+        problems.append(f"value changed at {where}: {before!r} -> {after!r}")
+
+
+def check_prose_yaml(before, after, keys):
+    """--prose-keys: structure, key order, and quoting are still invariant."""
+    import yaml
+    try:
+        bdata, adata = yaml.safe_load(before), yaml.safe_load(after)
+    except yaml.YAMLError as e:
+        return [f"YAML parse error: {e}"]
+    problems = []
+    prose_walk(bdata, adata, "", "", keys, problems)
+    names = yaml_key_names(bdata) | yaml_key_names(adata)
+    bstyles, astyles = scalar_styles(before, names), scalar_styles(after, names)
+    for b, a in zip(bstyles, astyles):
+        if b != a:
+            problems.append(f"quote style changed at {b[0]}: {b[1]} -> {a[1]}")
+            break
+    else:
+        if len(bstyles) != len(astyles):
+            problems.append(f"scalar lines changed: {len(bstyles)} -> {len(astyles)}")
+    return problems
+
+
 def check_yaml(before, after, opts=None):
     import yaml
+    keys = _opts(opts).prose_keys
+    if keys is not None:
+        return check_prose_yaml(before, after, keys)
     try:
         if yaml.safe_load(before) != yaml.safe_load(after):
             return ["parsed YAML data changed (only comments/formatting may change)"]
@@ -472,10 +593,14 @@ def main():
     ap.add_argument("--allow-strings", action="store_true",
                     help="py only: string literals may be rewritten if their numbers, placeholders, "
                          "format fields, URLs, link targets, and inline code survive")
+    ap.add_argument("--prose-keys", metavar="KEYS", default=None,
+                    help="md front matter and yaml files: comma-separated leaf keys that hold "
+                         "display prose, or * for every string leaf")
     ap.add_argument("--json", action="store_true", dest="as_json")
     args = ap.parse_args()
     opts = Options(allow_restructure=args.allow_restructure,
-                   allow_strings=args.allow_strings)
+                   allow_strings=args.allow_strings,
+                   prose_keys=parse_prose_keys(args.prose_keys))
 
     ftype = args.type or detect(args.after)
     if ftype is None:
