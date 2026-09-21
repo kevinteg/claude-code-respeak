@@ -31,6 +31,15 @@ callers that only want the report. Exit 2 is reserved for usage/IO errors
     `exceptions:` list does not yet cover), separate from the corpus's own
     per-entry `exceptions:` (below).
 
+--baseline <path|->: scan that text with the same corpus and config and
+  classify the document's hits against it. A rule's hits beyond the
+  baseline's count for the same rule are "introduced"; the rest are
+  pre-existing, reported but never counted by --fail-on. A failing budget
+  counts only when its value rose above the baseline's. This is what the
+  gate hook passes (`gate.block_on: introduced`), with the committed
+  version of the file as the baseline, so an edit is blocked for what it
+  adds, not for what the file already carried. Takes exactly one document.
+
 Per-entry `exceptions:` (list of regexes, already in the corpus) exempt a
 hit whose surrounding sentence also matches one of the entry's exceptions —
 this is what lets "the spine switch" pass while "the spine of the argument"
@@ -57,6 +66,14 @@ BUDGET_DEFAULTS = {
     "max_sentence_words": 35,            # -> max_sentence_words (distinct from the
                                           #    --max-sentence-words CLI cap, which only
                                           #    drives the sentences_over_N report field)
+}
+
+# Budget key -> the measured field it is checked against (the "->" above).
+BUDGET_FIELDS = {
+    "emdash_per_1000_words": "em_dashes_per_1000_words",
+    "warn_phrases_per_1000_words": "density_per_1000_words",
+    "avg_sentence_words": "avg_sentence_words",
+    "max_sentence_words": "max_sentence_words",
 }
 
 # Severity ordering for --fail-on: a result's level must be >= the
@@ -200,17 +217,12 @@ def get_allow(config):
 
 
 def check_budgets(result, budgets):
-    def check(key, value):
-        threshold = budgets[key]
-        return {"value": value, "threshold": threshold,
-                "status": "PASS" if value <= threshold else "FAIL"}
-
-    return {
-        "emdash_per_1000_words": check("emdash_per_1000_words", result["em_dashes_per_1000_words"]),
-        "warn_phrases_per_1000_words": check("warn_phrases_per_1000_words", result["density_per_1000_words"]),
-        "avg_sentence_words": check("avg_sentence_words", result["avg_sentence_words"]),
-        "max_sentence_words": check("max_sentence_words", result["max_sentence_words"]),
-    }
+    out = {}
+    for key, field in BUDGET_FIELDS.items():
+        value, threshold = result[field], budgets[key]
+        out[key] = {"value": value, "threshold": threshold,
+                    "status": "PASS" if value <= threshold else "FAIL"}
+    return out
 
 
 def read_doc(doc_path):
@@ -226,10 +238,9 @@ def read_doc(doc_path):
         raise SetupError(f"{doc_path}: not UTF-8 text ({e})")
 
 
-def measure(doc_path, corpus, config, max_sentence_words):
-    raw = read_doc(doc_path)
-    text = strip_exempt(raw)
-    allow_regexes = get_allow(config)
+def scan_text(text, corpus, allow_regexes, max_sentence_words):
+    """Every measured field for one already-stripped text, minus the budget
+    verdicts; measure() adds those, and the baseline deltas when asked."""
     hits = scan_doc(text, corpus, allow_regexes)
 
     sents = list(sentences(text))
@@ -238,8 +249,7 @@ def measure(doc_path, corpus, config, max_sentence_words):
     words = len(text.split())
     emdash = len(re.findall(r" — ", text))
 
-    result = {
-        "doc": "<stdin>" if doc_path == "-" else doc_path,
+    return {
         "words": words,
         "sentences": len(sents),
         "avg_sentence_words": round(sum(lens) / len(lens), 1) if lens else 0,
@@ -253,14 +263,56 @@ def measure(doc_path, corpus, config, max_sentence_words):
         "density_per_1000_words": round(1000 * sum(h["count"] for h in hits["density"]) / words, 1) if words else 0,
         "detail": hits,
     }
+
+
+def apply_baseline(result, baseline_path, corpus, allow_regexes, max_sentence_words):
+    """Classify the document's hits against a baseline text. A rule's hits
+    beyond the baseline's count for that rule are `introduced`; the rest are
+    pre-existing and never trip --fail-on. A failing budget is `worsened`
+    only when the measured value rose above the baseline's."""
+    base = scan_text(strip_exempt(read_doc(baseline_path)), corpus, allow_regexes, max_sentence_words)
+    base_counts = {(h["category"], h["rule"]): h["count"]
+                   for sev in base["detail"] for h in base["detail"][sev]}
+    result["baseline"] = "<stdin>" if baseline_path == "-" else baseline_path
+    preexisting = 0
+    for sev in ("error", "warn", "density"):
+        for h in result["detail"][sev]:
+            was = base_counts.get((h["category"], h["rule"]), 0)
+            h["baseline"] = was
+            h["introduced"] = max(0, h["count"] - was)
+            preexisting += min(h["count"], was)
+        result[f"introduced_{sev}_hits"] = sum(h["introduced"] for h in result["detail"][sev])
+    result["preexisting_hits"] = preexisting
+    for key, field in BUDGET_FIELDS.items():
+        b = result["budgets"][key]
+        b["baseline"] = base[field]
+        b["worsened"] = b["status"] == "FAIL" and b["value"] > base[field]
+    result["budget_failures_introduced"] = sum(1 for b in result["budgets"].values() if b["worsened"])
+
+
+def measure(doc_path, corpus, config, max_sentence_words, baseline_path=None):
+    text = strip_exempt(read_doc(doc_path))
+    allow_regexes = get_allow(config)
+    result = {"doc": "<stdin>" if doc_path == "-" else doc_path}
+    result.update(scan_text(text, corpus, allow_regexes, max_sentence_words))
     budgets = get_budgets(config)
     result["budgets"] = check_budgets(result, budgets)
     result["budget_failures"] = sum(1 for b in result["budgets"].values() if b["status"] == "FAIL")
+    if baseline_path is not None:
+        apply_baseline(result, baseline_path, corpus, allow_regexes, max_sentence_words)
     return result
 
 
 def result_level(result) -> str:
-    """Highest --fail-on severity this result trips: error > warn > none."""
+    """Highest --fail-on severity this result trips: error > warn > none.
+    Against a baseline, only introduced hits and worsened budgets count."""
+    if "baseline" in result:
+        if result["introduced_error_hits"]:
+            return "error"
+        if (result["introduced_warn_hits"] or result["introduced_density_hits"]
+                or result["budget_failures_introduced"]):
+            return "warn"
+        return "none"
     if result["error_hits"]:
         return "error"
     if result["warn_hits"] or result["density_hits"] or result["budget_failures"]:
@@ -278,11 +330,22 @@ def print_result(result, max_sentence_words):
         hits = result["detail"][sev]
         total = sum(h["count"] for h in hits)
         print(f"{sev}: {total} hits across {len(hits)} rules")
-        for h in sorted(hits, key=lambda x: -x["count"])[:12]:
-            print(f"  {h['count']:3d}  [{h['category']}] {h['rule']}")
+        for h in sorted(hits, key=lambda x: (-x.get("introduced", x["count"]), -x["count"]))[:12]:
+            tag = ""
+            if "baseline" in result:
+                tag = f"  [new {h['introduced']}, pre-existing {min(h['count'], h['baseline'])}]"
+            print(f"  {h['count']:3d}  [{h['category']}] {h['rule']}{tag}")
     print("budgets:")
     for name, b in result["budgets"].items():
-        print(f"  {b['status']:4s}  {name}: {b['value']} (budget {b['threshold']})")
+        tag = ""
+        if "baseline" in result:
+            tag = f" (baseline {b['baseline']}{', worsened' if b['worsened'] else ''})"
+        print(f"  {b['status']:4s}  {name}: {b['value']} (budget {b['threshold']}){tag}")
+    if "baseline" in result:
+        print(f"baseline: {result['preexisting_hits']} pre-existing hit(s) not counted; "
+              f"introduced: {result['introduced_error_hits']} error, "
+              f"{result['introduced_warn_hits']} warn, {result['introduced_density_hits']} density; "
+              f"budgets worsened: {result['budget_failures_introduced']}")
 
 
 def main():
@@ -292,6 +355,9 @@ def main():
     ap.add_argument("--config", default=None)
     ap.add_argument("--fail-on", choices=("none", "error", "warn"), default="none")
     ap.add_argument("--max-sentence-words", type=int, default=25)
+    ap.add_argument("--baseline", default=None, metavar="PATH",
+                    help="classify hits against this text; only hits beyond its per-rule "
+                         "counts (and budgets that got worse) count for --fail-on")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args()
 
@@ -321,9 +387,15 @@ def main():
             raise SetupError(f"{args.config}: top level is not a mapping")
         if args.docs.count("-") > 1:
             raise SetupError("'-' (stdin) may be given once")
+        if args.baseline is not None:
+            if len(args.docs) != 1:
+                raise SetupError("--baseline takes exactly one document")
+            if args.baseline == "-" and args.docs[0] == "-":
+                raise SetupError("'-' (stdin) may be given once")
         results = []
         for doc in args.docs:
-            results.append(measure(doc, corpus, config, args.max_sentence_words))
+            results.append(measure(doc, corpus, config, args.max_sentence_words,
+                                   baseline_path=args.baseline))
         if args.json:
             print(json.dumps(results, indent=1))
         else:

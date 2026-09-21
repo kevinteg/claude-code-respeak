@@ -39,6 +39,61 @@ def run_measure(args):
     )
 
 
+class TestBaseline(unittest.TestCase):
+    """--baseline: hits the document carries beyond the baseline's per-rule
+    count are introduced; the rest are pre-existing and never trip --fail-on."""
+
+    def setUp(self):
+        old = "# Plan\n\nThis design is load-bearing for everything downstream.\n"
+        self.base = write_tmp(old)
+        self.same = write_tmp(old + "A new sentence with nothing wrong in it.\n")
+        self.worse = write_tmp(old + "Let us delve into the second load-bearing point.\n")
+        self.empty = write_tmp("")
+        dashes = "Alpha — beta gamma delta epsilon zeta eta theta iota kappa.\n"
+        self.dash_base = write_tmp(dashes)
+        self.dash_same = write_tmp(dashes + "One more plain sentence of eight words here.\n")
+        self.dash_worse = write_tmp(dashes + "One — two — three.\n")
+
+    def tearDown(self):
+        for p in (self.base, self.same, self.worse, self.empty,
+                  self.dash_base, self.dash_same, self.dash_worse):
+            os.unlink(p)
+
+    def test_preexisting_hit_is_reported_not_failed(self):
+        r = run_measure([self.same, "--baseline", self.base, "--fail-on", "error"])
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("1 pre-existing hit(s) not counted", r.stdout)
+
+    def test_introduced_hit_fails(self):
+        r = run_measure([self.worse, "--baseline", self.base, "--fail-on", "error"])
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+
+    def test_json_carries_per_rule_deltas(self):
+        r = run_measure([self.worse, "--baseline", self.base, "--json"])
+        d = json.loads(r.stdout)[0]
+        self.assertEqual(d["baseline"], self.base)
+        self.assertEqual(d["introduced_error_hits"], 2)   # a second load-bearing, plus delve
+        self.assertEqual(d["preexisting_hits"], 1)
+        rules = {h["rule"]: h for h in d["detail"]["error"]}
+        self.assertEqual((rules["load-bearing"]["baseline"], rules["load-bearing"]["introduced"]), (1, 1))
+
+    def test_empty_baseline_counts_everything(self):
+        r = run_measure([self.same, "--baseline", self.empty, "--fail-on", "error"])
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+
+    def test_failing_budget_counts_only_when_worsened(self):
+        r = run_measure([self.dash_same, "--baseline", self.dash_base, "--fail-on", "warn"])
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        r = run_measure([self.dash_worse, "--baseline", self.dash_base, "--fail-on", "warn"])
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        d = json.loads(run_measure([self.dash_worse, "--baseline", self.dash_base, "--json"]).stdout)[0]
+        self.assertTrue(d["budgets"]["emdash_per_1000_words"]["worsened"])
+
+    def test_baseline_takes_exactly_one_document(self):
+        r = run_measure([self.same, self.worse, "--baseline", self.base])
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+
+
 class TestFailOnSemantics(unittest.TestCase):
     def setUp(self):
         self.error_doc = write_tmp("This design is load-bearing for everything downstream.\n")
