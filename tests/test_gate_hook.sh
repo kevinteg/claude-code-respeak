@@ -277,6 +277,81 @@ doc_home="$work/user2/code/repo/notes.md"; echo "$BANNED_TEXT" > "$doc_home"
 hook_json_for "$doc_home" | env -u CLAUDE_PROJECT_DIR CLAUDE_CONFIG_DIR="$user2" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$GATE" > "$work/gate-user-discovery.out" 2>&1
 check "user file under \$HOME is never discovered as a project file (exit 0)" 0 "$?"
 
+# ===== v0.6: gate.block_on — a verdict is about what the write INTRODUCED ====
+# The baseline is the file as it was, so these fixtures need a repository:
+# `git show HEAD:./<name>` is the first choice, the Edit's own strings the
+# second, an empty file the last.
+
+edit_json_for() {
+  # $1 = file path, $2 = old_string, $3 = new_string -> an Edit hook event
+  python3 -c 'import json, sys; print(json.dumps({"tool_name": "Edit", "tool_input": {"file_path": sys.argv[1], "old_string": sys.argv[2], "new_string": sys.argv[3]}}))' "$1" "$2" "$3"
+}
+
+run_gate_event() {
+  # $1 = project dir, $2 = hook JSON, $3 = stdout file; the trace and the
+  # measure report land in $3.err, because these cases read both channels
+  printf '%s' "$2" \
+    | RESPEAK_GATE_TRACE=1 CLAUDE_PROJECT_DIR="$1" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$GATE" > "$3" 2>"$3.err"
+}
+
+git_in() { git -C "$proj_git" -c commit.gpgsign=false "$@"; }
+
+proj_git="$work/proj-git"
+mkdir -p "$proj_git/.claude/respeak" "$proj_git/any"
+cat > "$proj_git/.claude/respeak/config.yaml" <<'YAML'
+gate:
+  enabled: true
+  include: ["**/*.md"]
+  fail_on: error
+YAML
+printf 'gate: {block_on: any}\n' > "$proj_git/any/.respeak.yaml"
+for f in tracked.md intro.md any/doc.md; do
+  printf '# Notes\n\n%s\n' "$BANNED_TEXT" > "$proj_git/$f"
+done
+git_in init -q >/dev/null 2>&1
+git_in config user.name "respeak tests"
+git_in config user.email "tests@example.invalid"
+git_in add -A >/dev/null 2>&1
+git_in commit -q -m "fixture" >/dev/null 2>&1
+
+# --- an edit that adds no hit passes, and names what the file already carried
+printf '# Notes today\n\n%s\n' "$BANNED_TEXT" > "$proj_git/tracked.md"
+run_gate_event "$proj_git" "$(edit_json_for "$proj_git/tracked.md" "# Notes" "# Notes today")" "$work/gate-preexisting.out"
+check "tracked file, only a pre-existing hit: the edit passes (exit 0)" 0 "$?"
+check_grep "...and stdout names the hits it did not introduce" "pre-existing style hit(s) remain" "$work/gate-preexisting.out"
+check_grep "...as PostToolUse additionalContext" "additionalContext" "$work/gate-preexisting.out"
+check_grep "...naming the rule" "load-bearing" "$work/gate-preexisting.out"
+
+# --- an edit that adds one blocks, per-rule: 2 hits against a baseline of 1 --
+printf '# Notes\n\n%s\n%s\n' "$BANNED_TEXT" "$BANNED_TEXT" > "$proj_git/intro.md"
+run_gate_event "$proj_git" "$(edit_json_for "$proj_git/intro.md" "$BANNED_TEXT" "$BANNED_TEXT
+$BANNED_TEXT")" "$work/gate-introduced.out"
+check "an edit that introduces a hit blocks (exit 2)" 2 "$?"
+check_grep "...and the report separates new from pre-existing" "new 1, pre-existing 1" "$work/gate-introduced.out.err"
+
+# --- block_on: any restores the whole-file verdict (the behaviour before v0.6)
+printf '# Notes today\n\n%s\n' "$BANNED_TEXT" > "$proj_git/any/doc.md"
+run_gate_event "$proj_git" "$(edit_json_for "$proj_git/any/doc.md" "# Notes" "# Notes today")" "$work/gate-blockon-any.out"
+check "block_on: any blocks the same edit on its pre-existing hit (exit 2)" 2 "$?"
+
+# --- a brand-new document has no baseline: it is gated whole ----------------
+printf '%s\n' "$BANNED_TEXT" > "$proj_git/fresh.md"
+run_gate_event "$proj_git" "$(hook_json_for "$proj_git/fresh.md")" "$work/gate-untracked-new.out"
+check "untracked new file with a hit is gated whole (exit 2)" 2 "$?"
+
+# --- untracked, but the Edit carries the pre-edit text: a removal passes -----
+printf 'The plan is central to the release.\n' > "$proj_git/removed.md"
+run_gate_event "$proj_git" "$(edit_json_for "$proj_git/removed.md" "The plan is load-bearing for the release." "The plan is central to the release.")" "$work/gate-removed.out"
+check "untracked file, an edit that removes the only hit passes (exit 0)" 0 "$?"
+check_grep "...measured against the text rebuilt from the edit" "baseline .*: the pre-edit text" "$work/gate-removed.out.err"
+
+# --- --file is the CI surface: whole file, unless --baseline-ref says otherwise
+RESPEAK_GATE_TRACE=1 CLAUDE_PROJECT_DIR="$proj_git" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$GATE" --file "$proj_git/tracked.md" > "$work/gate-cli-whole.out" 2>&1
+check "--file gates the whole file whatever block_on says (exit 2)" 2 "$?"
+RESPEAK_GATE_TRACE=1 CLAUDE_PROJECT_DIR="$proj_git" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$GATE" --file "$proj_git/tracked.md" --baseline-ref HEAD > "$work/gate-cli-ref.out" 2>&1
+check "--file --baseline-ref HEAD measures against the commit (exit 0)" 0 "$?"
+check_grep "...and says what remains" "pre-existing style hit(s) remain" "$work/gate-cli-ref.out"
+
 echo
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]
