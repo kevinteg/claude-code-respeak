@@ -23,7 +23,15 @@ otherwise. `none` never fails — this keeps the pre-enforcement behavior for
 callers that only want the report. Exit 2 is reserved for usage/IO errors
 (bad doc path, unreadable corpus/config).
 
---config <path>: optional project or plugin config YAML.
+--config <path>: the resolved configuration for the document. Optional, but
+a run without it is not the run the gate makes: nothing softens the shared
+corpus and nothing but the defaults below bounds the budgets, so a hand
+audit over-counts a project that has tuned either. Resolve the layers for
+the file and pass the result:
+
+    respeak-config.sh resolve --for <file> --launch-dir <project> \
+                              --format yaml --out <path>
+
   * `style.budgets` — checked against the measured stats and reported
     PASS/FAIL (see BUDGET_DEFAULTS below for the keys and defaults used when
     a key is absent from the config); a FAIL counts as a warn-level hit for
@@ -408,7 +416,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("docs", nargs="+")
     ap.add_argument("--corpus", default=None)
-    ap.add_argument("--config", default=None)
+    ap.add_argument("--config", default=None, metavar="PATH",
+                    help="the resolved configuration for this document (style.budgets, "
+                         "gate.allow). Without it neither applies and a project that has "
+                         "tuned them is measured against the defaults instead; write the "
+                         "file with `respeak-config.sh resolve --for <file> --launch-dir "
+                         "<project> --format yaml --out <path>`")
     ap.add_argument("--fail-on", choices=("none", "error", "warn"), default="none")
     ap.add_argument("--max-sentence-words", type=int, default=25)
     ap.add_argument("--baseline", default=None, metavar="PATH",
