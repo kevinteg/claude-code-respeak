@@ -30,6 +30,11 @@
 #             marks entries the adopting project banned that no research catalog
 #             lists; they stand on the project's authority, not measurement (sac §9
 #             gap 8 asks for exactly this rationale link).
+# case_sensitive: true matches this entry's pattern with case as written,
+#             instead of the default case-insensitive match. It is for
+#             entries where capitalization IS the distinction (a given name
+#             against an all-caps brand); `exceptions:` cannot do this,
+#             because they compile with re.I.
 # tier:       `density` marks common-overuse words that flag by DENSITY
 #             against config style.budgets.warn_phrases_per_1000_words, not
 #             per hit. Kobak's "common but excess" tier says to flag these
@@ -547,10 +552,18 @@ categories:
   stock_names:
     note: >
       LLM default-name basin for invented examples. Source: deai §7, which
-      flags this as a "novel category". Case-insensitive matching may collide
-      with real names — hence warn for names real people carry.
+      flags this as a "novel category". Matching may collide with real names
+      — hence warn for names real people carry, and `case_sensitive: true` on
+      the entry whose spellings a brand also uses.
     entries:
       - { pattern: '\b(Elara|Elysia|Eldoria|Atheria|Zephyria|Whisperwood|Oakhaven|Ravenswood|Kael)\b',
           severity: error, fix: pick a name outside the LLM default basin }
-      - { pattern: '\b(Lyra|Eira|Jaxon|Elias)\b', severity: warn,
-          fix: "fine for real people; avoid as invented-character defaults" }
+      - pattern: '\b(Lyra|Eira|Jaxon|Elias)\b'
+        severity: warn
+        fix: "fine for real people; avoid as invented-character defaults"
+        case_sensitive: true
+        # LYRA is a pencil brand, and home's catalog CSV lists LYRA colored
+        # pencils twice. Only the capitalized given-name spelling is a
+        # candidate for the LLM default-name basin, and `exceptions:` cannot
+        # separate the two because they compile with re.I. This entry is the
+        # one place the corpus asks for case-sensitive matching.
