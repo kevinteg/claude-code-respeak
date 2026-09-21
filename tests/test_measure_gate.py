@@ -360,6 +360,58 @@ class TestSentenceSplitting(unittest.TestCase):
             os.unlink(doc)
 
 
+class TestCaseSensitiveEntries(unittest.TestCase):
+    """`case_sensitive: true` compiles the entry and its exceptions without
+    re.I. The motivating pair: the placeholder name "Lyra" must flag, the
+    LYRA pencils brand must not, and no exception can tell them apart while
+    it is compiled case-insensitively."""
+
+    CORPUS = (
+        "categories:\n"
+        "  placeholders:\n"
+        "    entries:\n"
+        "      - pattern: '\\b(Lyra)\\b'\n"
+        "        severity: error\n"
+        "        case_sensitive: true\n"
+        "      - pattern: '\\b(Eira)\\b'\n"
+        "        severity: error\n"
+        "        case_sensitive: true\n"
+        "        exceptions:\n"
+        "          - 'Eira Ltd'\n"
+        "      - pattern: '\\b(Jaxon)\\b'\n"
+        "        severity: error\n"
+    )
+
+    def setUp(self):
+        self.corpus = write_tmp(self.CORPUS, suffix=".yaml")
+        self.docs = []
+
+    def tearDown(self):
+        os.unlink(self.corpus)
+        for d in self.docs:
+            os.unlink(d)
+
+    def gate(self, text):
+        doc = write_tmp(text)
+        self.docs.append(doc)
+        r = run_measure([doc, "--corpus", self.corpus, "--fail-on", "error"])
+        self.assertIn(r.returncode, (0, 1), r.stdout + r.stderr)
+        return r.returncode
+
+    def test_placeholder_name_flags_in_its_own_case(self):
+        self.assertEqual(self.gate("The example user Lyra signs in first.\n"), 1)
+
+    def test_the_brand_in_another_case_does_not_flag(self):
+        self.assertEqual(self.gate("The LYRA pencils sit in the top drawer.\n"), 0)
+
+    def test_an_exception_is_case_sensitive_too(self):
+        self.assertEqual(self.gate("Eira Ltd ships the part on Monday.\n"), 0)
+        self.assertEqual(self.gate("Eira reads the part number as eira ltd.\n"), 1)
+
+    def test_an_entry_without_the_key_still_ignores_case(self):
+        self.assertEqual(self.gate("The example user JAXON signs in first.\n"), 1)
+
+
 if __name__ == "__main__":
     unittest.main()
 
@@ -395,6 +447,7 @@ class SetupErrorsExit2(unittest.TestCase):
             "bad pattern": "categories:\n  x:\n    entries:\n      - {pattern: '(', severity: error}\n",
             "bad exception": "categories:\n  x:\n    entries:\n      - {phrase: foo, severity: error, exceptions: ['(']}\n",
             "bad severity": "categories:\n  x:\n    entries:\n      - {phrase: foo, severity: loud}\n",
+            "bad case_sensitive": "categories:\n  x:\n    entries:\n      - {phrase: foo, severity: error, case_sensitive: sometimes}\n",
             "entry without text": "categories:\n  x:\n    entries:\n      - {severity: error}\n",
         }
         for name, text in cases.items():

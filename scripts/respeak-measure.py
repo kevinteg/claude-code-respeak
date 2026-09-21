@@ -48,6 +48,11 @@ Per-entry `exceptions:` (list of regexes, already in the corpus) exempt a
 hit whose surrounding sentence also matches one of the entry's exceptions —
 this is what lets "the spine switch" pass while "the spine of the argument"
 still flags the project-banned metaphor.
+
+Per-entry `case_sensitive: true` compiles that entry's pattern (or phrase)
+and its exceptions without re.I, so a rule can flag the placeholder name
+"Lyra" and leave the LYRA pencils brand alone. Matching is case-insensitive
+without it.
 """
 import argparse
 import json
@@ -171,6 +176,15 @@ def allowed_by_gate(entry, allow_regexes) -> bool:
     return any(a.search(txt) for a in allow_regexes)
 
 
+def entry_flags(entry):
+    """The re flags an entry's pattern (and its exceptions) compile with:
+    case-insensitive, unless the entry sets `case_sensitive: true`. That is
+    what lets a rule flag the placeholder name "Lyra" while leaving the LYRA
+    pencils brand alone — an exception cannot do it, because an exception
+    compiled with re.I matches the brand too."""
+    return re.M if entry.get("case_sensitive") else re.I | re.M
+
+
 def validate_corpus(corpus, path):
     """Raise SetupError unless the corpus has the shape scan_doc needs."""
     cats = corpus.get("categories") if isinstance(corpus, dict) else None
@@ -185,15 +199,18 @@ def validate_corpus(corpus, path):
                 raise SetupError(f"{path}: {cat}[{i}] needs a 'pattern' or 'phrase'")
             if e.get("severity") not in ("error", "warn", None):
                 raise SetupError(f"{path}: {cat}[{i}] severity {e.get('severity')!r} is not error/warn")
+            if "case_sensitive" in e and not isinstance(e["case_sensitive"], bool):
+                raise SetupError(f"{path}: {cat}[{i}] case_sensitive {e['case_sensitive']!r} is not true/false")
+            flags = entry_flags(e)
             for field in ("pattern",):
                 if e.get(field):
                     try:
-                        re.compile(e[field], re.I | re.M)
+                        re.compile(e[field], flags)
                     except re.error as exc:
                         raise SetupError(f"{path}: {cat}[{i}] {field} {e[field]!r}: {exc}")
             for x in e.get("exceptions") or []:
                 try:
-                    re.compile(x, re.I | re.M)
+                    re.compile(x, flags)
                 except re.error as exc:
                     raise SetupError(f"{path}: {cat}[{i}] exception {x!r}: {exc}")
 
@@ -208,7 +225,7 @@ def scan_doc(text: str, corpus, allow_regexes):
             if allow_regexes and allowed_by_gate(e, allow_regexes):
                 continue
             pat = e.get("pattern") or re.escape(e["phrase"])
-            flags = re.I | re.M
+            flags = entry_flags(e)
             exc_res = [re.compile(x, flags) for x in e.get("exceptions", [])]
             count = 0
             for m in re.finditer(pat, text, flags):
