@@ -135,13 +135,55 @@ both.
 | `shorthand.*` | same | ratification mode, legibility floor, never-compress classes, and the lexicon path must not vary by folder or by user |
 | `style.banned_phrases`, `style.replacements`, `style.rules` | same | corpus pointers are resources, not tone |
 | `version`, `schema` | same | file identity |
-| everything else (`narrative`, `modes`, `profiles`, `style` budgets and switches, `editorial_pass`, `data`, `gate.fail_on`, `gate.allow`) | any layer | tone, and per-file leniency |
+| everything else (`narrative`, `modes`, `profiles`, `style` budgets and switches, `editorial_pass`, `data`, `gate.fail_on`, `gate.block_on`, `gate.allow`) | any layer | tone, and per-file leniency |
 
 A project-only key in a user, ancestor, folder, or scope layer is dropped
 and reported once under `warnings:` by `explain`; `validate` on that file
 exits 1 and names the key. `gate.fail_on` is deliberately open: a folder of
 drafts can say `gate: {fail_on: none}` and the hook still runs there but
-never blocks.
+never blocks. `gate.block_on` is open for the same reason: a folder that
+holds pasted third-party text can ask for `any`, and a value that is
+neither `introduced` nor `any` warns and falls back to `introduced`.
+
+### What counts as introduced
+
+`gate.fail_on` says how loud a hit has to be to block. `gate.block_on`
+says which hits are this write's business at all.
+
+- `introduced` (the default) measures the write against the file as it
+  was, and blocks only on hits the write added. A document that already
+  carries one stays editable, which is the point: a banned term inside a
+  heading cannot be fixed by an editorial pass, because
+  `respeak-verify-edit.py` holds headings byte-identical, and before v0.6
+  every later edit to that file was blocked by it.
+- `any` counts every hit in the file, whoever put it there. This is the
+  v0.5 behaviour, and it is what a folder wants when its files must be
+  clean rather than no worse.
+
+Under `introduced` the hook hands `respeak-measure.py` a `--baseline`, and
+the report tags each rule `[new N, pre-existing M]`. The baseline is the
+file as it was, chosen in this order:
+
+1. the committed version, `git show HEAD:./<name>` run in the file's own
+   directory, so any repository that holds the file answers;
+2. for an `Edit`, the pre-edit text, rebuilt by putting the tool call's
+   `old_string` back where `new_string` now sits (every occurrence when
+   `replace_all` was set);
+3. an empty file, so a brand-new document is measured whole.
+
+Each step falls through to the next on any failure, because a missing
+`git`, a shallow checkout, or a string that moved must cost a wider scan,
+never a blocked write. `RESPEAK_GATE_TRACE=1` names the one used.
+
+A write that adds nothing passes even when the file still carries hits,
+and the hook says so rather than dropping them: it prints one line of JSON
+on stdout as PostToolUse `hookSpecificOutput.additionalContext`, naming
+the count and the rules, so the session can still choose to act on them.
+
+`respeak-gate.sh --file` has no edit to compare against and is the CI
+surface, where the question is whether the file is clean today. It keeps
+whole-file semantics whatever `block_on` says, unless `--baseline-ref REF`
+names a git ref to measure against.
 
 ## The target path and the project root
 
@@ -270,7 +312,7 @@ layers, lowest precedence first (* = present and applied):
     (2 directories walked with no .respeak.yaml)
 
 effective narrative: mode=bluf tech_level=1 profile=exec context=routine tone(f=0.8 d=0.9 c=0.8) auto_narrative=false lexicon_access=forbidden
-gate: enabled=true fail_on=warn applies=true (matched gate.include and not gate.exclude)
+gate: enabled=true fail_on=warn block_on=introduced applies=true (matched gate.include and not gate.exclude)
 
 overrides (key = value <- layer):
   gate.allow                    = ["spine", "load-bearing"] <- <plugin>/examples/layered/home/.claude/respeak/config.yaml + .claude/respeak/config.yaml
@@ -301,7 +343,7 @@ The other commands, on the same tree:
 $ bash scripts/respeak-config.sh resolve --project $P --for $P/docs/api/endpoints.md --format statusline --walk-from $P
 technical/t5 author @docs/api/.respeak.yaml
 $ bash scripts/respeak-config.sh gate --project $P --for $P/reports/week-36.md --walk-from $P
-{"applies": true, "enabled": true, "fail_on": "warn", "rel_path": "reports/week-36.md", "reason": "matched gate.include and not gate.exclude", "warnings": []}
+{"applies": true, "enabled": true, "fail_on": "warn", "block_on": "introduced", "rel_path": "reports/week-36.md", "reason": "matched gate.include and not gate.exclude", "warnings": []}
 $ bash scripts/respeak-config.sh validate $P/notes/.respeak.yaml
 examples/layered/project/notes/.respeak.yaml [folder]: ERROR
   error: <checkout>/examples/layered/project/notes/.respeak.yaml: gate.enabled is project-only; ignored
@@ -310,7 +352,7 @@ respeak config for notes/scratch.md
 project: <checkout>/examples/layered/project (--project)
 layers applied: plugin, user <plugin>/examples/layered/home/.claude/respeak/config.yaml, project .claude/respeak/config.yaml, project-local .claude/respeak/config.local.yaml, folder notes/.respeak.yaml
 effective narrative: mode=technical tech_level=5 profile=author context=routine tone(f=0.2 d=0.9 c=0.8) auto_narrative=false lexicon_access=inline
-gate: enabled=true fail_on=error applies=false (matched by gate.exclude)
+gate: enabled=true fail_on=error block_on=introduced applies=false (matched by gate.exclude)
 overrides: 13 key(s) set above the plugin defaults; `explain` without --brief lists them
 warning: notes/.respeak.yaml: gate.enabled is project-only; ignored
 ```
@@ -388,8 +430,12 @@ scopes:
 **CI.** The gate hook doubles as a command: `respeak-gate.sh --file PATH`
 runs exactly what the PostToolUse hook runs for that file, so CI enforces
 the same layers, the same `fail_on`, and the same Markdown-only contract
-the editor session saw. A CI-only file on `RESPEAK_CONFIG` can harden the
-verdict for the build. Use `find`, not `**`: bash 3.2 (the macOS default)
+the editor session saw. It differs in one way, on purpose: it has no edit
+to measure against, so it asks whether the whole file is clean rather than
+what a write added, whatever `block_on` says. `--baseline-ref REF` asks the
+other question, for a build that gates a branch on what it changed. A
+CI-only file on `RESPEAK_CONFIG` can harden the verdict for the build. Use
+`find`, not `**`: bash 3.2 (the macOS default)
 and GitHub Actions' default shell have no `globstar`, so `wiki/**/*.md`
 silently matches one directory level there.
 
@@ -418,9 +464,9 @@ folder's tone applies and `--mode` sits on top of it.
 | `respeak-config.sh explain --brief [--for PATH]` | the same in a few lines: project, layers applied, effective narrative, gate, override count, warnings. The `/respeak:respeak` skill injects this at the top of every invocation |
 | `respeak-config.sh resolve --for PATH --format yaml\|json [--out FILE]` | the full effective config, for `respeak-measure.py --config` or for a prompt; `--out` writes it without a shell redirect, which a skill's `allowed-tools` rule would not cover |
 | `respeak-config.sh resolve --for PATH --format line\|statusline` | one-line summaries; the statusline form is `bluf/t1 exec @docs/exec/.respeak.yaml` |
-| `respeak-config.sh gate --for FILE [--write-config PATH]` | the gate hook's decision as JSON (`applies`, `fail_on`, `reason`), optionally writing the resolved YAML |
+| `respeak-config.sh gate --for FILE [--write-config PATH]` | the gate hook's decision as JSON (`applies`, `fail_on`, `block_on`, `reason`), optionally writing the resolved YAML |
 | `respeak-config.sh validate FILE...` | parse, unknown top-level keys, scope shape, and key policy for the file's kind (guessed from its path, or `--kind`); exits 1 on a policy violation |
-| `respeak-gate.sh --file PATH` | the hook's decision and verdict for one file, as an exit code (0 allow, 2 block); `RESPEAK_GATE_TRACE=1` adds a one-line reason on stderr |
+| `respeak-gate.sh --file PATH [--baseline-ref REF]` | the hook's decision and verdict for one file, as an exit code (0 allow, 2 block); the whole file, whatever `block_on` says, unless `--baseline-ref` names a git ref to measure the file against. `RESPEAK_GATE_TRACE=1` adds a one-line reason on stderr |
 | `respeak-check.sh [--verify REF] [FILE...]` | the gate over every Markdown file git knows about, tracked or new and not ignored (or the files named) as a CI command, ignoring session overrides; `--verify REF` also runs `respeak-verify-edit.py` on each file changed since REF. Exit 1 on a block or a changed invariant |
 | `respeak-session.sh off\|on [gate]`, `respeak-session.sh status` | write, replace, or remove this session's override marker, or show it beside any environment override; these are the commands behind `/respeak:off` and `/respeak:on` |
 
@@ -495,7 +541,9 @@ in `config.local.yaml`.
   that is not a verdict, uncaught exceptions included, because CPython's
   exit 1 for a traceback would otherwise read as a verdict.
   `RESPEAK_GATE_TRACE=1` makes the hook say on stderr which of those
-  happened, and a test suite pins each case. The Stop hook has one layer
+  happened, and a test suite pins each case. Choosing the baseline fails
+  open the same way: every step of the order above falls through to the
+  next, and the last one is an empty file, which gates the write whole. The Stop hook has one layer
   that needs no YAML, the install-time `auto_narrative` knob, and honours
   it alone when the resolver cannot run. The scripts pick the first
   interpreter that can import PyYAML (`scripts/respeak-python.sh`;
@@ -569,6 +617,20 @@ in `config.local.yaml`.
 - **The headless renderer drives `claude -p`.** `RESPEAK_RENDER_CMD` and
   `RESPEAK_RENDER_MODEL` replace the removed `--budget-usd`; `--max-rounds`
   bounds the spend.
+
+## Upgrading from v0.5
+
+- **The gate blocks on what a write introduced, not on what the file
+  holds.** `gate.block_on` defaults to `introduced` ([What counts as
+  introduced](#what-counts-as-introduced)), so a file that already carries
+  an error-severity hit is no longer closed to every later edit. Projects
+  that want the old verdict set `gate: {block_on: any}`, at any layer.
+- **A pass can now write to stdout.** When the document still carries hits
+  the write did not add, the hook prints one line of PostToolUse
+  `additionalContext` JSON naming them. Nothing else about the hook's
+  output changed: a block is still exit 2 with the report on stderr.
+- **`respeak-gate.sh --file` is unchanged,** so a CI job that loops over
+  files gates them whole exactly as before.
 
 ## Design notes
 

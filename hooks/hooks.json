@@ -1,5 +1,5 @@
 {
-  "description": "respeak: lexicon status at session start (only in projects with .claude/respeak/); optional milestone auto-narrative on Stop; per-project opt-in style gate on Write|Edit of Markdown. Session overrides: RESPEAK_HOOKS=off, RESPEAK_GATE=off|on, or /respeak:off and /respeak:on.",
+  "description": "respeak: lexicon status at session start (only in projects with .claude/respeak/); optional milestone auto-narrative on Stop; per-project opt-in style gate on Write|Edit of Markdown, blocking on what the write introduced (gate.block_on: any gates the whole file). Session overrides: RESPEAK_HOOKS=off, RESPEAK_GATE=off|on, or /respeak:off and /respeak:on.",
   "hooks": {
     "SessionStart": [
       {

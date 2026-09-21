@@ -406,6 +406,33 @@ class GateDecision(unittest.TestCase):
         self.assertEqual(d["fail_on"], "error")
         self.assertTrue(any("fail_on" in w for w in res.warnings))
 
+    def test_block_on_defaults_to_introduced(self):
+        self.fx.proj("gate: {enabled: true}\n")
+        res = self.fx.resolve(target=self.fx.doc("a.md"))
+        d = rc.gate_decision(res)
+        self.assertEqual(d["block_on"], "introduced")
+        self.assertEqual(res.warnings, [])
+
+    def test_any_layer_may_set_block_on(self):
+        # same policy as fail_on: enforcement leniency is not project-only, so
+        # a folder of pasted third-party text can ask for the whole-file check
+        self.fx.proj("gate: {enabled: true}\n")
+        self.fx.folder("docs", "gate: {block_on: any}\n")
+        d = rc.gate_decision(self.fx.resolve(target=self.fx.doc("docs/a.md")))
+        self.assertEqual(d["block_on"], "any")
+        d = rc.gate_decision(self.fx.resolve(target=self.fx.doc("a.md")))
+        self.assertEqual(d["block_on"], "introduced")
+        self.fx.user("gate: {block_on: any}\n")
+        d = rc.gate_decision(self.fx.resolve(target=self.fx.doc("a.md")))
+        self.assertEqual(d["block_on"], "any")
+
+    def test_bad_block_on_falls_back_to_introduced(self):
+        self.fx.proj("gate: {enabled: true, block_on: everything}\n")
+        res = self.fx.resolve(target=self.fx.doc("a.md"))
+        d = rc.gate_decision(res)
+        self.assertEqual(d["block_on"], "introduced")
+        self.assertTrue(any("block_on" in w for w in res.warnings))
+
 
 class ExampleTree(unittest.TestCase):
     """Pins the table in examples/layered/README.md."""
@@ -493,10 +520,11 @@ class CLI(unittest.TestCase):
         self.assertIn("<- docs/.respeak.yaml (profile exec)", out)
         self.assertIn("gate.enabled is project-only; ignored", out)
         self.assertIn("gate: enabled=false", out)
+        self.assertIn("block_on=introduced", out)
 
     def test_gate_subcommand_writes_config(self):
         self.fx.proj("gate: {enabled: true}\n")
-        self.fx.folder("docs", "gate: {fail_on: warn}\n")
+        self.fx.folder("docs", "gate: {fail_on: warn, block_on: any}\n")
         doc = self.fx.doc("docs/a.md")
         out_cfg = os.path.join(self.fx.root, "resolved.yaml")
         r = self.run_cli("gate", "--project", self.fx.project, "--for", doc,
@@ -505,9 +533,18 @@ class CLI(unittest.TestCase):
         d = json.loads(r.stdout)
         self.assertTrue(d["applies"])
         self.assertEqual(d["fail_on"], "warn")
+        self.assertEqual(d["block_on"], "any")   # the gate hook reads it from here
         self.assertTrue(os.path.isfile(out_cfg))
         with open(out_cfg) as f:
             self.assertIn("fail_on: warn", f.read())
+
+    def test_validate_accepts_block_on_in_any_layer(self):
+        folder = os.path.join(self.fx.project, "docs", ".respeak.yaml")
+        write(folder, "gate: {block_on: any}\n")
+        r = self.run_cli("validate", folder)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("[folder]: ok", r.stdout)
+        self.assertNotIn("block_on", r.stdout)
 
     def test_validate_policy_and_shape(self):
         good = os.path.join(self.fx.project, "docs", ".respeak.yaml")

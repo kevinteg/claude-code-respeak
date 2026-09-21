@@ -20,6 +20,9 @@ gate:
   include: ["**/*.md"]     # add "**/*.mdx" / "**/*.markdown" to cover those; never non-Markdown
   exclude: []
   fail_on: error           # none | warn | error
+  block_on: introduced     # introduced: block only on hits this write added
+                           # (measured against the committed file); any: block
+                           # on every hit in the file
   allow: []
 
 # scopes:                  # path-scoped overrides; later entries win

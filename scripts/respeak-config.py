@@ -96,6 +96,13 @@ KNOWN_TOP_KEYS = {"version", "schema", "editorial_pass", "data", "narrative",
 
 FAIL_ON_VALUES = ("none", "warn", "error")
 
+# What a gate verdict is measured against. `introduced` compares the write
+# with the file as it was and blocks only on hits this edit added, so a
+# document that already carries one (a banned term inside a heading, which
+# the verifier holds invariant) stays editable; `any` blocks on every hit in
+# the file. Any layer may set it, like fail_on.
+BLOCK_ON_VALUES = ("introduced", "any")
+
 # The style gate is a Markdown scanner; the hook's cheap pre-filter and the
 # resolver's gate decision agree on exactly this set (docs/config-layers.md).
 MARKDOWN_EXTS = (".md", ".markdown", ".mdx")
@@ -694,8 +701,13 @@ def gate_decision(res):
     if fail_on not in FAIL_ON_VALUES:
         res.warnings.append("gate.fail_on %r is not one of %s; using error" % (fail_on, "/".join(FAIL_ON_VALUES)))
         fail_on = "error"
+    block_on = g.get("block_on") or "introduced"
+    if block_on not in BLOCK_ON_VALUES:
+        res.warnings.append("gate.block_on %r is not one of %s; using introduced"
+                            % (block_on, "/".join(BLOCK_ON_VALUES)))
+        block_on = "introduced"
     out = {"applies": False, "enabled": bool(g.get("enabled")), "fail_on": fail_on,
-           "rel_path": None, "reason": ""}
+           "block_on": block_on, "rel_path": None, "reason": ""}
     if not out["enabled"]:
         out["reason"] = "gate.enabled is not true in the project config"
         return out
@@ -789,8 +801,9 @@ def fmt_brief(res, gate=None):
     if lex:
         L[-1] += " lexicon_access=%s" % lex
     if gate is not None:
-        L.append("gate: enabled=%s fail_on=%s applies=%s (%s)"
-                 % (str(gate["enabled"]).lower(), gate["fail_on"], str(gate["applies"]).lower(), gate["reason"]))
+        L.append("gate: enabled=%s fail_on=%s block_on=%s applies=%s (%s)"
+                 % (str(gate["enabled"]).lower(), gate["fail_on"], gate["block_on"],
+                    str(gate["applies"]).lower(), gate["reason"]))
     else:
         L.append("gate: %s" % s["gate"])
     plugin = res.plugin_label()
@@ -833,8 +846,9 @@ def fmt_explain(res, gate=None):
     if lex:
         L[-1] += " lexicon_access=%s" % lex
     if gate is not None:
-        L.append("gate: enabled=%s fail_on=%s applies=%s (%s)"
-                 % (str(gate["enabled"]).lower(), gate["fail_on"], str(gate["applies"]).lower(), gate["reason"]))
+        L.append("gate: enabled=%s fail_on=%s block_on=%s applies=%s (%s)"
+                 % (str(gate["enabled"]).lower(), gate["fail_on"], gate["block_on"],
+                    str(gate["applies"]).lower(), gate["reason"]))
     else:
         L.append("gate: %s" % s["gate"])
     if res.warnings:
