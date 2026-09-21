@@ -6,7 +6,9 @@ Usage: respeak-verify-edit.py <before> <after> [--type md|code|py|html|yaml|json
 Format policies (what an edit MAY change / what must be invariant):
 
   md    prose may change; invariant: headings (text+order — anchors; ATX with
-        or without the space after the hashes, and setext), link and
+        or without the space after the hashes, and setext), block structure
+        (per-kind counts of blockquote lines, list items, thematic breaks,
+        table rows, definition lines), link and
         image targets, reference-link definitions, fenced code blocks (byte),
         inline code spans (multiset), numeric tokens outside fences (multiset),
         YAML front matter (byte), admonition types.
@@ -22,9 +24,9 @@ Format policies (what an edit MAY change / what must be invariant):
   json  whitespace only; invariant: parsed data.
 
 --allow-restructure (md only): for passes run under `editorial_pass:
-restructure: apply` (the caller owns relinking). Heading, admonition-type,
-and front-matter changes downgrade to reported warnings; link targets,
-fenced code, inline code, and numbers stay hard invariants.
+restructure: apply` (the caller owns relinking). Heading, block-structure,
+admonition-type, and front-matter changes downgrade to reported warnings;
+link targets, fenced code, inline code, and numbers stay hard invariants.
 
 Exit 0 = safe (warnings allowed), 1 = violation(s), 2 = usage/parse error.
 Known limit: the `code` comment walker tracks ' " ` strings and //, /* */
@@ -95,6 +97,37 @@ def md_headings(nofence):
     return headings
 
 
+def md_blocks(nofence):
+    """Count the block constructs outside fences, by kind.
+
+    Ordered items count anywhere when the marker is `1`, and only at a block
+    start otherwise: CommonMark lets only `1.` interrupt a paragraph, and
+    Python-Markdown starts a list at a block start. So a rewrap that moves
+    "2." to the head of a continuation line changes nothing, and one that
+    moves "1." there starts a list.
+    """
+    counts = Counter()
+    at_block_start = True
+    for line in nofence.split("\n"):
+        if not line.strip():
+            at_block_start = True
+            continue
+        if QUOTE_RE.match(line):
+            counts["blockquote lines"] += 1
+        if BULLET_RE.match(line):
+            counts["bullet items"] += 1
+        if ORDERED_ONE_RE.match(line) or (at_block_start and ORDERED_ANY_RE.match(line)):
+            counts["ordered items"] += 1
+        if at_block_start and HR_RE.match(line):
+            counts["thematic breaks"] += 1
+        if TABLE_ROW_RE.match(line):
+            counts["table rows"] += 1
+        if line.startswith(": "):
+            counts["definition lines"] += 1
+        at_block_start = False
+    return counts
+
+
 def md_facts(text):
     fm = ""
     m = re.match(r"^---\n.*?\n---\n", text, re.S)
@@ -108,6 +141,7 @@ def md_facts(text):
     return {
         "front_matter": fm,
         "headings": md_headings(nofence),
+        "blocks": md_blocks(nofence),
         "link_targets": Counter(re.findall(r"\]\(([^)\s]+)(?:\s[^)]*)?\)", nofence)),
         "ref_defs": Counter(re.findall(r"^\[[^\]]+\]:\s*(\S+)", nofence, re.M)),
         "fences": fences,
@@ -125,6 +159,11 @@ def check_md(before, after):
         problems.append("front matter changed")
     if b["headings"] != a["headings"]:
         problems.append(f"headings changed: {[h for h in b['headings'] if h not in a['headings']] + [h for h in a['headings'] if h not in b['headings']]}")
+    moved = [f"{kind} {b['blocks'][kind]} -> {a['blocks'][kind]}"
+             for kind in sorted(set(b["blocks"]) | set(a["blocks"]))
+             if b["blocks"][kind] != a["blocks"][kind]]
+    if moved:
+        problems.append("block structure changed: " + ", ".join(moved))
     counter_diff("link targets", b["link_targets"], a["link_targets"], problems)
     counter_diff("reference-link defs", b["ref_defs"], a["ref_defs"], problems)
     if b["fences"] != a["fences"]:
@@ -293,8 +332,8 @@ CHECKERS = {"md": check_md, "code": check_code, "py": check_py,
             "html": check_html, "yaml": check_yaml, "json": check_json}
 
 # Problem classes that a restructure-permitted pass may change (md only).
-RESTRUCTURE_RELAXED = ("headings changed", "admonition types changed",
-                       "front matter changed")
+RESTRUCTURE_RELAXED = ("headings changed", "block structure changed",
+                       "admonition types changed", "front matter changed")
 
 
 def partition_restructure(problems):
