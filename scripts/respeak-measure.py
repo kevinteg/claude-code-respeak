@@ -10,8 +10,10 @@ Usage: respeak-measure.py <doc.md|-> [<doc2.md> ...]        ('-' = stdin, once)
 Reports banned-phrase hits (error / warn / density-tier), sentence-length
 stats against the technical-mode caps, em-dash density, budget PASS/FAIL,
 and word count, for each document given. Fenced code blocks, inline code,
-and blockquotes are exempt (config style.quoting_exempt). Zero API tokens —
-pure local scan, no network.
+and blockquotes are exempt (config style.quoting_exempt), and so are HTML
+comments (`<!-- ... -->`): nothing inside one reaches the rendered page, so
+a vendored banner must not spend the document's em-dash or phrase budget.
+Zero API tokens — pure local scan, no network.
 
 --fail-on {none,error,warn} (default none): exit 1 if any document trips a
 hit (or, for warn, a budget failure) at or above that severity; exit 0
@@ -83,6 +85,7 @@ FAIL_LEVELS = {"none": 0, "warn": 1, "error": 2}
 
 def strip_exempt(text: str) -> str:
     text = re.sub(r"```.*?```", "", text, flags=re.S)   # fenced code
+    text = re.sub(r"<!--.*?-->", "", text, flags=re.S)   # HTML comments
     text = re.sub(r"`[^`\n]+`", "", text)                # inline code
     text = re.sub(r"^>.*$", "", text, flags=re.M)        # blockquotes
     text = re.sub(r"^---\n.*?\n---\n", "", text, flags=re.S)  # front matter
