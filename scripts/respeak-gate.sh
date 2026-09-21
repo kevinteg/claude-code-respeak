@@ -9,6 +9,23 @@
 # the resolver's gate decision uses the same list) and blocks on a failing
 # style-gate report.
 #
+# What a verdict is measured against is `gate.block_on`. The default,
+# `introduced`, hands measure a --baseline of the file as it was, so the
+# write is judged on the hits it ADDED and a document that already carries
+# one (a banned term inside a heading, which the editorial pass may not be
+# able to move) stays editable; the leftovers are reported to the model
+# instead, as PostToolUse additionalContext on a pass. `any` drops the
+# baseline and gates the whole file, the behaviour before v0.6.
+#
+# The baseline, in order: the committed version of the file
+# (`git show HEAD:./<name>`); else, for an Edit, the pre-edit text rebuilt
+# by putting tool_input.old_string back where new_string now sits; else an
+# empty file, so a brand-new document is gated whole. Each step falls
+# through to the next on any failure, and RESPEAK_GATE_TRACE=1 names the
+# one used. The --file form has no edit to compare against and is the CI
+# surface, so it keeps whole-file semantics whatever block_on says, unless
+# --baseline-ref REF names a git ref to measure against.
+#
 # Opt-in per project, deliberately: nothing happens unless the PROJECT layer
 # (<project>/.claude/respeak/config.yaml or config.local.yaml) sets
 # `gate.enabled: true`. A user-level file or a folder .respeak.yaml cannot
@@ -43,9 +60,16 @@ RESPEAK_PY=""; RESPEAK_PY_STD=""
 
 trace() { [ "${RESPEAK_GATE_TRACE:-0}" = "1" ] && echo "respeak gate: $*" >&2; return 0; }
 
-file_path=""; session_id=""
+file_path=""; session_id=""; cli_mode=0; has_edit=0; baseline_ref=""; HOOK_JSON=""
 if [ "${1:-}" = "--file" ]; then
-  file_path="${2:-}"
+  cli_mode=1
+  shift
+  file_path="${1:-}"
+  [ $# -gt 0 ] && shift
+  while [ $# -gt 0 ]; do
+    if [ "$1" = "--baseline-ref" ]; then baseline_ref="${2:-}"; shift; fi
+    shift
+  done
 else
   HOOK_JSON="$(cat)"
   pyj="${RESPEAK_PY:-$RESPEAK_PY_STD}"
@@ -56,11 +80,17 @@ try:
     data = json.load(sys.stdin)
 except Exception:
     sys.exit(0)
-print((data.get("tool_input") or {}).get("file_path") or "")
+ti = data.get("tool_input") or {}
+print(ti.get("file_path") or "")
 print(str(data.get("session_id") or ""))
+# An Edit carries the two strings the pre-edit text can be rebuilt from; a
+# Write carries neither, and is measured against the committed file or
+# nothing at all.
+print("edit" if isinstance(ti.get("old_string"), str) and isinstance(ti.get("new_string"), str) else "")
 ' 2>/dev/null)"
   file_path="$(printf '%s\n' "$parsed" | sed -n '1p')"
   session_id="$(printf '%s\n' "$parsed" | sed -n '2p')"
+  [ "$(printf '%s\n' "$parsed" | sed -n '3p')" = "edit" ] && has_edit=1
 fi
 
 [ -z "$file_path" ] && exit 0
@@ -89,7 +119,8 @@ measure="$script_dir/respeak-measure.py"
 if [ ! -f "$resolver" ] || [ ! -f "$measure" ]; then trace "resolver or measure script missing; allowing"; exit 0; fi
 
 resolved="$(mktemp 2>/dev/null || echo "/tmp/respeak-gate.$$.yaml")"
-trap 'rm -f "$resolved"' EXIT
+baseline=""
+trap 'rm -f "$resolved" ${baseline:+"$baseline"}' EXIT
 
 # No --project: the resolver discovers the root from the file and falls back
 # to $CLAUDE_PROJECT_DIR, which Claude Code exports to hooks.
@@ -104,11 +135,15 @@ import json, sys
 try:
     d = json.load(sys.stdin)
 except Exception:
-    print("0 error resolver-output-unparseable"); sys.exit(0)
+    print("0 error introduced resolver-output-unparseable"); sys.exit(0)
 fail_on = d.get("fail_on") if d.get("fail_on") in ("none", "warn", "error") else "error"
-print(("1" if d.get("applies") else "0") + " " + fail_on + " " + (d.get("reason") or "").replace(" ", "_"))
+block_on = d.get("block_on") if d.get("block_on") in ("introduced", "any") else "introduced"
+print(("1" if d.get("applies") else "0") + " " + fail_on + " " + block_on + " "
+      + (d.get("reason") or "").replace(" ", "_"))
 ' 2>/dev/null)"
-applies="${verdict%% *}"; rest="${verdict#* }"; fail_on="${rest%% *}"; reason="${rest#* }"
+applies="${verdict%% *}"; rest="${verdict#* }"
+fail_on="${rest%% *}"; rest="${rest#* }"
+block_on="${rest%% *}"; reason="${rest#* }"
 
 if [ "${applies:-0}" != "1" ]; then trace "not applicable to $file_path (${reason:-?})"; exit 0; fi
 
@@ -118,6 +153,56 @@ if [ -n "$plugin_root" ] && [ -f "$plugin_root/corpus/banned-phrases.yaml" ]; th
   args+=(--corpus "$plugin_root/corpus/banned-phrases.yaml")
 fi
 
+# The baseline: the file as it was, so measure can tell what this write
+# ADDED from what it merely inherited (the header's "block_on" note lists
+# the order). Every step falls through on failure, because a missing git, a
+# shallow checkout, or a string that moved must cost a wider scan, never a
+# blocked write.
+want_baseline=0
+[ "$cli_mode" -eq 0 ] && [ "${block_on:-introduced}" = "introduced" ] && want_baseline=1
+[ "$cli_mode" -eq 1 ] && [ -n "$baseline_ref" ] && want_baseline=1
+if [ "$want_baseline" -eq 1 ]; then
+  baseline="$(mktemp 2>/dev/null || echo "/tmp/respeak-gate.$$.base")"
+  baseline_from=""
+  ref="${baseline_ref:-HEAD}"
+  # `-C <dir>` with a `./<name>` path resolves the file inside whatever
+  # repository holds it, whatever the caller's working directory is.
+  if git -C "$(dirname "$file_path")" show "$ref:./$(basename "$file_path")" > "$baseline" 2>/dev/null; then
+    baseline_from="$ref"
+  else
+    : > "$baseline"
+    if [ "$cli_mode" -eq 1 ]; then
+      # --baseline-ref named a ref that does not carry this file; the CI
+      # caller asked for a comparison, so say it did not happen.
+      rm -f "$baseline"; baseline=""
+      trace "$ref does not carry $file_path; gating the whole file"
+    elif [ "$has_edit" -eq 1 ] && printf '%s' "$HOOK_JSON" | "$RESPEAK_PY" -c '
+import json, sys
+data = json.load(sys.stdin)
+ti = data.get("tool_input") or {}
+old, new = ti["old_string"], ti["new_string"]
+if not new:
+    sys.exit(1)          # a pure deletion leaves no anchor to put old back at
+with open(sys.argv[1], encoding="utf-8") as f:
+    cur = f.read()
+if new not in cur:
+    sys.exit(1)          # the text moved on since the edit; not our baseline
+pre = cur.replace(new, old) if ti.get("replace_all") else cur.replace(new, old, 1)
+with open(sys.argv[2], "w", encoding="utf-8") as f:
+    f.write(pre)
+' "$file_path" "$baseline" 2>/dev/null; then
+      baseline_from="the pre-edit text"
+    else
+      : > "$baseline"
+      baseline_from="an empty file (nothing to compare against)"
+    fi
+  fi
+  if [ -n "$baseline" ]; then
+    args+=(--baseline "$baseline")
+    trace "baseline for $file_path: $baseline_from"
+  fi
+fi
+
 report="$("$RESPEAK_PY" "$measure" "${args[@]}" 2>&1)"
 status=$?
 
@@ -125,7 +210,7 @@ status=$?
 # error (unreadable doc, corrupt corpus or config). Only 1 is a verdict;
 # everything else fails open, as the header promises.
 if [ "$status" -eq 1 ]; then
-  echo "respeak gate: $file_path failed the style gate (fail-on: ${fail_on:-error})" >&2
+  echo "respeak gate: $file_path failed the style gate (fail-on: ${fail_on:-error}${baseline:+, on what this write introduced})" >&2
   echo "$report" >&2
   exit 2
 fi
