@@ -309,6 +309,57 @@ class TestUrls(unittest.TestCase):
         self.assertEqual(d["max_sentence_words"], 6)
 
 
+class TestSentenceSplitting(unittest.TestCase):
+    """A bullet list is a run of statements, not one sentence: blank lines,
+    list markers and table rows end a unit, and only then does `.!?` split
+    what is left."""
+
+    def test_five_bullets_are_five_sentences(self):
+        doc = "\n".join(["- alpha beta gamma delta epsilon zeta"] * 5) + "\n"
+        sents = list(rm.sentences(doc))
+        self.assertEqual(len(sents), 5)
+        self.assertEqual([len(s.split()) for s in sents], [6] * 5)
+
+    def test_ordered_and_starred_items_split_too(self):
+        doc = ("1. alpha beta gamma delta\n"
+               "2) epsilon zeta eta theta\n"
+               "* iota kappa lambda mu\n"
+               "+ nu xi omicron pi\n")
+        self.assertEqual([len(s.split()) for s in rm.sentences(doc)], [4, 4, 4, 4])
+
+    def test_wrapped_paragraph_is_still_one_sentence(self):
+        doc = ("The reconciler reads the declared state, compares it with the\n"
+               "device, and reports every drift it finds.\n")
+        sents = list(rm.sentences(doc))
+        self.assertEqual(len(sents), 1)
+        self.assertIn("with the device, and reports", sents[0])
+
+    def test_unpunctuated_bullet_is_a_sentence(self):
+        sents = list(rm.sentences("- deploy the agent to the device\n\nDone here.\n"))
+        self.assertIn("deploy the agent to the device", sents)
+
+    def test_a_bullet_with_two_sentences_still_splits(self):
+        self.assertEqual(len(list(rm.sentences("- First clause here. Second clause here.\n"))), 2)
+
+    def test_a_table_row_ends_the_unit(self):
+        doc = ("the line before the table\n"
+               "| verb | meaning |\n"
+               "| - | - |\n"
+               "the line after the table\n")
+        sents = list(rm.sentences(doc))
+        self.assertEqual(sents, ["the line before the table", "the line after the table"])
+
+    def test_cli_reports_bullets_as_short_sentences(self):
+        doc = write_tmp("# List\n\n" + "\n".join(["- alpha beta gamma delta epsilon zeta"] * 5) + "\n")
+        try:
+            d = json.loads(run_measure([doc, "--json"]).stdout)[0]
+            self.assertEqual(d["sentences"], 5)
+            self.assertEqual(d["max_sentence_words"], 6)
+            self.assertEqual(d["avg_sentence_words"], 6)
+        finally:
+            os.unlink(doc)
+
+
 if __name__ == "__main__":
     unittest.main()
 

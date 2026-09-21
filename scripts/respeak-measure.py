@@ -101,14 +101,42 @@ def strip_exempt(text: str) -> str:
     return text
 
 
+# A line starting with either of these opens a measured unit of its own:
+# a bulleted or ordered list item, and a table row (whose cells are not
+# prose at all). The marker itself is not a word.
+LIST_ITEM_RE = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+")
+TABLE_ROW_RE = re.compile(r"^\s*[|]")
+
+
 def sentences(text: str):
+    """Yield the document's sentences, as a reader meets them.
+
+    Markdown is not one stream of prose. A bullet list is a run of separate
+    statements, and splitting on `.!?` alone reads five unpunctuated bullets
+    as one 30-word sentence — which is how a clean page came to report an
+    average sentence of 68.9 words. So: cut the text into blocks at blank
+    lines; inside a block, a list item or a table row starts a new unit; and
+    split each unit at sentence punctuation as before. Headings and table
+    cells are not prose and are dropped, and a unit under three words (a
+    stub bullet, a label) stays below the noise floor."""
     prose = re.sub(r"^#+ .*$", "", text, flags=re.M)     # headings
     prose = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", prose)  # link targets
-    prose = re.sub(r"^\s*[|].*$", "", prose, flags=re.M)  # tables
-    for s in re.split(r"(?<=[.!?])\s+", prose):
-        s = s.strip()
-        if len(s.split()) >= 3:
-            yield s
+    units, unit = [], []
+    for line in prose.split("\n"):
+        if not line.strip() or TABLE_ROW_RE.match(line):
+            units.append(unit); unit = []    # blank line or table row ends the unit
+            continue
+        item = LIST_ITEM_RE.match(line)
+        if item:
+            units.append(unit); unit = []    # a list item is a unit of its own
+            line = line[item.end():]         # ... and its marker is not a word
+        unit.append(line.strip())
+    units.append(unit)
+    for u in units:
+        for s in re.split(r"(?<=[.!?])\s+", " ".join(u)):
+            s = s.strip()
+            if len(s.split()) >= 3:
+                yield s
 
 
 def sentence_window(text: str, start: int, end: int) -> str:
