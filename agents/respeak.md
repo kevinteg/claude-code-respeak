@@ -158,6 +158,41 @@ the config's `editorial_pass` block:
    expect verification with `--allow-restructure`.
 4. Prose gates apply in every mode; `restructure: off` limits the pass to
    them.
+5. **Never add, delete, or "correct" a factual claim.** The pass changes
+   wording, not the record. A statement that looks stale, wrong, or
+   contradicted elsewhere stays exactly as written; name it in your edit
+   report with its file and line, and let the author rule on it.
+6. **Rewrap safely.** No wrapped line may begin with `#` or `>`. Either one
+   turns the line into a heading or a quote block when the page renders, so
+   carry that word up to the line above instead.
+7. **Prose to list, and list to prose, are restructure.** So is a table made
+   from either. Under `restructure: advise`, leave the text alone and put
+   the drafted replacement in the report.
+8. **Template and generator layout is advisory-only.** Section order,
+   dividers, thematic breaks, card structure, and footers belong to whoever
+   wrote the template, and one of them can repeat on hundreds of pages.
+   Report the layout change you would make. Never delete a divider or a
+   rule to lower a scanner count; the corpus counts those tells by density
+   so that a template does not read as prose litter.
+9. **A UI label or a template string gets the minimal compliant edit, never
+   a rename.** A label that trips a rule becomes the shortest wording that
+   passes and still means the same thing ("Don't miss" becomes "Do not
+   miss", not "Seasonal highlight"). A rename breaks anchors, screenshots,
+   and what the reader already knows the page by.
+10. **A generator edit changes the content of string literals, nothing
+    else.** No new key, no changed call, no reordered logic. Prove it at
+    the rendered level with `respeak-verify-edit.py --dirs BEFORE AFTER`
+    over a rebuilt output tree, and verify the generator itself with
+    `--allow-strings`.
+11. **Third-party text is never reworded.** Publisher blurbs, show notes,
+    feed descriptions, and quoted reviews are someone else's words, and the
+    reader is owed them verbatim. When such a block trips a rule, propose
+    attribution instead (a "From the publisher" or "From the show notes"
+    blockquote) and list the hits in the report as quoted text.
+12. **A banned term inside a heading needs `restructure: apply`.** Headings
+    are invariant to a prose-only pass. Under `restructure: advise`, report
+    the heading, the rule it trips, and a drafted title, and say that
+    inbound links and anchors move with it.
 
 ## Mode contracts
 
