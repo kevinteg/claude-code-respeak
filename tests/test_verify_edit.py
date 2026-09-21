@@ -71,6 +71,45 @@ Latency stays under 250 ms across `retry_loop()`.
         self.assertEqual(ve.check_md(self.BEFORE, after), [])
 
 
+class TestHeadingDetection(unittest.TestCase):
+    """Anything MkDocs or CommonMark renders as a heading counts as one."""
+
+    def test_wrapped_hash_number_becomes_a_heading(self):
+        before = "We shipped the parts that came from order #33256. Plus the\nspares.\n"
+        after = "We shipped the parts that came from order\n#33256. Plus the spares.\n"
+        self.assertTrue(any("headings" in p for p in ve.check_md(before, after)))
+
+    def test_escaped_hash_at_line_start_passes(self):
+        before = "We shipped the parts that came from order #33256. Plus the\nspares.\n"
+        after = "We shipped the parts that came from order\n\\#33256. Plus the spares.\n"
+        self.assertEqual(ve.check_md(before, after), [])
+
+    def test_hash_without_space_is_a_heading(self):
+        before = "#33256 in progress\n\nBody with 3 items.\n"
+        after = "#33257 in progress\n\nBody with 3 items.\n"
+        self.assertTrue(any("headings" in p for p in ve.check_md(before, after)))
+
+    def test_setext_heading_text_change_fails(self):
+        before = "Release notes\n=============\n\nBody with 3 items.\n"
+        after = "Release note\n=============\n\nBody with 3 items.\n"
+        self.assertTrue(any("headings" in p for p in ve.check_md(before, after)))
+
+    def test_setext_underline_length_may_change(self):
+        before = "Release notes\n=============\n\nBody with 3 items.\n"
+        after = "Release notes\n===\n\nBody with 3 items.\n"
+        self.assertEqual(ve.check_md(before, after), [])
+
+    def test_rule_after_a_blank_line_is_not_a_heading(self):
+        before = "Intro text.\n\n---\n\nMore text about 3 things.\n"
+        after = "Intro prose.\n\n---\n\nMore prose about 3 things.\n"
+        self.assertEqual(ve.check_md(before, after), [])
+
+    def test_hash_inside_a_fence_is_not_a_heading(self):
+        before = "Body.\n\n```sh\n#33256\n```\n"
+        after = "Prose.\n\n```sh\n#33256\n```\n"
+        self.assertEqual(ve.check_md(before, after), [])
+
+
 class TestCode(unittest.TestCase):
     BEFORE = """// This function basically leverages a robust retry — it's crucial.
 const URL = "https://api.example.com/v1"; // 3 retries max

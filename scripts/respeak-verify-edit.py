@@ -5,7 +5,8 @@ Usage: respeak-verify-edit.py <before> <after> [--type md|code|py|html|yaml|json
 
 Format policies (what an edit MAY change / what must be invariant):
 
-  md    prose may change; invariant: headings (text+order — anchors), link and
+  md    prose may change; invariant: headings (text+order — anchors; ATX with
+        or without the space after the hashes, and setext), link and
         image targets, reference-link definitions, fenced code blocks (byte),
         inline code spans (multiset), numeric tokens outside fences (multiset),
         YAML front matter (byte), admonition types.
@@ -52,17 +53,61 @@ def counter_diff(name, before, after, problems):
 
 # --- markdown -----------------------------------------------------------
 
+FENCE_RE = re.compile(r"^(?:```|~~~).*?^(?:```|~~~)\s*$", re.S | re.M)
+# A construct that is a heading in EITHER flavour is a heading here.
+# Python-Markdown (what MkDocs runs) makes any line opening with a hash run a
+# heading, space or no space; CommonMark wants the space but allows three
+# leading ones. A hash the author escaped with a backslash never matches.
+ATX_RE = re.compile(r"^ {0,3}#{1,6}")
+SETEXT_RE = re.compile(r"^ {0,3}(=+|-+) *$")
+QUOTE_RE = re.compile(r"^ {0,3}>")
+BULLET_RE = re.compile(r"^\s*[-*+] ")
+ORDERED_ONE_RE = re.compile(r"^\s*1[.)] ")
+ORDERED_ANY_RE = re.compile(r"^\s*\d+[.)] ")
+HR_RE = re.compile(r"^ {0,3}([-*_])( *\1){2,} *$")
+TABLE_ROW_RE = re.compile(r"^\s*\|")
+
+
+def setext_text(line):
+    """True if `line` could be the text of a setext heading."""
+    if not line.strip():
+        return False
+    return not (ATX_RE.match(line) or QUOTE_RE.match(line) or BULLET_RE.match(line)
+                or ORDERED_ANY_RE.match(line) or TABLE_ROW_RE.match(line)
+                or SETEXT_RE.match(line) or HR_RE.match(line))
+
+
+def md_headings(nofence):
+    """Headings outside fences, as an ordered list of their text.
+
+    Setext headings carry the underline's character (which sets the level),
+    not its length, so a rewrapped underline is not a change.
+    """
+    lines = nofence.split("\n")
+    headings = []
+    for i, line in enumerate(lines):
+        if ATX_RE.match(line):
+            headings.append(line.rstrip())
+            continue
+        nxt = lines[i + 1] if i + 1 < len(lines) else ""
+        if SETEXT_RE.match(nxt) and setext_text(line):
+            headings.append(line.rstrip() + "\n" + nxt.strip()[0])
+    return headings
+
+
 def md_facts(text):
     fm = ""
     m = re.match(r"^---\n.*?\n---\n", text, re.S)
     if m:
         fm = m.group(0)
         text = text[m.end():]
-    fences = re.findall(r"^(?:```|~~~).*?^(?:```|~~~)\s*$", text, re.S | re.M)
-    nofence = re.sub(r"^(?:```|~~~).*?^(?:```|~~~)\s*$", "", text, flags=re.S | re.M)
+    fences = FENCE_RE.findall(text)
+    # A blank line in place of each fence keeps neighbouring lines apart, so
+    # a stripped fence cannot manufacture a setext pair or a block start.
+    nofence = FENCE_RE.sub("\n\n", text)
     return {
         "front_matter": fm,
-        "headings": re.findall(r"^#+ .*$", nofence, re.M),
+        "headings": md_headings(nofence),
         "link_targets": Counter(re.findall(r"\]\(([^)\s]+)(?:\s[^)]*)?\)", nofence)),
         "ref_defs": Counter(re.findall(r"^\[[^\]]+\]:\s*(\S+)", nofence, re.M)),
         "fences": fences,
