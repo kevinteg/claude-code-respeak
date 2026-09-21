@@ -3,16 +3,17 @@
 
 Usage: respeak-verify-edit.py <before> <after> [--type md|code|py|html|yaml|json] [--json]
        respeak-verify-edit.py --allow-strings before.py after.py
+       respeak-verify-edit.py --dirs <before-tree> <after-tree> [--json]
 
 Format policies (what an edit MAY change / what must be invariant):
 
   md    prose may change; invariant: headings (text+order — anchors; ATX with
         or without the space after the hashes, and setext), block structure
         (per-kind counts of blockquote lines, list items, thematic breaks,
-        table rows, definition lines), link and
-        image targets, reference-link definitions, fenced code blocks (byte),
-        inline code spans (multiset), numeric tokens outside fences (multiset),
-        YAML front matter (byte, or --prose-keys), admonition types.
+        table rows, definition lines), link and image targets, reference-link
+        definitions, fenced code blocks (byte), inline code spans (multiset),
+        numeric tokens outside fences (multiset), YAML front matter (byte, or
+        the --prose-keys leaves), admonition types.
   code  (.ts .tsx .js .jsx .c .h .cpp .go .java .rs) comments may change;
         invariant: everything outside comments (byte), numeric tokens inside
         comments (multiset — numbers never change, per never_compress).
@@ -46,6 +47,13 @@ scalar's quoting style stay invariant, and a rewritten value keeps its
 numbers, URLs, inline code spans, and link targets. For md this replaces the
 "front matter changed" failure; the body is checked as before.
 
+--dirs BEFORE AFTER: verify a whole rendered tree against its predecessor,
+which is how an edit to a generator is proved at the level the reader sees.
+Every file both trees hold whose bytes differ is verified by its extension
+(a type with no policy is SKIP, never FAIL); a file on one side only is
+ADDED or REMOVED; identical bytes are UNCHANGED. The other flags apply to
+every file, and `--json` emits the rows as a list. Exit 1 if any file fails.
+
 Exit 0 = safe (warnings allowed), 1 = violation(s), 2 = usage/parse error.
 Known limit: the `code` comment walker tracks ' " ` strings and //, /* */
 comments; JS regex literals containing quote characters can confuse it — a
@@ -54,6 +62,7 @@ false FAIL, never a false PASS, since remainders are compared byte-for-byte.
 import argparse
 import ast
 import json
+import os
 import re
 import sys
 from collections import Counter
@@ -583,10 +592,84 @@ def verify_pair(before, after, ftype, opts):
     return problems, []
 
 
+def tree_files(root):
+    """Every file under root, as paths relative to it (.git left out)."""
+    paths = set()
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d != ".git"]
+        for name in filenames:
+            paths.add(os.path.relpath(os.path.join(dirpath, name), root))
+    return paths
+
+
+def verify_dirs(before_root, after_root, opts):
+    """Verify a generated tree against its predecessor, file by file.
+
+    One row per path in either tree: PASS, FAIL, SKIP (a type the verifier
+    has no policy for), ADDED, REMOVED, or UNCHANGED (identical bytes, so
+    nothing to verify).
+    """
+    before_files, after_files = tree_files(before_root), tree_files(after_root)
+    results = []
+    for path in sorted(before_files | after_files):
+        if path not in after_files:
+            results.append({"path": path, "status": "REMOVED"})
+            continue
+        if path not in before_files:
+            results.append({"path": path, "status": "ADDED"})
+            continue
+        with open(os.path.join(before_root, path), "rb") as fh:
+            before = fh.read()
+        with open(os.path.join(after_root, path), "rb") as fh:
+            after = fh.read()
+        if before == after:
+            results.append({"path": path, "status": "UNCHANGED"})
+            continue
+        ftype = detect(path)
+        if ftype is None:
+            results.append({"path": path, "status": "SKIP",
+                            "note": "no policy for this file type"})
+            continue
+        row = {"path": path, "status": "FAIL", "type": ftype, "warnings": []}
+        try:
+            problems, row["warnings"] = verify_pair(
+                before.decode("utf-8"), after.decode("utf-8"), ftype, opts)
+        except UnicodeDecodeError as e:
+            problems = [f"not valid UTF-8: {e}"]
+        row["problems"] = problems
+        row["status"] = "FAIL" if problems else "PASS"
+        results.append(row)
+    return results
+
+
+def report_dirs(results, as_json):
+    """Print the tree report. Returns the exit code."""
+    counts = Counter(r["status"] for r in results)
+    if as_json:
+        print(json.dumps(results))
+    else:
+        for r in results:
+            if r["status"] == "UNCHANGED":
+                continue
+            suffix = f" ({r['note']})" if "note" in r else (f" ({r['type']})" if "type" in r else "")
+            print(f"{r['status']:<8} {r['path']}{suffix}")
+            for p in r.get("problems", []):
+                print(f"  - {p}")
+            for w in r.get("warnings", []):
+                print(f"  warning (restructure permitted): {w}")
+        changed = counts["PASS"] + counts["FAIL"] + counts["SKIP"]
+        print(f"respeak-verify-edit: {changed} changed file(s): {counts['PASS']} pass, "
+              f"{counts['FAIL']} fail, {counts['SKIP']} skip; {counts['ADDED']} added, "
+              f"{counts['REMOVED']} removed, {counts['UNCHANGED']} unchanged")
+    return 1 if counts["FAIL"] else 0
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("before")
-    ap.add_argument("after")
+    ap.add_argument("before", nargs="?")
+    ap.add_argument("after", nargs="?")
+    ap.add_argument("--dirs", nargs=2, metavar=("BEFORE", "AFTER"), default=None,
+                    help="verify two trees instead of one pair of files")
     ap.add_argument("--type", choices=sorted(CHECKERS), default=None)
     ap.add_argument("--allow-restructure", action="store_true",
                     help="md only: heading/block/admonition/front-matter changes are warnings, not failures")
@@ -601,6 +684,19 @@ def main():
     opts = Options(allow_restructure=args.allow_restructure,
                    allow_strings=args.allow_strings,
                    prose_keys=parse_prose_keys(args.prose_keys))
+
+    if args.dirs:
+        if args.before or args.after:
+            ap.error("--dirs takes the two trees; do not also name a pair of files")
+        if args.type:
+            ap.error("--type is for a single pair; --dirs reads each file's type from its name")
+        for root in args.dirs:
+            if not os.path.isdir(root):
+                print(f"respeak-verify-edit: not a directory: {root}", file=sys.stderr)
+                sys.exit(2)
+        sys.exit(report_dirs(verify_dirs(args.dirs[0], args.dirs[1], opts), args.as_json))
+    if not args.before or not args.after:
+        ap.error("need a before and an after file, or --dirs BEFORE AFTER")
 
     ftype = args.type or detect(args.after)
     if ftype is None:

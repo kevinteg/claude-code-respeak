@@ -6,13 +6,16 @@ several that MUST fail (meaning-carrying content touched).
 Run: python3 -m unittest discover tests -v
 """
 import importlib.util
+import json
 import os
+import subprocess
+import sys
+import tempfile
 import unittest
 
-_spec = importlib.util.spec_from_file_location(
-    "verify_edit",
-    os.path.join(os.path.dirname(__file__), "..", "scripts", "respeak-verify-edit.py"),
-)
+VERIFY_PATH = os.path.join(os.path.dirname(__file__), "..", "scripts", "respeak-verify-edit.py")
+
+_spec = importlib.util.spec_from_file_location("verify_edit", VERIFY_PATH)
 assert _spec is not None and _spec.loader is not None
 ve = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(ve)
@@ -450,6 +453,108 @@ class TestRestructureMode(unittest.TestCase):
         hard, warnings = ve.partition_restructure(ve.check_md(before, after))
         self.assertEqual(hard, [])
         self.assertTrue(any("front matter" in w for w in warnings))
+
+
+class TestDirs(unittest.TestCase):
+    """--dirs: a rendered tree verified against its predecessor."""
+
+    TREES = {
+        "safe.md": ("# Trail\n\nIt basically takes 2 hours.\n",
+                    "# Trail\n\nIt takes 2 hours.\n"),
+        "broken.md": ("# Trail\n\nIt takes 2 hours.\n",
+                      "# Trail\n\nIt takes 3 hours.\n"),
+        "same.md": ("# Notes\n", "# Notes\n"),
+        "photo.png": ("first bytes\n", "other bytes\n"),
+        "sub/page.html": ("<p>We leverage 4 tools.</p>\n", "<p>We use 4 tools.</p>\n"),
+    }
+
+    def build(self, tmp):
+        before, after = os.path.join(tmp, "before"), os.path.join(tmp, "after")
+        for root, index in ((before, 0), (after, 1)):
+            for name, texts in self.TREES.items():
+                path = os.path.join(root, name)
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                with open(path, "w", encoding="utf-8") as fh:
+                    fh.write(texts[index])
+        with open(os.path.join(before, "gone.md"), "w", encoding="utf-8") as fh:
+            fh.write("# Gone\n")
+        with open(os.path.join(after, "new.md"), "w", encoding="utf-8") as fh:
+            fh.write("# New\n")
+        return before, after
+
+    def test_statuses(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            before, after = self.build(tmp)
+            rows = {r["path"]: r for r in ve.verify_dirs(before, after, ve.Options())}
+        self.assertEqual(rows["safe.md"]["status"], "PASS")
+        self.assertEqual(rows["broken.md"]["status"], "FAIL")
+        self.assertTrue(any("numeric" in p for p in rows["broken.md"]["problems"]))
+        self.assertEqual(rows["same.md"]["status"], "UNCHANGED")
+        self.assertEqual(rows["photo.png"]["status"], "SKIP")
+        self.assertEqual(rows[os.path.join("sub", "page.html")]["status"], "PASS")
+        self.assertEqual(rows["gone.md"]["status"], "REMOVED")
+        self.assertEqual(rows["new.md"]["status"], "ADDED")
+
+    def test_cli_text_report_and_exit_code(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            before, after = self.build(tmp)
+            r = subprocess.run([sys.executable, VERIFY_PATH, "--dirs", before, after],
+                               capture_output=True, text=True)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("FAIL     broken.md", r.stdout)
+        self.assertIn("PASS     safe.md", r.stdout)
+        self.assertIn("SKIP     photo.png", r.stdout)
+        self.assertIn("ADDED    new.md", r.stdout)
+        self.assertIn("REMOVED  gone.md", r.stdout)
+        self.assertNotIn("same.md", r.stdout)
+        self.assertIn("1 fail", r.stdout)
+
+    def test_cli_json_is_a_list(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            before, after = self.build(tmp)
+            r = subprocess.run([sys.executable, VERIFY_PATH, "--dirs", before, after, "--json"],
+                               capture_output=True, text=True)
+        rows = json.loads(r.stdout)
+        self.assertIsInstance(rows, list)
+        self.assertEqual({r["path"] for r in rows if r["status"] == "FAIL"}, {"broken.md"})
+
+    def test_cli_passes_when_every_file_is_safe(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            before, after = self.build(tmp)
+            os.remove(os.path.join(after, "broken.md"))
+            os.remove(os.path.join(before, "broken.md"))
+            r = subprocess.run([sys.executable, VERIFY_PATH, "--dirs", before, after],
+                               capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0)
+
+    def test_flags_reach_every_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            before, after = self.build(tmp)
+            r = subprocess.run([sys.executable, VERIFY_PATH, "--dirs", before, after,
+                                "--allow-restructure", "--json"], capture_output=True, text=True)
+            rows = {row["path"]: row for row in json.loads(r.stdout)}
+        # The heading is untouched here, so --allow-restructure changes nothing;
+        # what it proves is that the flag is accepted for a whole tree.
+        self.assertEqual(rows["safe.md"]["status"], "PASS")
+
+    def test_missing_tree_is_a_setup_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            r = subprocess.run([sys.executable, VERIFY_PATH, "--dirs", tmp,
+                                os.path.join(tmp, "nope")], capture_output=True, text=True)
+        self.assertEqual(r.returncode, 2)
+
+    def test_single_pair_still_works(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            before = os.path.join(tmp, "b.md")
+            after = os.path.join(tmp, "a.md")
+            with open(before, "w", encoding="utf-8") as fh:
+                fh.write("# T\n\nIt basically takes 2 hours.\n")
+            with open(after, "w", encoding="utf-8") as fh:
+                fh.write("# T\n\nIt takes 2 hours.\n")
+            r = subprocess.run([sys.executable, VERIFY_PATH, before, after],
+                               capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0)
+        self.assertIn("PASS (md): edit is prose-only", r.stdout)
 
 
 class TestDetect(unittest.TestCase):
