@@ -275,6 +275,40 @@ class TestHtmlComments(unittest.TestCase):
             os.unlink(doc)
 
 
+class TestUrls(unittest.TestCase):
+    """A URL is an address, not prose: it has no words to read and no
+    sentence end, so counting it inflates the word count and a line of them
+    reads as one long sentence."""
+
+    def measure_json(self, text):
+        doc = write_tmp(text)
+        try:
+            r = run_measure([doc, "--json"])
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            return json.loads(r.stdout)[0]
+        finally:
+            os.unlink(doc)
+
+    def test_bare_url_is_not_a_word(self):
+        d = self.measure_json("The archive lives at https://example.com/alpha/beta today.\n")
+        self.assertEqual(d["words"], 5)
+
+    def test_autolink_is_not_a_word(self):
+        d = self.measure_json("The archive lives at <https://example.com/alpha> today.\n")
+        self.assertEqual(d["words"], 5)
+
+    def test_a_bullet_of_urls_is_not_a_sentence(self):
+        d = self.measure_json("- https://example.com/a https://example.com/b https://example.com/c\n")
+        self.assertEqual(d["sentences"], 0)
+        self.assertEqual(d["max_sentence_words"], 0)
+
+    def test_an_inline_link_still_reads_as_its_label(self):
+        """Stripping the target must not swallow the `)` — the label is prose
+        and still counts, exactly as before."""
+        d = self.measure_json("Read [the second archive note](https://example.com/x) first.\n")
+        self.assertEqual(d["max_sentence_words"], 6)
+
+
 if __name__ == "__main__":
     unittest.main()
 

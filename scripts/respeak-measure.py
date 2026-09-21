@@ -13,6 +13,8 @@ and word count, for each document given. Fenced code blocks, inline code,
 and blockquotes are exempt (config style.quoting_exempt), and so are HTML
 comments (`<!-- ... -->`): nothing inside one reaches the rendered page, so
 a vendored banner must not spend the document's em-dash or phrase budget.
+URLs (bare, autolinked, or the target of an inline link) are dropped before
+anything is counted — an address is a target, not a word.
 Zero API tokens — pure local scan, no network.
 
 --fail-on {none,error,warn} (default none): exit 1 if any document trips a
@@ -87,6 +89,12 @@ def strip_exempt(text: str) -> str:
     text = re.sub(r"```.*?```", "", text, flags=re.S)   # fenced code
     text = re.sub(r"<!--.*?-->", "", text, flags=re.S)   # HTML comments
     text = re.sub(r"`[^`\n]+`", "", text)                # inline code
+    text = re.sub(r"<https?://[^>]+>", "", text)         # autolinks
+    # Bare URLs and the targets of inline links: an address is not prose, so
+    # it has no words to count and no sentence to end. It stops at the
+    # closing delimiter rather than at `\S+`, which would eat the `)` of
+    # `[label](url)` and hide the link from sentences() below.
+    text = re.sub(r"https?://[^\s)>\]]+", "", text)      # bare URLs, link targets
     text = re.sub(r"^>.*$", "", text, flags=re.M)        # blockquotes
     text = re.sub(r"^---\n.*?\n---\n", "", text, flags=re.S)  # front matter
     text = re.sub(r"^!!!.*$", "", text, flags=re.M)      # mkdocs admonition markers
