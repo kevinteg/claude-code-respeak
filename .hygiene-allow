@@ -23,6 +23,7 @@ research/synthesis/*: sibling
 scripts/*: sibling
 skills/*/*: sibling
 tests/*: sibling
+.hygiene-allow: sibling
 # person: the author (LICENSE, the manifests' author and owner) and the repo URL.
 LICENSE: person
 README.md: sibling,person

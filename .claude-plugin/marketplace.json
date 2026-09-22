@@ -1,6 +1,6 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
-  "name": "respeak",
+  "name": "claude-code-respeak",
   "description": "Two-lane communication for agent swarms: governed shorthand lexicon + multi-register human-narrative translator.",
   "owner": {
     "name": "Kevin Tegtmeier"
@@ -9,6 +9,7 @@
     {
       "name": "respeak",
       "source": ".",
+      "version": "0.6.0",
       "description": "Translator subagent rendering agent/swarm output as ELI5, BLUF, or technical narratives with configurable tone and tech level, resolved from a layered config (user, project, per-folder .respeak.yaml; nearest wins); a ratified shorthand lexicon with proposal workflow; style gates (234 banned AI-isms, replacement rules) compilable to Vale. Provides /respeak:respeak, /respeak:init, /respeak:off and /respeak:on (session overrides), /respeak:report (file a GitHub issue upstream), hooks, a statusline segment, and the respeak-config resolver."
     }
   ]
