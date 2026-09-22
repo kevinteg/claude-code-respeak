@@ -129,6 +129,8 @@ trap 'rm -f "$resolved" ${baseline:+"$baseline"}' EXIT
 # to $CLAUDE_PROJECT_DIR, which Claude Code exports to hooks.
 gate_args=(gate --for "$file_path" --write-config "$resolved")
 [ "$force_on" -eq 1 ] && gate_args+=(--set gate.enabled=true)
+# The payload's session names claude-code-session's resolved file, when there is one.
+[ -n "$session_id" ] && gate_args+=(--session "$session_id")
 decision="$("$RESPEAK_PY" "$resolver" "${gate_args[@]}" 2>/dev/null)" || {
   trace "resolver failed; allowing $file_path"; exit 0; }
 [ -n "$decision" ] || { trace "resolver returned nothing; allowing $file_path"; exit 0; }
