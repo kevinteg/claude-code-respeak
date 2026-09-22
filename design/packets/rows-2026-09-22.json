@@ -1,0 +1,3 @@
+[
+  {"id": "r1-respeak-conventions", "repo": "~/code/claude-code-respeak", "prompt": "design/packets/r1-respeak-conventions.md", "depends_on": ["packets-3"], "worktree": true, "model": "claude-opus-5-5", "max_turns": 100, "plan_row": 8, "why": "conventions (Makefile, design/, history/), hygiene and doclint copied from the session, the provider layer in the resolver, the marketplace renamed per D11"}
+]
