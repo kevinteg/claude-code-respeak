@@ -112,26 +112,47 @@ ships a format-aware verifier and a test suite for it:
 
 ```sh
 python3 scripts/respeak-verify-edit.py <before> <after>   # exit 0 = safe
-python3 -m unittest discover tests                        # edit-safety, measure/gate, config layers
+python3 -m unittest discover tests                        # edit-safety, measure/gate, config layers, corpus
 bash tests/test_gate_hook.sh                                # gate hook end-to-end (bash, not unittest)
 bash tests/test_hooks.sh                                    # Stop hook + statusline end-to-end
 bash tests/test_overrides.sh                                # session overrides + the hooks.json event pin
+bash tests/test_check.sh                                    # the CI check over tracked docs
 bash tests/test_report_env.sh                               # /respeak:report environment footer
 ```
 
 | Format | An edit may change | Invariant (checked) |
 | --- | --- | --- |
-| `.md` | prose | headings/anchors, link and image targets, fenced code, inline code spans, numbers, front matter, admonition types |
+| `.md` | prose | headings/anchors (hashes with or without the space after them, and setext), block structure (per-kind counts of quote lines, list items, thematic breaks, table rows, definition lines), link and image targets, fenced code, inline code spans, numbers, front matter, admonition types |
 | `.ts .tsx .js .jsx .c .go .java .rs` | comments only | all code and string literals byte-identical; numbers even inside comments |
-| `.py` | `#` comments only | code and docstrings (docstrings can carry doctests) |
+| `.py` | `#` comments only | code and docstrings (docstrings can carry doctests), and string literals unless `--allow-strings` |
 | `.html` | text nodes | tag skeleton and attributes; `script/style/pre/code` byte-identical |
-| `.yaml .json` | comments / whitespace | parsed data, deep equality |
+| `.yaml .json` | comments / whitespace | parsed data, deep equality, minus the `--prose-keys` leaves |
 
 Passes allowed to restructure (`editorial_pass: restructure: apply`) are for
 when the caller owns relinking, as in a whole-wiki run. For those,
-`--allow-restructure` downgrades heading, admonition-type, and front-matter
-changes to reported warnings. Link targets, code, and numbers stay hard
-failures.
+`--allow-restructure` downgrades heading, block-structure, admonition-type,
+and front-matter changes to reported warnings. Link targets, code, and
+numbers stay hard failures.
+
+Three flags widen the policy where a real pass needs it. `--allow-strings`
+(`.py`) opens the text inside string literals, for a pass over a page
+generator whose display text lives there. With every string masked the two
+parse trees must still dump identically. A new dict entry, a changed call,
+or a changed number still fails. A paired string keeps its numbers,
+placeholders, URLs, link targets, and code spans. `--prose-keys k1,k2` (or
+`*`) names the front-matter or `.yaml` leaves that hold display prose;
+structure, key order, every other value, and each scalar's quoting style
+stay invariant. `--dirs` verifies two rendered trees rather than one file
+pair, which is how a generator edit is proved at the level the reader sees:
+
+```sh
+mkdocs build -d /tmp/before && git checkout the-edit && mkdocs build -d /tmp/after
+python3 scripts/respeak-verify-edit.py --dirs /tmp/before /tmp/after
+```
+
+Every file both trees hold whose bytes differ is verified by its extension,
+and a type with no policy is SKIP rather than FAIL. A file on one side only
+is ADDED or REMOVED.
 
 The scanner is local and free:
 
@@ -161,12 +182,29 @@ error. Setup problems (no PyYAML, a corrupt corpus, an unreadable file)
 never block: the hook fails open, and `RESPEAK_GATE_TRACE=1` says so on
 stderr.
 
+**What a verdict is about** is `gate.block_on`. The default, `introduced`,
+measures the write against the file as it was. It blocks only on hits the
+write added, so a document that already carries one stays editable. A
+banned term inside a heading cannot be removed by an editorial pass,
+because `respeak-verify-edit.py` holds headings byte-identical. Before
+v0.6, that one hit closed the file to every later edit. The baseline is the
+committed version of the file, else the pre-edit text rebuilt from the
+`Edit` call's own strings, else an empty file. Each step falls through on
+failure, so the gate still fails open. A write that adds nothing passes,
+and the hits it inherited are reported rather than dropped. The hook prints
+one line of PostToolUse `hookSpecificOutput.additionalContext` naming the
+count and the rules. Only the inherited hits at or above the resolved
+`fail_on` are named, since those are the ones `block_on: any` would have
+blocked on. `block_on: any` restores the whole-file verdict.
+`respeak-gate.sh --file` is whole-file either way, unless `--baseline-ref
+REF` names a git ref.
+
 It is **opt-in per project**: it does nothing unless the project layer
 (`<project>/.claude/respeak/config.yaml` or its gitignored
 `config.local.yaml`) sets `gate.enabled: true`. A user-level file or a
-folder `.respeak.yaml` cannot turn it on. They can, though, soften `fail_on`
-and add `allow` regexes for their own files (see "Where the tone comes
-from"). For one session, `/respeak:off gate` silences it and `/respeak:on gate` runs it where it is off (see "Turning respeak off for a session").
+folder `.respeak.yaml` cannot turn it on. They can, though, soften `fail_on`,
+set `block_on`, and add `allow` regexes for their own files (see "Where the
+tone comes from"). For one session, `/respeak:off gate` silences it and `/respeak:on gate` runs it where it is off (see "Turning respeak off for a session").
 Configure it there:
 
 ```yaml
@@ -175,6 +213,7 @@ gate:
   include: ["**/*.md"]     # globs, relative to the project dir
   exclude: ["research/**"] # never gated
   fail_on: error            # none | warn | error
+  block_on: introduced      # introduced | any — which hits are this write's business
   allow: []                 # regexes — see "Exceptions and allow" below
 ```
 
@@ -189,12 +228,49 @@ document, so one call can gate a whole tree:
 python3 scripts/respeak-measure.py wiki/**/*.md --fail-on error
 ```
 
+**What the scanner counts** is prose, and only prose. Fenced code, inline
+code, blockquotes, front matter, admonition markers, and HTML comments are
+dropped before anything is measured. Nothing inside a `<!-- ... -->` banner
+reaches the rendered page, so its words, its dashes, and its phrases are not
+the page's. URLs go the same way, bare, autolinked, or the target of an
+inline link, because an address is a target rather than a word. The link's
+label is prose and still counts.
+
+Sentences follow the shape of the Markdown rather than the run of `.!?`.
+The text is cut into blocks at blank lines. Inside a block, a list item or a
+table row starts a new unit, and each unit is then split at sentence
+punctuation. So five unpunctuated bullets measure as five sentences of six
+words, not as one sentence of thirty. A paragraph wrapped over four lines is
+still one sentence. Headings and table cells are dropped, and a unit under
+three words (a stub bullet, a label) stays below the noise floor. Under the
+old rule this README's longest sentence read 89 words; under the new one it
+reads 27, with no prose changed.
+
+**`--baseline`**: `respeak-measure.py DOC --baseline BASE` scans BASE with
+the same corpus and configuration, then reports each rule as `[new N,
+pre-existing M]` and each budget against the baseline's value. Under a
+baseline `--fail-on` sees only the introduced hits and the budgets that got
+worse. This is the mechanism `gate.block_on: introduced` runs on, available
+by hand for a branch audit or a whole-site pass.
+
 **Budgets** (`style.budgets` in `respeak.config.yaml`, read via
 `--config`) are `emdash_per_1000_words`, `warn_phrases_per_1000_words`,
 `avg_sentence_words`, and `max_sentence_words`. The second of those
 is checked against the corpus's `tier: density` hits, the common-but-excess
 words that flag on density, not per occurrence. Each is measured and
 reported PASS/FAIL; a FAIL counts as a warn-level hit for `--fail-on`.
+
+**Pass the resolved configuration.** `--config` is what carries the
+project's `style.budgets` and `gate.allow`. A run without it applies
+neither: it measures against the defaults and counts hits the gate itself
+would have allowed. The hook resolves the layers for every file it gates; do
+the same at the command line.
+
+```sh
+bash scripts/respeak-config.sh resolve --for path/to/doc.md \
+  --launch-dir . --format yaml --out /tmp/respeak.yaml
+python3 scripts/respeak-measure.py path/to/doc.md --config /tmp/respeak.yaml
+```
 
 **Exceptions and allow** are two escape hatches at different scopes. A
 corpus entry's own `exceptions:` (list of regexes) is scoped to that rule
@@ -203,6 +279,12 @@ false positive. The project-banned `the spine` metaphor rule now exempts
 literal networking senses (`spine switch`, `leaf-spine`, `spine1`, `spine
 ASN`, a spine peering/draining/reflecting, …). So a networking-heavy doc
 keeps the metaphor ban without losing the literal term.
+
+An entry may also set `case_sensitive: true`. Its pattern and all of its
+exceptions then compile without `re.I`. That is the only way to write a rule
+for a placeholder name. `\b(Lyra)\b` has to flag the example user and leave
+the LYRA pencils brand alone, and a case-insensitive exception cannot tell
+the two apart.
 
 `gate.allow` (project config) is scoped to one project. It skips a rule
 entirely for that project's runs, for a domain term the shared
@@ -245,7 +327,14 @@ that ref to be meaning-invariant. This repository runs it on its own docs;
 ```sh
 bash scripts/respeak-check.sh --verify origin/main   # exit 1 on a block or a changed invariant
 bash scripts/respeak-gate.sh --file docs/guide.md    # one file: the hook's verdict as an exit code
+bash scripts/respeak-gate.sh --file docs/guide.md --baseline-ref origin/main   # only what the branch added
 ```
+
+The `--file` form has no edit to compare against, so it gates the whole file
+whatever `block_on` says; `--baseline-ref` is how a build asks the
+diff-scoped question instead. `respeak-check.sh` passes the verifier's
+single-pair form only, so a project that needs `--prose-keys` or
+`--allow-strings` in CI calls `respeak-verify-edit.py` itself for now.
 
 **Upgrading**: the installed copy under `~/.claude/plugins/cache` is a
 snapshot, not a live link. After pulling a change here (corpus, gate hook,
@@ -463,7 +552,7 @@ the field test we read the full diff before trusting it, and the verifier
 exists so that reading is cheap. Treat translated narratives the way you
 treat any report: spot-check against the evidence it cites.
 
-## Status (v0.5.2)
+## Status (v0.6.0)
 
 Every surface below works today.
 
@@ -474,9 +563,9 @@ Every surface below works today.
 | Buried-lede test with structure advisories, plus the data-rendering contract | Working |
 | Lexicon proposal flow | Working |
 | Skills and agent: `respeak:respeak` (verify-then-relay loop), `/respeak:init`, `/respeak:report`, `/respeak:off` and `/respeak:on` (also `RESPEAK_HOOKS`/`RESPEAK_GATE` env overrides) | Working |
-| Hooks: SessionStart lexicon status (projects that ran init), PostToolUse style gate (opt-in; `--fail-on`, budgets, `gate.allow`), Stop milestone-narrative nudge (off by default) | Working |
+| Hooks: SessionStart lexicon status (projects that ran init), PostToolUse style gate (opt-in; `--fail-on`, `gate.block_on`, budgets, `gate.allow`), Stop milestone-narrative nudge (off by default) | Working |
 | Statusline script | Working |
-| Measure and verify tools, with bash end-to-end suites and unittest coverage | Working |
+| Measure and verify tools (`--baseline`, `--allow-strings`, `--prose-keys`, `--dirs`), with bash end-to-end suites and unittest coverage | Working |
 | Headless renderer: `respeak-render.sh` wraps `claude -p` | Working |
 | Configuration resolver: `respeak-config.sh resolve\|explain\|gate\|validate` (read by every hook, skill, statusline, and the headless renderer; expands audience profiles) | Working |
 
@@ -489,6 +578,7 @@ The config declares governance rules no script checks yet, and two pieces of too
 - Fresh-decoder legibility audits (30-day cadence)
 - `respeak compile`: emits the corpus as a Vale style package for CI (already RE2-safe for it)
 - A display-only translation hook: plain English on screen, shorthand in the transcript
+- `respeak-check.sh` reaching the verifier's `--prose-keys` and `--allow-strings`, so a project can use them in CI
 
 See CHANGELOG.md for what each version changed and why.
 
@@ -512,8 +602,8 @@ scripts/                   config resolver (respeak-config.py + .sh), measure, v
                            issue-report environment footer (report-env.sh), session
                            overrides (respeak-override.sh, respeak-session.sh), the CI
                            check over tracked docs (respeak-check.sh)
-tests/                     edit-safety + measure/gate + config-layer suites (markdown, code,
-                           py, html, yaml, json), bash end-to-end suites for the gate hook,
+tests/                     edit-safety + measure/gate + config-layer + corpus suites (markdown,
+                           code, py, html, yaml, json), bash end-to-end suites for the gate hook,
                            the Stop hook, the statusline, the session overrides, the report
                            footer, and the CI check
 config/respeak.config.yaml the influence surface (plugin defaults, lowest layer)
@@ -533,8 +623,9 @@ The design decisions are argued, with citations, in
 twelve principles and five named risks. This README was itself edited by
 the translator's editorial pass, and every edit was verified
 meaning-invariant with `respeak-verify-edit.py`. The bundled scanner reports
-zero error and warn hits on it, and every budget passes except the
-sentence-length cap, which the scanner trips on wide table rows.
+zero error and warn hits on it, and every budget passes. The sentence-length
+cap tripped on wide table rows until the 0.6.0 splitter stopped reading a
+table as prose.
 
 ## References
 
