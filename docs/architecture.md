@@ -84,7 +84,7 @@ Entry points, cheapest first:
 | `respeak-render.sh` (headless) | CI or a swarm's own automation, through `claude -p` | one print-mode call per round, gated and retried |
 | Stop hook (milestone auto-narrative) | after a substantive turn, when `narrative.auto_narrative` resolves true (off by default) | one short paragraph of context per milestone |
 | SessionStart hook | session start, only in a project with `.claude/respeak/` | one sentence of context |
-| PostToolUse gate | Write or Edit of a Markdown file in a project with `gate.enabled: true` | a local scanner run against the file as it was; blocks only on a verdict about what the write introduced (`gate.block_on`) |
+| PostToolUse gate | Write or Edit of a Markdown file in a project with `gate.enabled: true` | one local scanner pass on the file as it was, blocking only on a `gate.block_on` verdict about what the write introduced |
 | `/respeak:init`, `/respeak:off [gate]`, `/respeak:on [gate]`, `/respeak:report` | user asks | local script runs, no model turn |
 | lexicon proposals | as a side effect of translation | file writes only |
 
