@@ -1,0 +1,3 @@
+[
+  {"id": "r2-readme", "repo": "~/code/claude-code-respeak", "prompt": "design/packets/r2-readme.md", "depends_on": ["packets-7", "r1-respeak-conventions"], "base": "r1-respeak-conventions", "worktree": true, "model": "claude-opus-5-5", "max_turns": 60, "plan_row": 14, "why": "the README rendered from design/readme/source.md by make readme through the plugin's own renderer, the freshness stamp verified in make check, version 0.6.1 with its CHANGELOG entry, the two bash suites under the virtualenv, the marketplace re-add as README text"}
+]
