@@ -331,11 +331,15 @@ bash scripts/respeak-gate.sh --file docs/guide.md    # one file: the hook's verd
 bash scripts/respeak-gate.sh --file docs/guide.md --baseline-ref origin/main   # only what the branch added
 ```
 
-The `--file` form has no edit to compare against, so it gates the whole file
-whatever `block_on` says; `--baseline-ref` is how a build asks the
-diff-scoped question instead. `respeak-check.sh` passes the verifier's
-single-pair form only, so a project that needs `--prose-keys` or
-`--allow-strings` in CI calls `respeak-verify-edit.py` itself for now.
+The `--file` form has no edit to compare against, so it gates the whole
+file whatever `block_on` says. `--baseline-ref` is how a build asks the
+diff-scoped question instead. With `--verify`, `respeak-check.sh` reads each
+changed file's resolved `editorial_pass` and passes the verifier what it
+allows. `restructure: apply` becomes `--allow-restructure`,
+`verify.prose_keys` becomes `--prose-keys`, and `verify.allow_strings`
+becomes `--allow-strings`. `verify.paths` names the page generators and data
+files it verifies as well, though never gates. The same three flags on the
+command line apply to one run.
 
 **Upgrading**: the installed copy under `~/.claude/plugins/cache` is a
 snapshot, not a live link. After pulling a change here (corpus, gate hook,
@@ -579,7 +583,6 @@ The config declares governance rules no script checks yet, and two pieces of too
 - Fresh-decoder legibility audits (30-day cadence)
 - `respeak compile`: emits the corpus as a Vale style package for CI (already RE2-safe for it)
 - A display-only translation hook: plain English on screen, shorthand in the transcript
-- `respeak-check.sh` reaching the verifier's `--prose-keys` and `--allow-strings`, so a project can use them in CI
 
 See CHANGELOG.md for what each version changed and why.
 

@@ -45,7 +45,8 @@ hold display prose the reader sees, so their string values may be rewritten;
 * names every string leaf. Structure, key order, every other value, and each
 scalar's quoting style stay invariant, and a rewritten value keeps its
 numbers, URLs, inline code spans, and link targets. For md this replaces the
-"front matter changed" failure; the body is checked as before.
+"front matter changed" failure with "front matter prose", which stays a hard
+failure under --allow-restructure; the body is checked as before.
 
 --dirs BEFORE AFTER: verify a whole rendered tree against its predecessor,
 which is how an edit to a generator is proved at the level the reader sees.
@@ -229,8 +230,11 @@ def check_md(before, after, opts=None):
         if keys is None:
             problems.append("front matter changed")
         else:
+            # Its own class, not "front matter changed": --prose-keys names
+            # what may move, so a violation stays hard under
+            # --allow-restructure, which relaxes only the unnamed case.
             problems.extend(
-                "front matter changed: " + p for p in
+                "front matter prose: " + p for p in
                 check_prose_yaml(fm_body(b["front_matter"]), fm_body(a["front_matter"]), keys))
     if b["headings"] != a["headings"]:
         problems.append(f"headings changed: {[h for h in b['headings'] if h not in a['headings']] + [h for h in a['headings'] if h not in b['headings']]}")

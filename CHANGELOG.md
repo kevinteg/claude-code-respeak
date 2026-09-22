@@ -135,10 +135,15 @@ failure behind it.
   `--allow-strings`. Third-party text is never reworded, only reported
   with a proposed attribution. A banned term inside a heading needs
   `restructure: apply`.
-- Known gap: `scripts/respeak-check.sh` passes none of the verifier's new
-  flags, so a project cannot reach `--prose-keys` or `--allow-strings`
-  through the CI check yet. That needs a config key or a check flag; until
-  then, call `respeak-verify-edit.py` directly for those passes.
+- `scripts/respeak-check.sh --verify` reads each changed file's resolved
+  `editorial_pass` and passes the verifier what it allows. `restructure:
+  apply` becomes `--allow-restructure`, the new `verify.prose_keys` becomes
+  `--prose-keys`, and `verify.allow_strings` becomes `--allow-strings`.
+  `verify.paths` (git pathspecs) names the page generators and data files
+  the check verifies as well, though never gates. The same three flags on
+  the command line apply to one run. A `--prose-keys` violation is its own
+  failure class, `front matter prose`, so it stays hard when
+  `--allow-restructure` relaxes an unnamed front-matter change.
 - The installed copy under `~/.claude/plugins/cache` is a snapshot, so run
   `claude plugin update respeak` to pick up the new gate behavior and the
   corpus changes.

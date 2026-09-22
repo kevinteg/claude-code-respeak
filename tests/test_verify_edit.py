@@ -568,5 +568,27 @@ class TestDetect(unittest.TestCase):
         self.assertIsNone(ve.detect("x.weird"))
 
 
+class TestProseKeysUnderRestructure(unittest.TestCase):
+    """--prose-keys names what may move, so its violations stay hard even
+    when --allow-restructure relaxes an unnamed front-matter change."""
+
+    BEFORE = TestProseKeys.BEFORE
+
+    def test_dropped_number_stays_hard(self):
+        after = self.BEFORE.replace("A 3 mile loop", "A short loop")
+        problems = ve.check_md(self.BEFORE, after,
+                               ve.Options(prose_keys={"pitch"}, allow_restructure=True))
+        hard, warnings = ve.partition_restructure(problems)
+        self.assertTrue(any(p.startswith("front matter prose") for p in hard), problems)
+        self.assertFalse(any("front matter" in w for w in warnings), warnings)
+
+    def test_unnamed_front_matter_change_still_relaxes(self):
+        after = self.BEFORE.replace("title: Cape Trail", "title: The Cape Trail")
+        problems = ve.check_md(self.BEFORE, after, ve.Options(allow_restructure=True))
+        hard, warnings = ve.partition_restructure(problems)
+        self.assertEqual(hard, [], problems)
+        self.assertEqual(warnings, ["front matter changed"])
+
+
 if __name__ == "__main__":
     unittest.main()

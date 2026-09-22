@@ -38,6 +38,19 @@ editorial_pass:
   # In apply mode, an abstract/BLUF block at the top may substitute for
   # reordering when moving sections would cost more than it buys.
   prefer_abstract_over_reorder: true
+  # What respeak-check.sh --verify hands respeak-verify-edit.py for each
+  # changed file, on top of `restructure: apply` (--allow-restructure).
+  verify:
+    prose_keys: []        # leaf key names whose string values an editorial pass
+                          # may reword in Markdown front matter and in .yaml files
+                          # (--prose-keys); ["*"] = every string leaf. Numbers,
+                          # URLs, code spans, and link targets inside them stay
+                          # invariant either way.
+    allow_strings: false  # .py page generators: string-literal content may
+                          # change (--allow-strings); nothing else in the file may
+    paths: []             # git pathspecs, relative to the project, of the
+                          # non-Markdown files the check verifies as well, e.g.
+                          # ["deploy/*.py", "catalog/**/*.yaml"]; never gated
 
 data:
   # Rendering rules for homogeneous data (lists of records, metrics, results).

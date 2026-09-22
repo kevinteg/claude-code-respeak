@@ -57,6 +57,66 @@ check "usage: an unknown ref exits 2" 2 "$rc"
 out="$(cd "$proj" && bash "$CHECK" --bogus 2>&1)"; rc=$?
 check "usage: an unknown option exits 2" 2 "$rc"
 
+# editorial_pass.verify: the project says what the verifier may relax and
+# which non-Markdown files it covers; the flags say the same for one run.
+vproj="$work/vproj"; mkdir -p "$vproj/.claude/respeak" "$vproj/docs" "$vproj/gen" "$vproj/data"
+cat > "$vproj/.claude/respeak/config.yaml" <<'YAML'
+version: 3
+gate: {enabled: true, include: ["**/*.md"], exclude: [], fail_on: error}
+editorial_pass:
+  restructure: apply
+  verify:
+    prose_keys: [pitch, blurb]
+    allow_strings: true
+    paths: ["gen/*.py", "data/*.yaml"]
+YAML
+card_v1='---\ntitle: Card\npitch: "Ten miles of trail — 2 hours out and back"\n---\n\n# Card\n\nA short walk to the point.\n'
+printf -- "$card_v1" > "$vproj/docs/card.md"
+printf 'LABEL = "Pick the next adventure — camp or trail"\nROWS = {"a": 1}\n' > "$vproj/gen/site.py"
+printf 'plants:\n  - id: fern\n    blurb: "Shade lover — needs 2 waterings a week"\n' > "$vproj/data/plants.yaml"
+( cd "$vproj" && git init -q && git add -A && git -c user.email=t@example.com -c user.name=t commit -q -m init )
+
+printf -- '---\ntitle: Card\npitch: "Ten miles of trail: 2 hours out and back"\n---\n\n# Card\n\nA short walk to the point.\n' > "$vproj/docs/card.md"
+printf 'LABEL = "Pick the next adventure: camp or trail"\nROWS = {"a": 1}\n' > "$vproj/gen/site.py"
+printf 'plants:\n  - id: fern\n    blurb: "Shade lover. Needs 2 waterings a week"\n' > "$vproj/data/plants.yaml"
+out="$(cd "$vproj" && bash "$CHECK" --verify HEAD)"; rc=$?
+check "verify.prose_keys: a reworded front-matter pitch is verified (exit 0)" 0 "$rc"
+check_out "...and the Markdown file is reported verified" 'verified docs/card.md' "$out"
+check_out "verify.paths + allow_strings: the generator's string edit is verified" 'verified gen/site.py' "$out"
+check_out "verify.paths + prose_keys: the data file's blurb is verified" 'verified data/plants.yaml' "$out"
+check_out "...and the summary counts all three" '3 verified, 0 changed' "$out"
+
+printf 'LABEL = "Pick the next adventure: camp or trail"\nROWS = {"a": 1, "b": 2}\n' > "$vproj/gen/site.py"
+out="$(cd "$vproj" && bash "$CHECK" --verify HEAD)"; rc=$?
+check "allow_strings: a new dict entry in the generator still fails (exit 1)" 1 "$rc"
+check_out "...and names the generator" 'CHANGED  gen/site.py' "$out"
+( cd "$vproj" && git checkout -q -- gen/site.py )
+
+printf -- '---\ntitle: Card\npitch: "Ten miles of trail: 3 hours out and back"\n---\n\n# Card\n\nA short walk to the point.\n' > "$vproj/docs/card.md"
+out="$(cd "$vproj" && bash "$CHECK" --verify HEAD)"; rc=$?
+check "prose_keys: a changed number inside the pitch still fails (exit 1)" 1 "$rc"
+check_out "...and names the page" 'CHANGED  docs/card.md' "$out"
+
+printf -- '---\ntitle: Card\npitch: "Ten miles of trail — 2 hours out and back"\n---\n\n# The card\n\nA short walk to the point.\n' > "$vproj/docs/card.md"
+out="$(cd "$vproj" && bash "$CHECK" --verify HEAD docs/card.md)"; rc=$?
+check "restructure: apply: a retitled heading is verified with a warning (exit 0)" 0 "$rc"
+check_out "...and the run says which flag it passed" 'allow-restructure' "$out"
+out="$(cd "$vproj" && bash "$CHECK" --verify HEAD)"; rc=$?
+check_out "a named FILE skips verify.paths; the full run still covers them" 'verified data/plants.yaml' "$out"
+
+# Without any verify configuration the strict verdict stands, and the flags
+# open the same doors for one run.
+( cd "$proj" && git checkout -q -- docs/guide.md )
+printf -- '---\npitch: "Ten miles of trail — 2 hours"\n---\n\n# Card\n\nA short walk.\n' > "$proj/docs/card.md"
+( cd "$proj" && git add docs/card.md && git -c user.email=t@example.com -c user.name=t commit -q -m card )
+printf -- '---\npitch: "Ten miles of trail: 2 hours"\n---\n\n# Card\n\nA short walk.\n' > "$proj/docs/card.md"
+out="$(cd "$proj" && bash "$CHECK" --verify HEAD docs/card.md)"; rc=$?
+check "no verify config: a front-matter edit is CHANGED (exit 1)" 1 "$rc"
+out="$(cd "$proj" && bash "$CHECK" --verify HEAD --prose-keys pitch docs/card.md)"; rc=$?
+check "--prose-keys on the command line verifies it for this run (exit 0)" 0 "$rc"
+out="$(cd "$proj" && bash "$CHECK" --prose-keys 2>&1)"; rc=$?
+check "usage: --prose-keys without a list exits 2" 2 "$rc"
+
 # Dogfood: this repository's own tracked docs pass its own gate. Tracked files
 # are named explicitly so a developer's local untracked notes cannot fail the suite.
 tracked=(); while IFS= read -r f; do [ -n "$f" ] && tracked+=("$f"); done < <(cd "$REPO_ROOT" && git ls-files -- '*.md')
