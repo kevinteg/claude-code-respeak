@@ -369,7 +369,7 @@ Install from GitHub (these write to your `~/.claude` config):
 
 ```sh
 claude plugin marketplace add kevinteg/claude-code-respeak
-claude plugin install respeak@respeak
+claude plugin install respeak@claude-code-respeak
 # optionally: --config default_mode=bluf --config tech_level=2
 ```
 
@@ -438,7 +438,7 @@ environment, the environment outranks configuration, and
 `respeak-config.sh explain` ends with the override in force. A durable
 personal preference belongs in the gitignored
 `.claude/respeak/config.local.yaml`; turning the whole plugin off is
-`claude plugin disable respeak@respeak`.
+`claude plugin disable respeak@claude-code-respeak`.
 
 **Reporting a bug or asking for a feature:**
 

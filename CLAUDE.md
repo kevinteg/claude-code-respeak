@@ -14,7 +14,7 @@ prompts are Markdown too and pass the same gate, but their reader is a model.
 written to a scratch path, then prove the edit changed only prose:
 
 ```sh
-/usr/bin/python3 scripts/respeak-verify-edit.py <before> <after>   # exit 0 = safe
+python3 scripts/respeak-verify-edit.py <before> <after>            # exit 0 = safe
 bash scripts/respeak-check.sh --verify HEAD                        # gate + verify every doc git knows about
 ```
 
@@ -28,8 +28,9 @@ error-severity hit. `/respeak:off gate` silences it for one session when you
 must; say so in the commit message.
 
 **Before committing.** Run `bash scripts/respeak-check.sh` (every doc passes
-its own gate) and the test suites listed in the README. Use
-`/usr/bin/python3` for anything Python; the PATH python may lack PyYAML.
+its own gate) and `make check`. Use `python3` for anything Python: in this
+repo it is the pyenv virtualenv `.python-version` declares,
+`claude-code-respeak` (3.12, with PyYAML).
 
 **Lexicon.** The ratified shorthand digest below is generated from
 `corpus/lexicon.yaml` by `scripts/render-lexicon-digest.sh`; regenerate it

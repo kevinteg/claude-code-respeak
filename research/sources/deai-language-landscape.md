@@ -57,7 +57,7 @@ Era breakdown given by the page (words co-occur within an era):
 - Unnecessary small tables that should be prose (WP:AITABLE).
 - Curly quotes/apostrophes from ChatGPT/DeepSeek (Claude and Gemini typically use straight quotes).
 - Skipped heading levels; level-1 heading overuse; thematic breaks (----) between sections (Markdown import).
-- Markdown-in-wikitext (WP:AIMARKDOWN): ## headings, **bold**, ```fenced blocks```, [text](url) links.
+- Markdown-in-wikitext (WP:AIMARKDOWN): ## headings, **bold**, ```fenced blocks```, [text]\(url) links.
 
 ### 1.4 Machine-artifact tells (unambiguous, tool-specific)
 
