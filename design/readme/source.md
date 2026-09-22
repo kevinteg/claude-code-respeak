@@ -1,6 +1,6 @@
-<img src="assets/respeak-icon.svg" alt="" width="56" align="left">
-
 # respeak
+
+<img src="assets/respeak-icon.svg" alt="" width="56" align="left">
 
 Two-lane communication for AI agent swarms in Claude Code: agents talk in
 governed shorthand, and every human gets a narrative worth reading.
