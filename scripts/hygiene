@@ -1,0 +1,171 @@
+#!/usr/bin/python3
+"""hygiene: the public-hygiene scan (conventions section 6, overhaul-r1 section 5).
+
+Scans the tracked files of a repo (`git ls-files -z`) for six pattern groups
+and prints counts only, never a matched line. A file is skipped when its first
+8 KB hold a NUL (binary). `.hygiene-allow` lists exceptions, one per line:
+`<path-glob>: <group>[,<group>]`, `#` comments; a glob's `*` stays inside one
+path segment.
+
+Usage: hygiene [--json] [--allow FILE] [--repo DIR]
+Exit 0 when no hit lies outside the allowlist, 2 when one does, 1 on usage or
+when git fails. Stdlib only; one file, copied byte-identical into each repo.
+
+The patterns below are written so that this file does not match itself.
+"""
+import fnmatch
+import json
+import os
+import re
+import subprocess
+import sys
+
+GROUPS = (
+    ("home", (r"/Users/[a-z]+", r"~/cod[e]/")),
+    ("lan", (r"192\.168\.", r"\b10\.\d+\.\d+\.\d+")),
+    ("domain", (r"konsume\.org", r"tegtme[i]er\.me")),
+    ("private", (r"hom[e]-tech", r"macbas[e]", r"homeassis[t]", r"photoli[b]",
+                 r"photos-ka[l]", r"photos-record[s]", r"anonymous-tec[h]")),
+    ("person", (r"kev[i]nteg", r"kev[i]n", r"tegtme[i]er", r"anton\s+yamo[s]")),
+    ("sibling", (r"syrvi[s]", r"respea[k]", r"decision[s]",
+                 r"claude-code-sessio[n]", r"claude-code-agent[s]")),
+)
+COMPILED = [(name, re.compile("|".join(pats), re.IGNORECASE)) for name, pats in GROUPS]
+GROUP_NAMES = [name for name, _ in GROUPS]
+BINARY_PROBE = 8192
+
+
+class UsageError(Exception):
+    pass
+
+
+def parse_args(argv):
+    opts = {"json": False, "allow": None, "repo": "."}
+    i = 0
+    while i < len(argv):
+        arg = argv[i]
+        if arg == "--json":
+            opts["json"] = True
+        elif arg in ("--allow", "--repo"):
+            if i + 1 >= len(argv):
+                raise UsageError("%s needs a value" % arg)
+            opts[arg[2:]] = argv[i + 1]
+            i += 1
+        elif arg in ("-h", "--help"):
+            raise UsageError(None)
+        else:
+            raise UsageError("unknown argument: %s" % arg)
+        i += 1
+    return opts
+
+
+def load_allow(path, required):
+    """Return [(glob, {groups})]; a missing default file is an empty list."""
+    if not os.path.exists(path):
+        if required:
+            raise UsageError("allow file not found: %s" % path)
+        return []
+    entries = []
+    with open(path, encoding="utf-8") as fh:
+        for n, raw in enumerate(fh, 1):
+            line = raw.split("#", 1)[0].strip()
+            if not line:
+                continue
+            glob, sep, groups = line.rpartition(":")
+            names = {g.strip() for g in groups.split(",") if g.strip()}
+            if not sep or not glob.strip() or not names or names - set(GROUP_NAMES):
+                raise UsageError("%s:%d: bad entry" % (path, n))
+            entries.append((glob.strip(), names))
+    return entries
+
+
+def glob_match(path, glob):
+    parts, pats = path.split("/"), glob.split("/")
+    return len(parts) == len(pats) and all(
+        fnmatch.fnmatchcase(p, g) for p, g in zip(parts, pats))
+
+
+def allowed(path, group, entries):
+    return any(group in groups and glob_match(path, glob) for glob, groups in entries)
+
+
+def tracked(repo):
+    try:
+        out = subprocess.run(["git", "-C", repo, "ls-files", "-z"],
+                             capture_output=True, check=True).stdout
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise UsageError("git ls-files failed in %s: %s" % (repo, exc))
+    return [p for p in out.decode("utf-8", "surrogateescape").split("\0") if p]
+
+
+def read_text(full):
+    """The file's text, or None when it is not a regular text file."""
+    if os.path.islink(full) or not os.path.isfile(full):
+        return None
+    with open(full, "rb") as fh:
+        data = fh.read()
+    if b"\0" in data[:BINARY_PROBE]:
+        return None
+    return data.decode("utf-8", "replace")
+
+
+def scan(repo, entries):
+    groups = {name: {"lines": 0, "files": 0} for name in GROUP_NAMES}
+    outside = []
+    for path in tracked(repo):
+        text = read_text(os.path.join(repo, path))
+        if text is None:
+            continue
+        counts = dict.fromkeys(GROUP_NAMES, 0)
+        for line in text.splitlines():
+            for name, rx in COMPILED:
+                if rx.search(line):
+                    counts[name] += 1
+        for name in GROUP_NAMES:
+            if not counts[name]:
+                continue
+            groups[name]["lines"] += counts[name]
+            groups[name]["files"] += 1
+            if not allowed(path, name, entries):
+                outside.append({"path": path, "group": name, "lines": counts[name]})
+    return {"groups": groups,
+            "hits_outside_allowlist": sum(f["lines"] for f in outside),
+            "files": outside}
+
+
+def render(result):
+    rows = ["%-8s %6s %6s" % ("group", "lines", "files")]
+    for name in GROUP_NAMES:
+        g = result["groups"][name]
+        rows.append("%-8s %6d %6d" % (name, g["lines"], g["files"]))
+    if result["files"]:
+        rows.append("")
+        rows.append("outside the allowlist:")
+        for f in result["files"]:
+            rows.append("%s  %s  %d" % (f["path"], f["group"], f["lines"]))
+    rows.append("hits outside allowlist: %d" % result["hits_outside_allowlist"])
+    return "\n".join(rows)
+
+
+def main(argv):
+    try:
+        opts = parse_args(argv[1:])
+        repo = opts["repo"]
+        allow = opts["allow"] or ".hygiene-allow"
+        if not os.path.isabs(allow):
+            allow = os.path.join(repo, allow)
+        result = scan(repo, load_allow(allow, opts["allow"] is not None))
+    except UsageError as exc:
+        if exc.args and exc.args[0]:
+            sys.stderr.write("hygiene: %s\n" % exc.args[0])
+        sys.stderr.write("usage: hygiene [--json] [--allow FILE] [--repo DIR]\n")
+        return 1
+    if opts["json"]:
+        print(json.dumps(result, indent=1, sort_keys=True))
+    else:
+        print(render(result))
+    return 0 if result["hits_outside_allowlist"] == 0 else 2
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

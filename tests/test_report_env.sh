@@ -17,7 +17,7 @@ check() {
   else fail=$((fail + 1)); echo "FAIL - $1 (expected '$2', got '$3')"; fi
 }
 jget() { # $1 = json, $2 = key -> value, or "null"
-  printf '%s' "$1" | python3 -c 'import json,sys; v=json.load(sys.stdin).get(sys.argv[1]); print("null" if v is None else v)' "$2"
+  printf '%s' "$1" | "${PYTHON:-python3}" -c 'import json,sys; v=json.load(sys.stdin).get(sys.argv[1]); print("null" if v is None else v)' "$2"
 }
 
 work="$(mktemp -d)"
@@ -27,7 +27,7 @@ trap 'rm -rf "$work"' EXIT
 out="$(bash "$ENV_SH")"; rc=$?
 check "exits 0 against the real plugin" 0 "$rc"
 check "owner_repo parsed from the https URL" "kevinteg/claude-code-respeak" "$(jget "$out" owner_repo)"
-want_version="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$REPO_ROOT/.claude-plugin/plugin.json")"
+want_version="$("${PYTHON:-python3}" -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$REPO_ROOT/.claude-plugin/plugin.json")"
 check "version matches plugin.json" "$want_version" "$(jget "$out" version)"
 check "plugin_root is the repo" "$REPO_ROOT" "$(jget "$out" plugin_root)"
 
@@ -66,7 +66,7 @@ check "claude_version is never empty" nonempty "$cv"
 # 7. The footer never carries a home directory: a python under $HOME shows as ~/...
 # A symlinked python under a fake HOME, given a stub `yaml` module on PYTHONPATH so the
 # override is accepted whether or not this machine has PyYAML installed.
-fakehome="$work/home"; mkdir -p "$fakehome/bin" "$fakehome/lib"; ln -s /usr/bin/python3 "$fakehome/bin/python3"; : > "$fakehome/lib/yaml.py"
+fakehome="$work/home"; mkdir -p "$fakehome/bin" "$fakehome/lib"; ln -s "$(command -v "${PYTHON:-python3}")" "$fakehome/bin/python3"; : > "$fakehome/lib/yaml.py"
 footer="$(HOME="$fakehome" PYTHONPATH="$fakehome/lib" RESPEAK_PYTHON="$fakehome/bin/python3" RESPEAK_CACHE_DIR="$work/cache7" bash "$ENV_SH" --footer)"
 check "footer shows a home-directory python as ~/..." 1 "$(printf '%s\n' "$footer" | grep -c -- '- python3: .*(~/bin/python3)')"
 check "footer contains no literal home path" 0 "$(printf '%s\n' "$footer" | grep -c -F -- "$fakehome")"
