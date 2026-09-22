@@ -25,48 +25,48 @@ failure behind it.
   would have blocked on. Density-tier tells stay out of that line: on one
   real page they ran to 79 hits, mostly dashes, and naming them invites
   the layout edits an editorial pass is told not to make.
-- `scripts/respeak-gate.sh --file` gains a new `--baseline-ref REF`
-  flag, which asks what changed since REF for a build that gates a
-  branch on its own diff. Otherwise it keeps whole-file semantics
-  whatever `block_on` says, because the CI form has no edit to
-  measure against.
+- `scripts/respeak-gate.sh --file` gains a new `--baseline-ref REF` flag,
+  which asks what changed since REF for a build that gates a branch on its
+  own diff. Otherwise it keeps whole-file semantics whatever `block_on`
+  says, because the CI form has no edit to measure against.
 - `respeak-measure.py DOC --baseline BASE` scans BASE with the same corpus
   and configuration, then splits DOC's hits per rule into `introduced` and
   `baseline`. Under a baseline, `--fail-on` sees only introduced hits and
-  budgets that got worse, and the text report tags each rule line `[new N,
-  pre-existing M]`. This is the mechanism `gate.block_on` runs on.
-- HTML comments are exempt from the scan, as fenced code and
-  blockquotes already were. Nothing inside a `<!-- ... -->` banner
-  reaches the rendered page. Its words, its dashes and its phrases
-  still counted against the page's budgets. Vendored banners alone
-  put several published pages over the dash density.
+  budgets that got worse, and the text report tags each rule line
+  `[new N, pre-existing M]`. This is the mechanism `gate.block_on` runs
+  on.
+- HTML comments are exempt from the scan, as fenced code and blockquotes
+  already were. Nothing inside a `<!-- ... -->` banner reaches the
+  rendered page. Its words, its dashes and its phrases still counted
+  against the page's budgets. Vendored banners alone put several published
+  pages over the dash density.
 - A URL is an address, not prose. A bare URL, an autolink, and the target
   of an inline link are dropped before the word and sentence counts, the
   way link targets already were. An address has no words to read and no
   sentence punctuation, so it inflated the word count and joined the lines
   around it into one long sentence. The link's label still counts.
-- The sentence splitter reads Markdown structure. Cutting only at
-  `.!?` read a bullet list as a single sentence. One site measured
-  an average sentence of 68.9 words, and the pass reported bullet
-  lists as long sentences on all nine. Prose is now cut into blocks
-  at blank lines, and a list item or a table row opens a new unit.
-  The list marker is not counted as a word, and each unit is then
-  split at sentence punctuation. This repository's README drops
-  from an 89-word longest sentence to 27, and from 15.1 to 13.0
-  average, with no prose changed. Every `avg_sentence_words` and
-  `max_sentence_words` figure quoted from a pre-0.6.0 run is stale.
+- The sentence splitter reads Markdown structure. Cutting only at `.!?`
+  read a bullet list as a single sentence. One site measured an average
+  sentence of 68.9 words, and the pass reported bullet lists as long
+  sentences on all nine. Prose is now cut into blocks at blank lines, and
+  a list item or a table row opens a new unit. The list marker is not
+  counted as a word, and each unit is then split at sentence punctuation.
+  This repository's README drops from an 89-word longest sentence to 27,
+  and from 15.1 to 13.0 average, with no prose changed. Every
+  `avg_sentence_words` and `max_sentence_words` figure quoted from a
+  pre-0.6.0 run is stale.
 - A corpus entry may declare `case_sensitive: true`: its pattern and its
   exceptions then compile without `re.I`. That is what a placeholder-name
   rule needs, so `\b(Lyra|Eira|Jaxon|Elias)\b` now carries it and the LYRA
   pencil brand in a household catalog stops reading as an invented
   character. Matching stays case-insensitive without the key, and a value
   that is neither `true` nor `false` is a setup error.
-- `respeak-measure.py --config` is documented in the module docstring
-  and in `--help`. A run without it reads neither the project's
-  `gate.allow` nor its `style.budgets`. A hand audit then over-counts
-  any project that has tuned either: on one site's baseline, 36
-  reported errors against 13 real ones. The help text names the
-  `respeak-config.sh resolve` command that writes the file to pass.
+- `respeak-measure.py --config` is documented in the module docstring and
+  in `--help`. A run without it reads neither the project's `gate.allow`
+  nor its `style.budgets`. A hand audit then over-counts any project that
+  has tuned either: on one site's baseline, 36 reported errors against 13
+  real ones. The help text names the `respeak-config.sh resolve` command
+  that writes the file to pass.
 - The verifier counts every line MkDocs would render as a heading. The old
   rule needed a space after the hashes, so a hard-wrapped line beginning
   `#33256` published as an H1 while the verifier passed the edit. A
@@ -112,15 +112,15 @@ failure behind it.
   `tapestry` clears the horticultural senses, `crisp` the food, texture
   and weather senses. Each exception is tested against the sentence window
   around the hit, so the cliche still flags.
-- `^-{3,}$` (thematic break) and `[“”]` (curly quotes) move to `tier:
-  density`. A generator or a vendored footer emits one per page, so
+- `^-{3,}$` (thematic break) and `[“”]` (curly quotes) move to
+  `tier: density`. A generator or a vendored footer emits one per page, so
   per-occurrence counting made them the top warn on every site. 539 of one
   site's 565 break hits were the catalog card rule. 296 of another's quote
   hits sat inside publisher blurbs the pass must not reword. A
   density-tier hit no longer counts toward `warn_hits`; it counts toward
-  `density_hits` and the `warn_phrases_per_1000_words` budget. `--fail-on
-  warn` still trips on one, so a page whose own prose is littered with
-  them still fails.
+  `density_hits` and the `warn_phrases_per_1000_words` budget.
+  `--fail-on warn` still trips on one, so a page whose own prose is
+  littered with them still fails.
 - New `tests/test_corpus.py`, 11 tests that scan the shipped corpus with
   the sentences the site pass met. For each exempted entry the literal
   sense passes and the cliche still flags; both retiered rules land in the

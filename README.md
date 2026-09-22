@@ -196,16 +196,17 @@ one line of PostToolUse `hookSpecificOutput.additionalContext` naming the
 count and the rules. Only the inherited hits at or above the resolved
 `fail_on` are named, since those are the ones `block_on: any` would have
 blocked on. `block_on: any` restores the whole-file verdict.
-`respeak-gate.sh --file` is whole-file either way, unless `--baseline-ref
-REF` names a git ref.
+`respeak-gate.sh --file` is whole-file either way, unless
+`--baseline-ref REF` names a git ref.
 
 It is **opt-in per project**: it does nothing unless the project layer
 (`<project>/.claude/respeak/config.yaml` or its gitignored
 `config.local.yaml`) sets `gate.enabled: true`. A user-level file or a
 folder `.respeak.yaml` cannot turn it on. They can, though, soften `fail_on`,
 set `block_on`, and add `allow` regexes for their own files (see "Where the
-tone comes from"). For one session, `/respeak:off gate` silences it and `/respeak:on gate` runs it where it is off (see "Turning respeak off for a session").
-Configure it there:
+tone comes from"). For one session, `/respeak:off gate` silences it and
+`/respeak:on gate` runs it where it is off (see "Turning respeak off for a
+session"). Configure it there:
 
 ```yaml
 gate:
@@ -247,11 +248,11 @@ old rule this README's longest sentence read 89 words; under the new one it
 reads 27, with no prose changed.
 
 **`--baseline`**: `respeak-measure.py DOC --baseline BASE` scans BASE with
-the same corpus and configuration, then reports each rule as `[new N,
-pre-existing M]` and each budget against the baseline's value. Under a
-baseline `--fail-on` sees only the introduced hits and the budgets that got
-worse. This is the mechanism `gate.block_on: introduced` runs on, available
-by hand for a branch audit or a whole-site pass.
+the same corpus and configuration, then reports each rule as
+`[new N, pre-existing M]` and each budget against the baseline's value.
+Under a baseline `--fail-on` sees only the introduced hits and the budgets
+that got worse. This is the mechanism `gate.block_on: introduced` runs on,
+available by hand for a branch audit or a whole-site pass.
 
 **Budgets** (`style.budgets` in `respeak.config.yaml`, read via
 `--config`) are `emdash_per_1000_words`, `warn_phrases_per_1000_words`,
