@@ -2,6 +2,39 @@
 
 Versions follow `.claude-plugin/plugin.json`. Dates are commit dates.
 
+## 0.6.1 (2026-09-22)
+
+What the first conventions pass on this repository found. Each bullet
+names the failure behind it.
+
+- A tone file written by the `claude-code-session` plugin is a layer: the
+  `respeak` section of its resolved file, when `provider.version` has major
+  2, sits between the folder files and the environment and may set tone keys
+  only. Before this, a session's chosen tone never reached the gate or the
+  renderer. `respeak-config.sh explain` names the provider it read.
+- The marketplace is named `claude-code-respeak`, after the repository, so
+  the install line is `respeak@claude-code-respeak`: one marketplace per
+  repository, named for it. The old name, `respeak`, was the plugin's.
+  Anyone who added the marketplace under that name runs
+  `claude plugin marketplace remove respeak`, then the two install lines in
+  the README.
+- `make check` runs the unit and bash suites, lint, `scripts/doclint`,
+  `scripts/hygiene`, the README freshness check, and `claude plugin
+  validate`. Before this, the checks were separate commands, and nothing
+  checked relative links or names in the docs.
+- The checks run under the pyenv virtualenv `.python-version` declares
+  (3.12, PyYAML). Before this, a shell's `python3` could be Apple's 3.9
+  or a pyenv shim without PyYAML, and the suites passed or failed by
+  accident of PATH.
+- `README.md` is rendered by `make readme` from `design/readme/source.md`,
+  proved prose-only by `respeak-verify-edit.py`, and stamped in
+  `design/readme/rendered.sha256`; `make check` refuses a stale README.
+  Before this, the README was edited by hand and had grown to 40,089 bytes;
+  the render is 21,453.
+- `tests/test_overrides.sh` and `tests/test_gate_hook.sh` run
+  `"${PYTHON:-python3}"` for their own JSON. Before this, they passed only
+  when PATH put a PyYAML-capable `python3` first.
+
 ## 0.6.0 (2026-09-21)
 
 What a ten-agent editorial pass over nine household sites found on
