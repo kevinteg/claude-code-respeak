@@ -228,26 +228,37 @@ fi
 # additionalContext — the hook reference's field for feedback that does not
 # block — and the session decides whether the pass can reach them. The
 # --file form has no model to tell, so it says the same thing in prose.
+# Only hits at or above fail_on are named: those are the ones `any` would
+# have blocked on. A page's density-tier tells (em-dashes, dividers) are
+# budget material, and listing dozens of them would invite exactly the
+# layout edits the editorial pass is told not to make.
 if [ -n "$baseline" ] && ! printf '%s\n' "$report" | grep -q '^baseline: 0 pre-existing'; then
   printf '%s\n' "$report" | "$RESPEAK_PY" -c '
 import json, re, sys
-path, form = sys.argv[1], sys.argv[2]
+path, form, fail_on = sys.argv[1], sys.argv[2], sys.argv[3]
 report = sys.stdin.read()
-m = re.search(r"^baseline: (\d+) pre-existing hit\(s\)", report, re.M)
-n = int(m.group(1)) if m else 0
+rank = {"error": 2, "warn": 1, "density": 1}      # density hits count as warn-level
+threshold = {"error": 2, "warn": 1, "none": 0}.get(fail_on, 2)
+section, rules, n = None, [], 0
+for line in report.splitlines():
+    s = re.match(r"^(error|warn|density): ", line)
+    if s:
+        section = s.group(1)
+        continue
+    r = re.match(r"^\s+\d+\s+(\[.+\].*?)\s+\[new \d+, pre-existing ([1-9]\d*)\]$", line)
+    if r and section and rank[section] >= threshold:
+        rules.append(r.group(1))
+        n += int(r.group(2))
 if n <= 0:
     sys.exit(0)
-rules = [r.group(1) for r in
-         (re.match(r"^\s+\d+\s+(\[.+\].*?)\s+\[new \d+, pre-existing [1-9]\d*\]$", line)
-          for line in report.splitlines()) if r]
-msg = ("respeak gate: %s passed; %d pre-existing style hit(s) remain, not introduced by "
-       "this edit: %s" % (path, n, ", ".join(rules) if rules else "see the gate report"))
+msg = ("respeak gate: %s passed; %d pre-existing style hit(s) remain that would block "
+       "(fail-on: %s), not introduced by this edit: %s" % (path, n, fail_on, ", ".join(rules)))
 if form == "json":
     print(json.dumps({"hookSpecificOutput": {"hookEventName": "PostToolUse",
                                              "additionalContext": msg}}))
 else:
     print(msg)
-' "$file_path" "$([ "$cli_mode" -eq 1 ] && echo text || echo json)" 2>/dev/null
+' "$file_path" "$([ "$cli_mode" -eq 1 ] && echo text || echo json)" "${fail_on:-error}" 2>/dev/null
 fi
 trace "checked $file_path (fail-on: ${fail_on:-error}): pass"
 exit 0

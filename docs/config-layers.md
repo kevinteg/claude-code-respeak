@@ -178,7 +178,9 @@ never a blocked write. `RESPEAK_GATE_TRACE=1` names the one used.
 A write that adds nothing passes even when the file still carries hits,
 and the hook says so rather than dropping them: it prints one line of JSON
 on stdout as PostToolUse `hookSpecificOutput.additionalContext`, naming
-the count and the rules, so the session can still choose to act on them.
+the count and the rules at or above `gate.fail_on` (the ones `any` would
+have blocked on; density-tier tells stay budget material), so the session
+can still choose to act on them.
 
 `respeak-gate.sh --file` has no edit to compare against and is the CI
 surface, where the question is whether the file is clean today. It keeps
