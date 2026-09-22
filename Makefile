@@ -3,9 +3,9 @@
 PYTHON ?= $(shell python3 -c 'import sys; print(sys.executable)')
 export PYTHON
 
-.PHONY: check test lint doclint hygiene validate
+.PHONY: check test lint doclint hygiene readme readme-fresh validate
 
-check: test lint doclint hygiene validate
+check: test lint doclint hygiene readme-fresh validate
 
 # The bash suites run the hooks, which find `python3` on PATH: put $(PYTHON) first.
 test:
@@ -22,6 +22,15 @@ doclint:
 
 hygiene:
 	$(PYTHON) scripts/hygiene
+
+# README.md is rendered from design/readme/source.md (conventions section 6); edit the source.
+readme:
+	bash scripts/respeak-render.sh --mode technical --source design/readme/source.md --out README.md
+	@$(PYTHON) scripts/respeak-verify-edit.py design/readme/source.md README.md || { git checkout -- README.md; exit 2; }
+	bash scripts/readme-fresh.sh --stamp
+
+readme-fresh:
+	bash scripts/readme-fresh.sh
 
 validate:
 	@if command -v claude >/dev/null 2>&1; then claude plugin validate .; \
