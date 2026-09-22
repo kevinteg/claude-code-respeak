@@ -120,7 +120,7 @@ def real(path):
 
 # macOS (APFS/HFS+) and Windows filesystems are case-insensitive and treat
 # NFC/NFD spellings as one name, but os.path.realpath canonicalises neither;
-# comparisons fold both so "/Users/Kevin/Proj" and "/users/kevin/proj" are one
+# comparisons fold both so "/Home/Alice/Proj" and "/home/alice/proj" are one
 # directory there, while Linux keeps exact comparison.
 CASE_INSENSITIVE_FS = sys.platform in ("darwin", "win32")
 

@@ -26,7 +26,9 @@ trap 'rm -rf "$work"' EXIT
 # 1. Real plugin: valid JSON, owner_repo from the manifest, version matches.
 out="$(bash "$ENV_SH")"; rc=$?
 check "exits 0 against the real plugin" 0 "$rc"
-check "owner_repo parsed from the https URL" "kevinteg/claude-code-respeak" "$(jget "$out" owner_repo)"
+# the manifest's https://github.com/<owner>/<repo>, read here so no owner is written in the suite
+want_repo="$("${PYTHON:-python3}" -c 'import json,sys; print(json.load(open(sys.argv[1]))["repository"].split("github.com/", 1)[1])' "$REPO_ROOT/.claude-plugin/plugin.json")"
+check "owner_repo parsed from the https URL" "$want_repo" "$(jget "$out" owner_repo)"
 want_version="$("${PYTHON:-python3}" -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$REPO_ROOT/.claude-plugin/plugin.json")"
 check "version matches plugin.json" "$want_version" "$(jget "$out" version)"
 check "plugin_root is the repo" "$REPO_ROOT" "$(jget "$out" plugin_root)"
@@ -59,7 +61,7 @@ check "missing manifest gives version unknown" "unknown" "$(jget "$out" version)
 # 6. Degraded PATH (no gh, no claude): still valid JSON with unknowns.
 out="$(PATH=/usr/bin:/bin bash "$ENV_SH")"; rc=$?
 check "degraded PATH exits 0" 0 "$rc"
-check "degraded PATH still yields JSON" "kevinteg/claude-code-respeak" "$(jget "$out" owner_repo)"
+check "degraded PATH still yields JSON" "$want_repo" "$(jget "$out" owner_repo)"
 cv="$(jget "$out" claude_version)"; [ -n "$cv" ] && cv=nonempty
 check "claude_version is never empty" nonempty "$cv"
 
