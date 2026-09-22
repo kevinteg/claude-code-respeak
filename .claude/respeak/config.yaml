@@ -23,6 +23,6 @@ scopes:
   # translator's editorial pass (structure advised, never applied) and are
   # verified meaning-invariant with scripts/respeak-verify-edit.py before
   # they are committed. CLAUDE.md spells out the procedure.
-  - paths: ["README.md", "CHANGELOG.md", "CLAUDE.md", "docs/**"]
+  - paths: ["README.md", "CHANGELOG.md", "CLAUDE.md", "docs/**", "design/readme/**"]
     narrative: { profile: peer-engineer, default_mode: technical, tech_level: 4 }
     editorial_pass: { restructure: advise }
