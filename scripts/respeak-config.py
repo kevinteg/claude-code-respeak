@@ -37,7 +37,7 @@ that profile's fields underneath the layer's own explicit keys.
 
 The session layer is optional: claude-code-session, when installed, writes
 ${XDG_STATE_HOME:-~/.local/state}/claude-code-session/sessions/<id>/resolved.json;
-<id> is --session, else $CLAUDE_SESSION_ID, else $CLAUDE_CODE_SESSION_ID. The
+<id> is --session, else $CLAUDE_CODE_SESSION_ID. The
 file is accepted when provider.version has major SESSION_PROVIDER_MAJOR, and
 never written here. Absent, unreadable, a wrong major or no id: an empty
 layer and at most one warning; respeak behaves as it does alone.
@@ -122,7 +122,7 @@ MARKDOWN_EXTS = (".md", ".markdown", ".mdx")
 # understands. A change to the file's contract bumps that major.
 SESSION_PROVIDER = "claude-code-session"
 SESSION_PROVIDER_MAJOR = 2
-SESSION_ID_ENV = ("CLAUDE_SESSION_ID", "CLAUDE_CODE_SESSION_ID")
+SESSION_ID_ENV = ("CLAUDE_CODE_SESSION_ID",)
 SESSION_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 # PyYAML's C loader parses the 230-line plugin config in a few milliseconds;
@@ -1093,7 +1093,7 @@ def add_common(p):
     p.add_argument("--set", action="append", default=[], metavar="KEY=VALUE")
     p.add_argument("--session", default=None, metavar="ID",
                    help="session id for claude-code-session's resolved file "
-                        "(default: $CLAUDE_SESSION_ID, else $CLAUDE_CODE_SESSION_ID)")
+                        "(default: $CLAUDE_CODE_SESSION_ID)")
 
 
 def main(argv=None):

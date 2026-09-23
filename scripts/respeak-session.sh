@@ -10,7 +10,7 @@
 #                                   gate.enabled is false (a trial)
 #   respeak-session.sh status       show the marker and any env override
 #
-# The session id comes from CLAUDE_SESSION_ID, which Claude Code exports to
+# The session id comes from CLAUDE_CODE_SESSION_ID, which Claude Code exports to
 # the Bash tool. Exit 0 on success, 2 on usage error or no session id.
 # bash 3.2 compatible.
 set -u
@@ -18,7 +18,7 @@ script_dir="$(cd "$(dirname "$0")" && pwd)"
 . "$script_dir/respeak-override.sh"
 
 verb="${1:-status}"; what="${2:-all}"
-sid="${CLAUDE_SESSION_ID:-}"
+sid="${CLAUDE_CODE_SESSION_ID:-}"
 case "$sid" in ""|*[!A-Za-z0-9_-]*) sid="" ;; esac
 
 case "$verb" in
@@ -30,7 +30,7 @@ case "$what" in all|gate) ;; *) echo "respeak: the only scope is 'gate' (or none
 dir="$(respeak_session_dir)"
 if [ "$verb" = status ]; then
   word=""; [ -n "$sid" ] && [ -f "$dir/$sid" ] && word="$(head -c 16 "$dir/$sid" 2>/dev/null | tr -d '[:space:]')"
-  echo "session: ${sid:-unknown (CLAUDE_SESSION_ID unset)}"
+  echo "session: ${sid:-unknown (CLAUDE_CODE_SESSION_ID unset)}"
   echo "marker: ${word:-none}"
   echo "env: RESPEAK_HOOKS=${RESPEAK_HOOKS:-unset} RESPEAK_GATE=${RESPEAK_GATE:-unset}"
   echo "gate hook sees: $(respeak_override gate "$sid")"
@@ -39,7 +39,7 @@ if [ "$verb" = status ]; then
 fi
 
 if [ -z "$sid" ]; then
-  echo "respeak: no session id (CLAUDE_SESSION_ID is unset), so a per-session marker cannot be written." >&2
+  echo "respeak: no session id (CLAUDE_CODE_SESSION_ID is unset), so a per-session marker cannot be written." >&2
   echo "respeak: for one launch use the environment instead: RESPEAK_HOOKS=off claude   or   RESPEAK_GATE=off|on claude" >&2
   exit 2
 fi

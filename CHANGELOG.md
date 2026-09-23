@@ -34,6 +34,10 @@ names the failure behind it.
 - `tests/test_overrides.sh` and `tests/test_gate_hook.sh` run
   `"${PYTHON:-python3}"` for their own JSON. Before this, they passed only
   when PATH put a PyYAML-capable `python3` first.
+- The session id is read from `CLAUDE_CODE_SESSION_ID` only. Before this,
+  `/respeak:off` refused in a real session and `respeak-session.sh status`
+  printed `session: unknown`: both read `CLAUDE_SESSION_ID`, which Claude
+  Code does not set.
 
 ## 0.6.0 (2026-09-21)
 

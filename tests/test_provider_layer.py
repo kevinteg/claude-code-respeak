@@ -137,10 +137,11 @@ class ProviderLayer(unittest.TestCase):
         for var in rc.SESSION_ID_ENV:
             res = self.resolve(env=self.env(**{var: SID}))
             self.assertEqual(rc.get_dotted(res.config, "narrative.default_mode"), "bluf", var)
-        # CLAUDE_SESSION_ID wins over CLAUDE_CODE_SESSION_ID; --session over both
-        res = self.resolve(env=self.env(CLAUDE_SESSION_ID="other", CLAUDE_CODE_SESSION_ID=SID))
+        # the pre-0.6.1 name alone is not read; --session wins over the environment
+        old_name = "CLAUDE_CODE_SESSION_ID".replace("CODE_", "")
+        res = self.resolve(env=self.env(**{old_name: SID}))
         self.assertEqual(res.provider_line(), "provider: none")
-        res = self.resolve(session_id=SID, env=self.env(CLAUDE_SESSION_ID="other"))
+        res = self.resolve(session_id=SID, env=self.env(CLAUDE_CODE_SESSION_ID="other"))
         self.assertEqual(rc.get_dotted(res.config, "narrative.default_mode"), "bluf")
 
     def test_unsafe_session_id_is_refused(self):
