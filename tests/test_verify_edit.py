@@ -13,7 +13,7 @@ import sys
 import tempfile
 import unittest
 
-VERIFY_PATH = os.path.join(os.path.dirname(__file__), "..", "scripts", "respeak-verify-edit.py")
+VERIFY_PATH = os.path.join(os.path.dirname(__file__), "..", "plugin", "scripts", "respeak-verify-edit.py")
 
 _spec = importlib.util.spec_from_file_location("verify_edit", VERIFY_PATH)
 assert _spec is not None and _spec.loader is not None

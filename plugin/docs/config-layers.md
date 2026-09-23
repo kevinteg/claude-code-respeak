@@ -237,7 +237,7 @@ its directory.
 
 ## Worked examples
 
-The tree in [`examples/layered/`](../examples/layered/) is a small project
+The tree in [`examples/layered/`](../../examples/layered/) is a small project
 plus a sample user file. Point `CLAUDE_CONFIG_DIR` at the sample home to
 include the user layer:
 

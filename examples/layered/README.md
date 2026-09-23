@@ -3,7 +3,7 @@
 This tree is a small project plus a sample user-level file. The test suite
 resolves against it (`tests/test_config_layers.py`), so the outcomes below
 cannot drift from the code. The contract is in
-[`docs/config-layers.md`](../../docs/config-layers.md).
+[`docs/config-layers.md`](../../plugin/docs/config-layers.md).
 
 ```
 home/.claude/respeak/config.yaml         user layer (point CLAUDE_CONFIG_DIR at home/.claude)

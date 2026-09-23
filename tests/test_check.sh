@@ -6,7 +6,7 @@
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$HERE/.." && pwd)"
-CHECK="$REPO_ROOT/scripts/respeak-check.sh"
+CHECK="$REPO_ROOT/plugin/scripts/respeak-check.sh"
 pass=0; fail=0
 check() { if [ "$2" -eq "$3" ]; then pass=$((pass + 1)); echo "ok   - $1"; else fail=$((fail + 1)); echo "FAIL - $1 (expected exit $2, got $3)"; fi; }
 check_out() { if printf '%s' "$3" | grep -q -- "$2"; then pass=$((pass + 1)); echo "ok   - $1"; else fail=$((fail + 1)); echo "FAIL - $1 (expected '$2' in: $3)"; fi; }
@@ -15,7 +15,7 @@ work="$(mktemp -d)"; work="$(cd "$work" && pwd -P)"
 trap 'rm -rf "$work"' EXIT
 export RESPEAK_CACHE_DIR="$work/cache"
 export CLAUDE_CONFIG_DIR="$work/no-user-config"; mkdir -p "$CLAUDE_CONFIG_DIR"
-export CLAUDE_PLUGIN_ROOT="$REPO_ROOT"
+export CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugin"
 unset RESPEAK_GATE RESPEAK_HOOKS CLAUDE_PROJECT_DIR RESPEAK_CONFIG 2>/dev/null || true
 
 proj="$work/proj"; mkdir -p "$proj/.claude/respeak" "$proj/docs" "$proj/research"

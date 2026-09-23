@@ -6,8 +6,8 @@
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$HERE/.." && pwd)"
-STOP="$REPO_ROOT/scripts/stop-narrative.sh"
-STATUS="$REPO_ROOT/scripts/statusline.sh"
+STOP="$REPO_ROOT/plugin/scripts/stop-narrative.sh"
+STATUS="$REPO_ROOT/plugin/scripts/statusline.sh"
 pass=0; fail=0
 check() { if [ "$2" -eq "$3" ]; then pass=$((pass + 1)); echo "ok   - $1"; else fail=$((fail + 1)); echo "FAIL - $1 (expected exit $2, got $3)"; fi; }
 check_out() {
@@ -23,7 +23,7 @@ trap 'rm -rf "$work"' EXIT
 export RESPEAK_CACHE_DIR="$work/cache"   # the suite never reads or rewrites the user's cache
 export CLAUDE_CONFIG_DIR="$work/no-user-config"; mkdir -p "$CLAUDE_CONFIG_DIR"
 unset CLAUDE_PLUGIN_OPTION_AUTO_NARRATIVE CLAUDE_PLUGIN_OPTION_DEFAULT_MODE CLAUDE_PROJECT_DIR RESPEAK_CONFIG 2>/dev/null || true
-export CLAUDE_PLUGIN_ROOT="$REPO_ROOT"
+export CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugin"
 
 proj="$work/proj"; mkdir -p "$proj/lab" "$proj/.git"
 printf 'narrative: {auto_narrative: true, profile: exec}\n' > "$proj/lab/.respeak.yaml"
@@ -51,7 +51,7 @@ rm -f "$proj/.respeak.yaml"
 badpath="$work/badpath"; mkdir -p "$badpath"; printf '#!/bin/sh\nexit 127\n' > "$badpath/python3"; chmod +x "$badpath/python3"
 out="$(stop_json "$proj/lab" "$MILESTONE" | PATH="$badpath:$PATH" CLAUDE_PROJECT_DIR="$proj" bash "$STOP")"
 check_out "stop: broken python3 shim on PATH does not silence the hook" 'auto-narrative is enabled' "$out"
-noresolver="$work/scripts-noresolver"; cp -R "$REPO_ROOT/scripts" "$noresolver"; rm -f "$noresolver/respeak-config.py"
+noresolver="$work/scripts-noresolver"; cp -R "$REPO_ROOT/plugin/scripts" "$noresolver"; rm -f "$noresolver/respeak-config.py"
 out="$(stop_json "$proj/lab" "$MILESTONE" | CLAUDE_PLUGIN_OPTION_AUTO_NARRATIVE=true bash "$noresolver/stop-narrative.sh")"
 check_out "stop: without the resolver, the userConfig knob alone decides (documented)" 'mode: technical' "$out"
 out="$(printf 'not json' | CLAUDE_PROJECT_DIR="$proj" bash "$STOP")"; rc=$?
@@ -102,14 +102,14 @@ out="$(stop_json "$nullproj" "$MILESTONE" | CLAUDE_PLUGIN_OPTION_AUTO_NARRATIVE=
 check_out "stop: a resolved null is off; the knob does not sneak back in" '' "$out"
 
 # ----- v0.4.3: SessionStart hook warns about a plugin root with a space -----
-LEXSTAT="$REPO_ROOT/scripts/lexicon-status.sh"
-sp_root="$work/plug in"; mkdir -p "$sp_root/corpus"; cp "$REPO_ROOT/corpus/lexicon.yaml" "$sp_root/corpus/"
+LEXSTAT="$REPO_ROOT/plugin/scripts/lexicon-status.sh"
+sp_root="$work/plug in"; mkdir -p "$sp_root/corpus"; cp "$REPO_ROOT/plugin/corpus/lexicon.yaml" "$sp_root/corpus/"
 out="$(cd "$proj" && printf '{}' | CLAUDE_PLUGIN_ROOT="$sp_root" bash "$LEXSTAT")"
 check_out "session-start: a plugin root with a space is called out" 'plugin root contains a space' "$out"
 check_out "session-start: ...and the lexicon status is still there" 'ratified terms' "$out"
-out="$(cd "$proj" && printf '{}' | CLAUDE_PLUGIN_ROOT="$REPO_ROOT" bash "$LEXSTAT")"
+out="$(cd "$proj" && printf '{}' | CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugin" bash "$LEXSTAT")"
 if printf '%s' "$out" | grep -q 'contains a space'; then fail=$((fail + 1)); echo "FAIL - session-start: false space warning"; else pass=$((pass + 1)); echo "ok   - session-start: no warning for a normal root"; fi
-out="$(cd "$proj" && printf '{}' | CLAUDE_PLUGIN_ROOT="$REPO_ROOT" bash "$LEXSTAT" | "${PYTHON:-python3}" -c 'import json,sys; json.load(sys.stdin); print("json-ok")')"
+out="$(cd "$proj" && printf '{}' | CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugin" bash "$LEXSTAT" | "${PYTHON:-python3}" -c 'import json,sys; json.load(sys.stdin); print("json-ok")')"
 check_out "session-start: output is valid hook JSON" 'json-ok' "$out"
 
 echo; echo "$pass passed, $fail failed"; [ "$fail" -eq 0 ]

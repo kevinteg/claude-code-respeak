@@ -7,11 +7,11 @@
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$HERE/.." && pwd)"
-GATE="$REPO_ROOT/scripts/respeak-gate.sh"
-STOP="$REPO_ROOT/scripts/stop-narrative.sh"
-LEXSTAT="$REPO_ROOT/scripts/lexicon-status.sh"
-SESSION="$REPO_ROOT/scripts/respeak-session.sh"
-CONFIG="$REPO_ROOT/scripts/respeak-config.sh"
+GATE="$REPO_ROOT/plugin/scripts/respeak-gate.sh"
+STOP="$REPO_ROOT/plugin/scripts/stop-narrative.sh"
+LEXSTAT="$REPO_ROOT/plugin/scripts/lexicon-status.sh"
+SESSION="$REPO_ROOT/plugin/scripts/respeak-session.sh"
+CONFIG="$REPO_ROOT/plugin/scripts/respeak-config.sh"
 pass=0; fail=0
 check() { if [ "$2" -eq "$3" ]; then pass=$((pass + 1)); echo "ok   - $1"; else fail=$((fail + 1)); echo "FAIL - $1 (expected exit $2, got $3)"; fi; }
 check_out() {
@@ -26,12 +26,12 @@ work="$(mktemp -d)"; work="$(cd "$work" && pwd -P)"
 trap 'rm -rf "$work"' EXIT
 export RESPEAK_CACHE_DIR="$work/cache"
 export CLAUDE_CONFIG_DIR="$work/no-user-config"; mkdir -p "$CLAUDE_CONFIG_DIR"
-export CLAUDE_PLUGIN_ROOT="$REPO_ROOT"
+export CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugin"
 unset RESPEAK_HOOKS RESPEAK_GATE CLAUDE_CODE_SESSION_ID CLAUDE_PLUGIN_OPTION_AUTO_NARRATIVE CLAUDE_PLUGIN_OPTION_DEFAULT_MODE CLAUDE_PROJECT_DIR RESPEAK_CONFIG 2>/dev/null || true
 MARKERS="$RESPEAK_CACHE_DIR/session"
 
 # ----- hooks.json pins its events -------------------------------------------------
-out="$("${PYTHON:-python3}" - "$REPO_ROOT/hooks/hooks.json" <<'PY'
+out="$("${PYTHON:-python3}" - "$REPO_ROOT/plugin/hooks/hooks.json" <<'PY'
 import json, sys
 h = json.load(open(sys.argv[1]))["hooks"]
 print("events=" + ",".join(sorted(h)))

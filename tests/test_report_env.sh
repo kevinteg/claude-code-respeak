@@ -7,7 +7,7 @@ set -u
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$HERE/.." && pwd)"
-ENV_SH="$REPO_ROOT/scripts/report-env.sh"
+ENV_SH="$REPO_ROOT/plugin/scripts/report-env.sh"
 
 pass=0
 fail=0
@@ -27,11 +27,11 @@ trap 'rm -rf "$work"' EXIT
 out="$(bash "$ENV_SH")"; rc=$?
 check "exits 0 against the real plugin" 0 "$rc"
 # the manifest's https://github.com/<owner>/<repo>, read here so no owner is written in the suite
-want_repo="$("${PYTHON:-python3}" -c 'import json,sys; print(json.load(open(sys.argv[1]))["repository"].split("github.com/", 1)[1])' "$REPO_ROOT/.claude-plugin/plugin.json")"
+want_repo="$("${PYTHON:-python3}" -c 'import json,sys; print(json.load(open(sys.argv[1]))["repository"].split("github.com/", 1)[1])' "$REPO_ROOT/plugin/.claude-plugin/plugin.json")"
 check "owner_repo parsed from the https URL" "$want_repo" "$(jget "$out" owner_repo)"
-want_version="$("${PYTHON:-python3}" -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$REPO_ROOT/.claude-plugin/plugin.json")"
+want_version="$("${PYTHON:-python3}" -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$REPO_ROOT/plugin/.claude-plugin/plugin.json")"
 check "version matches plugin.json" "$want_version" "$(jget "$out" version)"
-check "plugin_root is the repo" "$REPO_ROOT" "$(jget "$out" plugin_root)"
+check "plugin_root is the repo" "$REPO_ROOT/plugin" "$(jget "$out" plugin_root)"
 
 # 2. Footer form.
 footer="$(bash "$ENV_SH" --footer)"

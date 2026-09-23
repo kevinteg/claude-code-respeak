@@ -21,8 +21,8 @@ import tempfile
 import unittest
 
 HERE = os.path.dirname(__file__)
-MEASURE_PATH = os.path.join(HERE, "..", "scripts", "respeak-measure.py")
-CORPUS_PATH = os.path.join(HERE, "..", "corpus", "banned-phrases.yaml")
+MEASURE_PATH = os.path.join(HERE, "..", "plugin", "scripts", "respeak-measure.py")
+CORPUS_PATH = os.path.join(HERE, "..", "plugin", "corpus", "banned-phrases.yaml")
 
 _spec = importlib.util.spec_from_file_location("respeak_measure", MEASURE_PATH)
 assert _spec is not None and _spec.loader is not None

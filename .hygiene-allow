@@ -2,26 +2,29 @@
 # sibling: every hit below is the plugin's own name (`respeak`); no other sibling
 # appears outside design/ and history/. One glob per directory.
 .claude-plugin/*: sibling,person
+plugin/.claude-plugin/*: sibling,person
 .claude/respeak/*: sibling
 .gitignore: sibling
 .python-version: sibling
 CHANGELOG.md: sibling
 CLAUDE.md: sibling
 Makefile: sibling
-agents/*: sibling
+plugin/agents/*: sibling
 assets/*: sibling
-config/*: sibling
-corpus/*: sibling
-corpus/style/*: sibling
+plugin/config/*: sibling
+plugin/corpus/*: sibling
+plugin/corpus/style/*: sibling
 docs/*: sibling
+plugin/docs/*: sibling
 examples/layered/*: sibling
 examples/layered/home/.claude/respeak/*: sibling
 examples/layered/project/.claude/respeak/*: sibling
-hooks/*: sibling
+plugin/hooks/*: sibling
 research/sources/*: sibling
 research/synthesis/*: sibling
 scripts/*: sibling
-skills/*/*: sibling
+plugin/scripts/*: sibling
+plugin/skills/*/*: sibling
 tests/*: sibling
 .hygiene-allow: sibling
 # person: the author (LICENSE, the manifests' author and owner) and the repo URL.

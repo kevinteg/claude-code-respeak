@@ -3,7 +3,7 @@
 PYTHON ?= $(shell python3 -c 'import sys; print(sys.executable)')
 export PYTHON
 
-.PHONY: check test lint doclint hygiene readme readme-fresh validate
+.PHONY: check test lint doclint hygiene readme readme-fresh validate doctor
 
 check: test lint doclint hygiene readme-fresh validate
 
@@ -13,12 +13,12 @@ test:
 	@set -e; for t in tests/*.sh; do echo "== $$t"; PATH="$(dir $(PYTHON)):$$PATH" bash "$$t"; done
 
 lint:
-	$(PYTHON) -m compileall -q scripts tests
+	$(PYTHON) -m compileall -q scripts plugin/scripts tests
 	$(PYTHON) -c 'import sys; assert sys.version_info >= (3, 12)'
 
 doclint:
 	$(PYTHON) scripts/doclint
-	bash scripts/respeak-check.sh
+	bash plugin/scripts/respeak-check.sh
 
 # scripts/hygiene and scripts/doclint are byte-identical to claude-code-session's (conventions
 # section 6); a re-sync moves the files and these pins together.
@@ -39,14 +39,18 @@ The output is checked with respeak-verify-edit.py against the source and rejecte
 
 readme:
 	@c="$$(mktemp)"; printf '%s\n' '$(README_CONTRACT)' > "$$c"; \
-	bash scripts/respeak-render.sh --mode technical --source design/readme/source.md --out README.md --contract "$$c"; \
+	bash plugin/scripts/respeak-render.sh --mode technical --source design/readme/source.md --out README.md --contract "$$c"; \
 	rc=$$?; rm -f "$$c"; exit $$rc
-	@$(PYTHON) scripts/respeak-verify-edit.py design/readme/source.md README.md || { git checkout -- README.md; exit 2; }
+	@$(PYTHON) plugin/scripts/respeak-verify-edit.py design/readme/source.md README.md || { git checkout -- README.md; exit 2; }
 	bash scripts/readme-fresh.sh --stamp
 
 readme-fresh:
 	bash scripts/readme-fresh.sh
 
 validate:
-	@if command -v claude >/dev/null 2>&1; then claude plugin validate .; \
+	@if command -v claude >/dev/null 2>&1; then claude plugin validate plugin/ && claude plugin validate .; \
 	else echo "validate: skipped, no claude on PATH"; fi
+
+# One line per check: python, claude, marketplace, plugin, provider, config (conventions section 3).
+doctor:
+	bash plugin/scripts/respeak-doctor.sh

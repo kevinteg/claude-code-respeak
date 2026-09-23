@@ -46,6 +46,14 @@ names the failure behind it.
   `design/conventions*.md`, 8,192 bytes, and its pin moves with it. Before
   this, the copy here checked those files against the 6,144-byte record
   ceiling and differed from the canonical copy by that one rule.
+- The plugin is the `plugin/` subtree, and the marketplace's source is
+  `./plugin`: the manifest, `agents/`, `config/`, `corpus/`, `hooks/`,
+  `skills/`, the sixteen shipped scripts, and `docs/config-layers.md`, which
+  the skills and the agent name as the contract. Before this, the source was
+  the repository root, so an install copied all 100 tracked files into the
+  plugin cache, research, tests and history included. A checkout now loads
+  with `claude --plugin-dir "$RESPEAK_SRC/plugin"`; paths under
+  `${CLAUDE_PLUGIN_ROOT}` do not change.
 
 ## 0.6.0 (2026-09-21)
 
