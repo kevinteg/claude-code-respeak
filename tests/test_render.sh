@@ -53,9 +53,11 @@ SH
 chmod +x "$work/bin/claude" "$work/loadbin/sysctl"
 export PATH="$work/bin:$PATH"
 
-# A fixture repository with a README source and the real contract.
-fx="$work/fx"; mkdir -p "$fx/design/readme"
-printf '# Fixture\n\nThe cache is warm, and the build runs in 3 steps.\n' > "$fx/design/readme/source.md"
+# A fixture repository with a README source, its status line, a manifest,
+# and the real contract.
+fx="$work/fx"; mkdir -p "$fx/design/readme" "$fx/plugin/.claude-plugin"
+printf '# Fixture\n\nThe cache is warm, and the build runs in 3 steps.\n\n## Status\n\nStatus: version `0.0.0`, rendered `2000-01-01`, `0` unittest cases and `0` bash suites.\n' > "$fx/design/readme/source.md"
+printf '{"name": "fixture", "version": "9.8.7"}\n' > "$fx/plugin/.claude-plugin/plugin.json"
 cp "$REPO_ROOT/design/readme/contract.txt" "$fx/design/readme/contract.txt"
 printf '# Fixture\n\nThe old text.\n' > "$fx/README.md"
 src="$fx/design/readme/source.md"; out="$work/out.md"
@@ -121,5 +123,19 @@ if cmp -s "$fx/README.md" "$src" && bash "$REPO_ROOT/scripts/readme-fresh.sh" --
 else bad "...and readme-fresh reads it fresh"; fi
 if ls -d "$fx"/.readme-render.* >/dev/null 2>&1; then bad "readme-render: no temp directory is left behind"
 else ok "readme-render: no temp directory is left behind"; fi
+
+# --- R9: the status step writes the manifest's version; no line, no render --
+today="$(date +%Y-%m-%d)"
+if grep -q -x "Status: version \`9.8.7\`, rendered \`$today\`, \`0\` unittest cases and \`0\` bash suites." "$fx/README.md"; then
+  ok "readme-render: the README's status line names the manifest's version"
+else bad "readme-render: the README's status line names the manifest's version ($(grep '^Status' "$fx/README.md"))"; fi
+grep -v '^Status: version' "$src" > "$work/nostatus.md" && cp "$work/nostatus.md" "$src"
+cp "$fx/README.md" "$work/README.before"; : > "$FAKE_LOG"
+err="$(bash "$README_RENDER" --repo "$fx" 2>&1 >/dev/null)"; rc=$?
+check "readme-render: a source without a status line exits 2" 2 "$rc"
+check_out "...and says so" "readme-render: no status line in design/readme/source.md" "$err"
+if cmp -s "$fx/README.md" "$work/README.before"; then ok "...and leaves README.md untouched"
+else bad "...and leaves README.md untouched"; fi
+no_runner "...and starts no runner"
 
 echo; echo "$pass passed, $fail failed"; [ "$fail" -eq 0 ]

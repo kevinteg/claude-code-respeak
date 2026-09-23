@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="respeak: a megaphone">
   <title>respeak</title>
-  <g fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round" stroke-linecap="round">
+  <g transform="translate(-1.5 0)" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round" stroke-linecap="round">
     <!-- bell -->
     <path d="M16 25 L40 14 L40 50 L16 39 Z" fill="#fff"/>
     <!-- mouthpiece -->

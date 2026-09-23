@@ -4,6 +4,14 @@ Versions follow `.claude-plugin/plugin.json`. Dates are commit dates.
 
 ## Unreleased
 
+- The README source is rewritten as the public document: why respeak
+  exists, install with `make install` and `make doctor`, every command and
+  skill, the tests by file, and the conventions shared with the sibling
+  plugins. The references move to `docs/references.md`, and the icon moves
+  to `assets/icon.svg`. `scripts/readme-render.sh` writes a status line
+  (version, render date, unittest cases, bash suites) before each render
+  and exits 2 without one. The failure: the README's status was hand-kept,
+  and the source failed its own sentence budget.
 - `scripts/hygiene` and `scripts/doclint` are re-synced to the session's
   canonical copies, and the relay rows name their packet by a repo-relative
   path. `make check` runs under `scripts/bounded`: one run per tree by the
