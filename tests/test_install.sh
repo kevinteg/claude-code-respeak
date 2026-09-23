@@ -49,10 +49,10 @@ check "this checkout: exit 0" 0 "$rc"
 check "this checkout: update, then update" "plugin marketplace update claude-code-respeak;plugin update respeak@claude-code-respeak;" "$(calls)"
 
 # 3. Any other source: print it and the owner's two commands; run nothing; exit 2.
-run_install '[{"name":"claude-code-respeak","source":"github","repo":"kevinteg/claude-code-respeak"}]'; rc=$?
+run_install '[{"name":"claude-code-respeak","source":"github","repo":"example/fork"}]'; rc=$?
 check "other source: exit 2" 2 "$rc"
 check "other source: nothing but the list ran" "" "$(calls)"
-check "other source: names the source" 1 "$(grep -c 'comes from kevinteg/claude-code-respeak' "$work/out")"
+check "other source: names the source" 1 "$(grep -c 'comes from example/fork' "$work/out")"
 check "other source: prints the remove command" 1 "$(grep -c '^  claude plugin marketplace remove claude-code-respeak$' "$work/out")"
 
 echo "$pass passed, $fail failed"
