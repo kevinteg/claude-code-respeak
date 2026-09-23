@@ -3,7 +3,7 @@
 PYTHON ?= $(shell python3 -c 'import sys; print(sys.executable)')
 export PYTHON
 
-.PHONY: check test lint doclint hygiene readme readme-fresh validate doctor
+.PHONY: check test lint doclint hygiene readme readme-fresh validate doctor install
 
 check: test lint doclint hygiene readme-fresh validate
 
@@ -54,3 +54,20 @@ validate:
 # One line per check: python, claude, marketplace, plugin, provider, config (conventions section 3).
 doctor:
 	bash plugin/scripts/respeak-doctor.sh
+
+# Install the plugin from THIS checkout (conventions section 2). Adds the marketplace when absent,
+# updates it when it already points here, and never removes a registration: any other source is
+# printed with the two commands the owner would run, and the target exits 2.
+install:
+	@src="$$(claude plugin marketplace list --json | $(PYTHON) -c 'import json,sys; m=[m for m in json.load(sys.stdin) if m.get("name")=="claude-code-respeak"]; print(m[0].get("path") or m[0].get("repo") or m[0].get("url") or m[0].get("source") if m else "")')" || exit 2; \
+	if [ -z "$$src" ]; then \
+	  claude plugin marketplace add "$(CURDIR)" && claude plugin install respeak@claude-code-respeak; \
+	elif [ "$$src" = "$(CURDIR)" ]; then \
+	  claude plugin marketplace update claude-code-respeak && claude plugin update respeak@claude-code-respeak; \
+	else \
+	  echo "install: marketplace claude-code-respeak comes from $$src, not $(CURDIR)"; \
+	  echo "install: to install from this checkout, run:"; \
+	  echo "  claude plugin marketplace remove claude-code-respeak"; \
+	  echo "  make install"; \
+	  exit 2; \
+	fi

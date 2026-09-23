@@ -60,6 +60,12 @@ names the failure behind it.
   keys. It exits 2 only when no python3 imports PyYAML. Before this, a hook
   with no PyYAML python exited 0 without a word, and nothing showed which
   source or version a session had loaded.
+- `make install` installs the plugin from this checkout: it adds the
+  marketplace when none is named `claude-code-respeak`, updates both when
+  that marketplace is this checkout, and for any other source prints the
+  source and the commands to switch, then exits 2. It never removes a
+  registration. Before this, a local install was four hand-typed commands,
+  and the marketplace on this Mac still came from GitHub.
 
 ## 0.6.0 (2026-09-21)
 
