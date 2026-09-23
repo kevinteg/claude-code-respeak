@@ -56,6 +56,11 @@
 #          additionalContext.
 # Exit 2 = block; stderr carries the measure report, which Claude Code feeds
 #          back to the model as the error to fix. In CI, `|| exit 1` on it.
+# Bounds, so a write never waits on the gate past the hook's 20 s: a file
+# over RESPEAK_GATE_MAX_BYTES (default 2097152) blocks with "too large to
+# gate", and measure runs under respeak-deadline.sh for RESPEAK_GATE_DEADLINE
+# seconds (default 15); a measure past its deadline is a setup failure.
+#
 # Exit 3 = --committed only: no verdict (no python, a resolver failure, a
 #          measure setup error); stderr names the reason. The CI side
 #          refuses to guess where the hook fails open.
@@ -142,7 +147,7 @@ resolver="$script_dir/respeak-config.py"
 measure="$script_dir/respeak-measure.py"
 if [ ! -f "$resolver" ] || [ ! -f "$measure" ]; then no_verdict "resolver or measure script missing"; fi
 
-resolved="$(mktemp 2>/dev/null || echo "/tmp/respeak-gate.$$.yaml")"
+resolved="$(mktemp 2>/dev/null)" || { echo "respeak gate: mktemp failed; cannot gate $file_path" >&2; exit 2; }
 baseline=""
 trap 'rm -f "$resolved" ${baseline:+"$baseline"}' EXIT
 
@@ -183,6 +188,18 @@ block_on="${rest%% *}"; reason="${rest#* }"
 
 if [ "${applies:-0}" != "1" ]; then trace "not applicable to $file_path (${reason:-?})"; exit 0; fi
 
+# Fail early: a file too large to measure inside the hook's timeout blocks
+# instead of passing unmeasured when the hook is killed.
+max_bytes="${RESPEAK_GATE_MAX_BYTES:-2097152}"
+case "$max_bytes" in ''|*[!0-9]*) max_bytes=2097152 ;; esac
+size="$(wc -c < "$file_path" 2>/dev/null | tr -d ' ')"
+if [ -n "$size" ] && [ "$size" -gt "$max_bytes" ]; then
+  echo "respeak gate: $file_path is too large to gate ($size bytes, over RESPEAK_GATE_MAX_BYTES=$max_bytes); split it or exclude it in gate.exclude" >&2
+  exit 2
+fi
+deadline="${RESPEAK_GATE_DEADLINE:-15}"
+case "$deadline" in ''|*[!0-9]*|0) deadline=15 ;; esac
+
 args=("$file_path" --fail-on "${fail_on:-error}" --config "$resolved")
 plugin_root="${CLAUDE_PLUGIN_ROOT:-}"
 if [ -n "$plugin_root" ] && [ -f "$plugin_root/corpus/banned-phrases.yaml" ]; then
@@ -198,7 +215,7 @@ want_baseline=0
 [ "$cli_mode" -eq 0 ] && [ "${block_on:-introduced}" = "introduced" ] && want_baseline=1
 [ "$cli_mode" -eq 1 ] && [ -n "$baseline_ref" ] && want_baseline=1
 if [ "$want_baseline" -eq 1 ]; then
-  baseline="$(mktemp 2>/dev/null || echo "/tmp/respeak-gate.$$.base")"
+  baseline="$(mktemp 2>/dev/null)" || { echo "respeak gate: mktemp failed; cannot gate $file_path" >&2; exit 2; }
   baseline_from=""
   ref="${baseline_ref:-HEAD}"
   # `-C <dir>` with a `./<name>` path resolves the file inside whatever
@@ -239,8 +256,9 @@ with open(sys.argv[2], "w", encoding="utf-8") as f:
   fi
 fi
 
-report="$("$RESPEAK_PY" "$measure" "${args[@]}" 2>&1)"
+report="$(bash "$script_dir/respeak-deadline.sh" "$deadline" "$RESPEAK_PY" "$measure" "${args[@]}" 2>&1 </dev/null)"
 status=$?
+[ "$status" -eq 124 ] && no_verdict "measure passed its ${deadline} s deadline (RESPEAK_GATE_DEADLINE)"
 
 # measure: 0 = passed, 1 = a gate hit at or above --fail-on, 2 = setup/IO
 # error (unreadable doc, corrupt corpus or config). Only 1 is a verdict;

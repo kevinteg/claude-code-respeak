@@ -352,6 +352,17 @@ RESPEAK_GATE_TRACE=1 CLAUDE_PROJECT_DIR="$proj_git" CLAUDE_PLUGIN_ROOT="$REPO_RO
 check "--file --baseline-ref HEAD measures against the commit (exit 0)" 0 "$?"
 check_grep "...and says what remains" "pre-existing style hit(s) remain" "$work/gate-cli-ref.out"
 
+# --- ADV6-7: fail early on a file too large to measure in the hook's 20 s --
+big="$proj_on/big.md"
+{ echo "# Big"; echo; i=0; while [ $i -lt 60000 ]; do echo "$CLEAN_TEXT"; i=$((i + 1)); done; } > "$big"
+start=$(date +%s)
+run_gate "$proj_on" "$big" "$work/gate-big.out"
+check "a 3 MB file blocks (exit 2)" 2 "$?"
+check_grep "...as too large to gate" "too large to gate" "$work/gate-big.out"
+[ $(( $(date +%s) - start )) -lt 5 ] && { pass=$((pass + 1)); echo "ok   - ...before measure runs"; } \
+  || { fail=$((fail + 1)); echo "FAIL - ...before measure runs (took $(( $(date +%s) - start )) s)"; }
+rm -f "$big"
+
 echo
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

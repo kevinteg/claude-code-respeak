@@ -8,10 +8,10 @@
 #
 # Runner: Claude Code's print mode (`claude -p`) by default, which every
 # installer already has. RESPEAK_RENDER_CMD names another runner that
-# accepts the same flags (-p, --model, --allowedTools, --output-format json,
-# --system-prompt-file, --add-dir; prompt on stdin, JSON with a `result`
-# string on stdout). RESPEAK_RENDER_MODEL picks the model (default
-# claude-sonnet-5). --max-rounds bounds the spend.
+# accepts the same flags (-p, --model, --tools, --allowedTools, --max-turns,
+# --output-format json, --system-prompt-file, --add-dir; prompt on stdin,
+# JSON with a `result` string on stdout). RESPEAK_RENDER_MODEL picks the
+# model (default claude-sonnet-5). --max-rounds bounds the spend.
 #
 # What it does:
 #   1. Builds a system prompt from agents/respeak.md: strips the YAML
@@ -38,9 +38,23 @@
 #      then gates again; repeats up to --max-rounds (default 2, i.e. one
 #      retry). Exits nonzero if still failing after the last round.
 #
+# Bounds (fail early; review ADV6-5, the relay's defect brief D2). Each
+# refusal is one stderr line naming its cause and exit 2, before any runner
+# starts:
+#   RESPEAK_RENDER_DEPTH set    a render inside a render; the renderer
+#                               exports it to the runner, so a runner that
+#                               reaches `make readme` refuses there.
+#   1-minute load over RESPEAK_LOAD_MAX (default 4 x the core count; from
+#                               `sysctl -n vm.loadavg`, else /proc/loadavg)
+#   --max-rounds not 1 to 5
+# The runner gets `--tools Read Grep Glob` (a restriction, where
+# --allowedTools only pre-approves) and `--max-turns RESPEAK_RENDER_MAX_TURNS`
+# (default 8), and runs under respeak-deadline.sh for RESPEAK_RENDER_WALL
+# seconds (default 600) in its own process group, killed as a group.
+#
 # Exit codes: 0 = wrote a passing narrative. 1 = still failing the gate
 # after --max-rounds. 2 = usage/setup error (missing runner, bad args,
-# missing files, runner/parse failure).
+# missing files, runner/parse failure, a refusal above, the wall clock).
 #
 # bash 3.2 compatible (macOS default): indexed arrays only, no associative
 # arrays, no mapfile.
@@ -74,6 +88,28 @@ if [ -z "$MODE" ] || [ -z "$SOURCE" ] || [ -z "$OUT" ]; then
   exit 2
 fi
 
+# --- 0. the breakers: every one refuses before a runner can start ---
+refuse() { echo "respeak-render: refusing: $*" >&2; exit 2; }
+if [ -n "${RESPEAK_RENDER_DEPTH:-}" ]; then
+  refuse "RESPEAK_RENDER_DEPTH=$RESPEAK_RENDER_DEPTH is set (a render inside a render)"
+fi
+case "$MAX_ROUNDS" in 1|2|3|4|5) ;; *) refuse "--max-rounds must be an integer from 1 to 5, not '$MAX_ROUNDS'" ;; esac
+MAX_TURNS="${RESPEAK_RENDER_MAX_TURNS:-8}"
+case "$MAX_TURNS" in ''|*[!0-9]*|0) refuse "RESPEAK_RENDER_MAX_TURNS must be a positive integer, not '$MAX_TURNS'" ;; esac
+WALL="${RESPEAK_RENDER_WALL:-600}"
+case "$WALL" in ''|*[!0-9]*|0) refuse "RESPEAK_RENDER_WALL must be a positive integer of seconds, not '$WALL'" ;; esac
+load="$(sysctl -n vm.loadavg 2>/dev/null | tr -d '{}' | awk '{print $1}')"
+[ -n "$load" ] || load="$(awk '{print $1}' /proc/loadavg 2>/dev/null)"
+if [ -n "${RESPEAK_LOAD_MAX:-}" ]; then
+  load_max="$RESPEAK_LOAD_MAX"
+else
+  cores="$(sysctl -n hw.ncpu 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null)"
+  case "$cores" in ''|*[!0-9]*) load_max="" ;; *) load_max=$((cores * 4)) ;; esac
+fi
+if [ -n "$load" ] && [ -n "$load_max" ] && awk -v l="$load" -v m="$load_max" 'BEGIN { exit !(l + 0 > m + 0) }'; then
+  refuse "the 1-minute load $load is over RESPEAK_LOAD_MAX=$load_max"
+fi
+
 [ -n "$RESPEAK_PY" ] || {
   echo "respeak-render: no python3 with PyYAML found — the resolver and the style gate need it (set RESPEAK_PYTHON=/path/to/python3 or install PyYAML)." >&2
   exit 2
@@ -92,9 +128,12 @@ AGENT_MD="$PLUGIN_ROOT/agents/respeak.md"
 MEASURE="$PLUGIN_ROOT/scripts/respeak-measure.py"
 [ -f "$MEASURE" ] || { echo "respeak-render: measure script not found: $MEASURE" >&2; exit 2; }
 
-TMPDIR_R="$(mktemp -d 2>/dev/null || echo "/tmp/respeak-render.$$")"
-mkdir -p "$TMPDIR_R"
+TMPDIR_R="$(mktemp -d 2>/dev/null)" || { echo "respeak-render: mktemp failed" >&2; exit 2; }
+runner_pid=""
 trap 'rm -rf "$TMPDIR_R"' EXIT
+# A TERM or INT to the renderer reaches the runner's whole process group
+# through respeak-deadline.sh, so a killed render leaves no orphan runner.
+trap '[ -n "$runner_pid" ] && kill -TERM "$runner_pid" 2>/dev/null; wait 2>/dev/null; exit 143' TERM INT HUP
 
 # --- 1. system prompt: agents/respeak.md, frontmatter stripped, ${CLAUDE_PLUGIN_ROOT}
 #        substituted so the agent's path instructions resolve outside a session ---
@@ -150,14 +189,22 @@ ADD_DIRS=("$PLUGIN_ROOT")
 [ "$out_dir" != "$PLUGIN_ROOT" ] && [ "$out_dir" != "$src_dir" ] && ADD_DIRS+=("$out_dir")
 
 run_agent() {
-  # $1 = prompt file, $2 = destination for raw --output-format json
-  "$RENDER_CMD" -p \
+  # $1 = prompt file, $2 = destination for raw --output-format json.
+  # In the background and waited on, so the TERM trap above can run.
+  RESPEAK_RENDER_DEPTH=1 bash "$SCRIPT_DIR/respeak-deadline.sh" "$WALL" "$RENDER_CMD" -p \
     --model "$RENDER_MODEL" \
+    --tools Read Grep Glob \
     --allowedTools Read Grep Glob \
+    --max-turns "$MAX_TURNS" \
     --output-format json \
     --system-prompt-file "$SYSTEM_PROMPT" \
     --add-dir "${ADD_DIRS[@]}" \
-    < "$1" > "$2"
+    < "$1" > "$2" &
+  runner_pid=$!
+  wait "$runner_pid"
+  local rc=$?
+  runner_pid=""
+  return "$rc"
 }
 
 extract_and_write() {
@@ -196,6 +243,11 @@ while [ "$round" -le "$MAX_ROUNDS" ]; do
 
   run_agent "$PROMPT_FILE" "$raw_out" 2> "$err_log"
   agent_status=$?
+  if [ "$agent_status" -eq 124 ]; then
+    echo "respeak-render: runner '$RENDER_CMD' killed at the ${WALL} s wall clock (RESPEAK_RENDER_WALL, round $round)" >&2
+    cat "$err_log" >&2
+    exit 2
+  fi
   if [ "$agent_status" -ne 0 ]; then
     echo "respeak-render: runner '$RENDER_CMD' exited $agent_status (round $round)" >&2
     cat "$err_log" >&2

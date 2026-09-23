@@ -23,6 +23,17 @@ Versions follow `.claude-plugin/plugin.json`. Dates are commit dates.
   the verifier rejects. A stamp without its source is stale, and a source
   over 24,576 bytes is its own verdict. The failure: a README edited by
   hand and re-stamped read fresh, and deleting the source read skipped.
+- Every spawn has a bound. The new `respeak-deadline.sh` runs a command in
+  its own process group and kills the whole group at its wall clock (exit
+  124). The renderer refuses before it starts a runner when
+  `RESPEAK_RENDER_DEPTH` is set, when the load is over `RESPEAK_LOAD_MAX`,
+  or when `--max-rounds` is not 1 to 5. The runner gets `--tools` and
+  `--max-turns` and a 600 s wall clock. `make readme` calls
+  `scripts/readme-render.sh`, which writes `README.md` only after the
+  verifier passes. The gate blocks a file over 2 MB as too large to gate
+  and gives measure 15 s. `validate` and each suite run under the helper.
+  The failure: a hung runner, a large file, or a render inside a render
+  had no bound, and a failed render was left in `README.md`.
 
 - `scripts/hygiene` and `scripts/doclint` are re-synced to the canonical
   copies (conventions section 6), and the Makefile pins move in the same

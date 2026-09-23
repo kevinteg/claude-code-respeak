@@ -114,7 +114,7 @@ for g in ((d.get("editorial_pass") or {}).get("verify") or {}).get("paths") or [
 fi
 
 say() { [ "$quiet" -eq 1 ] || echo "$*"; }
-tmp="$(mktemp 2>/dev/null || echo "/tmp/respeak-check.$$")"; trap 'rm -f "$tmp" "$tmp.before"' EXIT
+tmp="$(mktemp 2>/dev/null)" || { echo "respeak-check: mktemp failed" >&2; exit 2; }; trap 'rm -f "$tmp" "$tmp.before"' EXIT
 passed=0; skipped=0; blocked=0; errors=0; missing=0; verified=0; vfailed=0
 
 # Verify one file against REF when it exists there and differs.
