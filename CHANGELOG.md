@@ -4,6 +4,12 @@ Versions follow `.claude-plugin/plugin.json`. Dates are commit dates.
 
 ## Unreleased
 
+- `scripts/hygiene` and `scripts/doclint` are re-synced to the session's
+  canonical copies, and the relay rows name their packet by a repo-relative
+  path. `make check` runs under `scripts/bounded`: one run per tree by the
+  lock `.check.lock`, a 900 s wall, and a hold above load 4 x cores. The
+  failure: two checks in one tree ran at once, a hung check had no wall,
+  and a rows file named the owner's home.
 - Six notes from review R6 move into the files they govern. `CLAUDE.md`
   says a change under about ten lines is gated, not passed; README links
   are `/`-rooted; the README source has a 24,576-byte ceiling.

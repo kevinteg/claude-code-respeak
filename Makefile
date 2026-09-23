@@ -14,9 +14,15 @@ export PATH := $(patsubst %/,%,$(dir $(PYTHON))):$(PATH)
 # The claude CLI `install` and `validate` run; the install suite passes a fake here.
 CLAUDE ?= claude
 
-.PHONY: check test lint doclint hygiene readme readme-fresh validate doctor install
+.PHONY: check check-unlocked test lint doclint hygiene readme readme-fresh validate doctor install
 
-check: test lint doclint hygiene readme-fresh validate
+# check runs under scripts/bounded, a verbatim copy of claude-code-session's (conventions section 5,
+# unpinned): one per tree by the lock .check.lock, a 900 s wall, held off above load 4 x cores.
+# Exits: the gate's own, 124 at the wall, 2 lock held or load too high, 127 cannot start.
+check:
+	$(PYTHON) scripts/bounded --lock .check.lock --wall 900 --load 4 -- $(MAKE) check-unlocked
+
+check-unlocked: test lint doclint hygiene readme-fresh validate
 
 # Every spawn here is bounded: respeak-deadline.sh runs it in its own process group and kills
 # the group at the wall clock (exit 124), so a hung suite or a slow claude fails the target.
@@ -40,8 +46,8 @@ doclint:
 # section 6); a re-sync moves the files and these pins together. The copy source is the
 # claude-code-session checkout beside this one, found from `git rev-parse --git-common-dir`
 # (the main checkout's .git, whose parent's parent holds both repos), never a home path.
-HYGIENE_SHA = d9e99149ec88c943c871795a2d0638a40dd344d0f5a4cac19be8fc02b86f9aa0
-DOCLINT_SHA = 4318bc912b4fd57ad111f037dab13f11fb137255515a23f215f2a59c10b1e81a
+HYGIENE_SHA = ca0496350e89ee814de71d6c352e6e6be7239a8dbe75391eeb752428f3e36cb1
+DOCLINT_SHA = 3040666c1e9ad08faf1befe9c2efffaff0660f0464554d240f1d07437a03fcda
 
 hygiene:
 	@printf '%s  %s\n' $(HYGIENE_SHA) scripts/hygiene $(DOCLINT_SHA) scripts/doclint | shasum -a 256 -c --status || { echo "hygiene: scripts/hygiene or scripts/doclint differ from the canonical copies (conventions section 6)"; exit 2; }

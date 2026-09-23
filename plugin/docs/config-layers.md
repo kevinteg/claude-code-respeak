@@ -286,7 +286,7 @@ What each file gets:
 
 | Target | mode | tech_level | profile | formality | gate applies (fail_on) | decided by |
 | --- | --- | --- | --- | --- | --- | --- |
-| `README.md` | technical | 3 | peer-engineer | 0.2 | yes (error) | project; formality from config.local |
+| `README.md` | technical | 3 | peer-engineer | 0.2 | yes (error) | project; formality from `config.local.yaml` |
 | `docs/overview.md` | technical | 3 | peer-engineer | 0.2 | yes (error) | scope `docs/**` |
 | `docs/exec/q3-summary.md` | bluf | 1 | exec | 0.8 | yes (warn) | scope `docs/exec/**`; formality from the folder file |
 | `docs/api/endpoints.md` | technical | 5 | author | 0.2 | yes (error) | folder file beats scope `docs/**` |
