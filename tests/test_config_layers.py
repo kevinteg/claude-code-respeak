@@ -542,6 +542,40 @@ class CLI(unittest.TestCase):
         with open(out_cfg) as f:
             self.assertIn("fail_on: warn", f.read())
 
+    def test_gate_committed_reads_the_project_file_only(self):
+        # ADV6-1, ADV6-2: the CI verdict drops gate.* from every layer but the
+        # plugin defaults and the project file (its scopes included), and says so.
+        self.fx.proj("gate: {enabled: true}\n"
+                     "scopes:\n  - paths: ['docs/**']\n    gate: {allow: ['x']}\n")
+        write(os.path.join(self.fx.project, ".claude", "respeak", "config.local.yaml"),
+              "gate: {block_on: any}\n")
+        self.fx.folder("docs", "gate: {fail_on: none, allow: ['.*']}\n")
+        env_cfg = os.path.join(self.fx.root, "env.yaml")
+        write(env_cfg, "gate: {enabled: false}\n")
+        self.env["RESPEAK_CONFIG"] = env_cfg
+        doc = self.fx.doc("docs/a.md")
+        out_cfg = os.path.join(self.fx.root, "resolved.yaml")
+        common = ["--project", self.fx.project, "--for", doc, "--walk-from", self.fx.root,
+                  "--set", "gate.fail_on=warn", "--write-config", out_cfg]
+        d = json.loads(self.run_cli("gate", *common).stdout)
+        self.assertFalse(d["applies"])            # the open form: RESPEAK_CONFIG turned it off
+        self.assertNotIn("dropped", d)
+        r = self.run_cli("gate", "--committed", *common)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        d = json.loads(r.stdout)
+        self.assertTrue(d["committed"])
+        self.assertTrue(d["applies"])
+        self.assertEqual((d["fail_on"], d["block_on"]), ("error", "introduced"))
+        dropped = [x.rsplit(": ", 1)[1] for x in d["dropped"]]
+        self.assertEqual(sorted(dropped), ["gate.allow", "gate.block_on", "gate.enabled",
+                                           "gate.fail_on", "gate.fail_on"])
+        self.assertTrue(any(x.startswith(env_cfg) for x in d["dropped"]))
+        self.assertTrue(any("invocation" in x for x in d["dropped"]))
+        with open(out_cfg) as f:
+            g = rc.yaml.safe_load(f)["gate"]
+        self.assertIn("x", g["allow"])             # the project scope's allow stands
+        self.assertNotIn(".*", g["allow"])
+
     def test_validate_accepts_block_on_in_any_layer(self):
         folder = os.path.join(self.fx.project, "docs", ".respeak.yaml")
         write(folder, "gate: {block_on: any}\n")

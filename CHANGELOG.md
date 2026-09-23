@@ -11,6 +11,13 @@ Versions follow `.claude-plugin/plugin.json`. Dates are commit dates.
   and names `--committed` for CI. The Makefile names where the pinned
   scripts are copied from, and the renderer says why the icon line sits
   under the title. The failure: these rules lived only in sitting notes.
+- `respeak-check.sh` is hermetic. It gates each file with
+  `respeak-gate.sh --committed`, which reads `gate.*` from the plugin
+  defaults and the committed project file only and names each key it
+  dropped. It also unsets `RESPEAK_CONFIG`, `CLAUDE_CODE_SESSION_ID` and
+  `XDG_STATE_HOME`. A file the gate cannot judge exits 3 and counts as an
+  error. The failure: a folder file, an ignored local file, the
+  environment, or the session provider could turn the check green.
 
 - `scripts/hygiene` and `scripts/doclint` are re-synced to the canonical
   copies (conventions section 6), and the Makefile pins move in the same

@@ -27,13 +27,18 @@
 #               --allow-restructure set the same things for one run, for every
 #               file, on top of the configuration.
 #
-# Session overrides (RESPEAK_GATE, RESPEAK_HOOKS) are ignored here on
-# purpose: this command answers what the configuration says, not what one
-# session chose. Exit 0 = every file allowed and verified; 1 = at least one
-# block or verification failure; 2 = usage or setup error.
+# Session overrides (RESPEAK_GATE, RESPEAK_HOOKS), RESPEAK_CONFIG, and the
+# session provider (CLAUDE_CODE_SESSION_ID, XDG_STATE_HOME) are ignored here
+# on purpose: this command answers what the committed configuration says,
+# not what one session or one shell chose. Each file is gated with
+# `respeak-gate.sh --committed`, so a folder file or an ignored local file
+# cannot soften the verdict either; a file the gate cannot judge (exit 3)
+# is an ERROR, never a pass. Exit 0 = every file allowed and verified; 1 =
+# at least one block, error, or verification failure; 2 = usage or setup
+# error, or the per-file counts do not add up to the files named.
 # bash 3.2 compatible.
 set -u
-unset RESPEAK_GATE RESPEAK_HOOKS 2>/dev/null || true
+unset RESPEAK_GATE RESPEAK_HOOKS RESPEAK_CONFIG CLAUDE_CODE_SESSION_ID XDG_STATE_HOME 2>/dev/null || true
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 RESPEAK_PY=""; RESPEAK_PY_STD=""
 . "$script_dir/respeak-python.sh"
@@ -49,7 +54,7 @@ while [ $# -gt 0 ]; do
     --allow-strings) cli_strings=1; shift ;;
     --allow-restructure) cli_restructure=1; shift ;;
     --quiet) quiet=1; shift ;;
-    -h|--help) sed -n '2,33p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,38p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     --*) echo "respeak-check: unknown option $1" >&2; exit 2 ;;
     *) files+=("$1"); shift ;;
   esac
@@ -110,7 +115,7 @@ fi
 
 say() { [ "$quiet" -eq 1 ] || echo "$*"; }
 tmp="$(mktemp 2>/dev/null || echo "/tmp/respeak-check.$$")"; trap 'rm -f "$tmp" "$tmp.before"' EXIT
-passed=0; skipped=0; blocked=0; verified=0; vfailed=0
+passed=0; skipped=0; blocked=0; errors=0; missing=0; verified=0; vfailed=0
 
 # Verify one file against REF when it exists there and differs.
 verify_one() {
@@ -130,10 +135,12 @@ verify_one() {
 }
 
 for f in "${files[@]}"; do
-  [ -f "$f" ] || { say "missing  $f"; continue; }
-  RESPEAK_GATE_TRACE=1 "$script_dir/respeak-gate.sh" --file "$f" >"$tmp" 2>&1; rc=$?
+  [ -f "$f" ] || { missing=$((missing + 1)); say "missing  $f"; continue; }
+  RESPEAK_GATE_TRACE=1 "$script_dir/respeak-gate.sh" --file "$f" --committed >"$tmp" 2>&1; rc=$?
   if [ "$rc" -eq 2 ]; then
     blocked=$((blocked + 1)); echo "BLOCKED  $f"; sed 's/^/         /' "$tmp"
+  elif [ "$rc" -ne 0 ]; then
+    errors=$((errors + 1)); echo "ERROR    $f"; sed 's/^/         /' "$tmp"
   elif grep -q 'not applicable' "$tmp"; then
     skipped=$((skipped + 1)); say "skipped  $f"
   elif grep -q -E 'allowing' "$tmp" && ! grep -q ': pass' "$tmp"; then
@@ -146,5 +153,12 @@ done
 for f in ${vonly[@]+"${vonly[@]}"}; do
   [ -f "$f" ] && verify_one "$f"
 done
-echo "respeak-check: $passed passed, $skipped skipped, $blocked blocked${ref:+; $verified verified, $vfailed changed against $ref}"
-[ "$blocked" -eq 0 ] && [ "$vfailed" -eq 0 ]
+# Invariant: every file named lands in exactly one count. A file that
+# slipped through every branch would otherwise read as a quiet green.
+counted=$((passed + skipped + blocked + errors + missing))
+if [ "$counted" -ne "${#files[@]}" ]; then
+  echo "respeak-check: counted $counted of ${#files[@]} files; refusing to report" >&2
+  exit 2
+fi
+echo "respeak-check: $passed passed, $skipped skipped, $blocked blocked, $errors errors${ref:+; $verified verified, $vfailed changed against $ref}"
+[ "$blocked" -eq 0 ] && [ "$errors" -eq 0 ] && [ "$vfailed" -eq 0 ]

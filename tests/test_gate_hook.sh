@@ -44,7 +44,7 @@ export RESPEAK_CACHE_DIR="$work/cache"   # the suite never reads or rewrites the
 # HOME stays real because PyYAML may live in the interpreter's user site.
 export CLAUDE_CONFIG_DIR="$work/no-user-config"
 mkdir -p "$CLAUDE_CONFIG_DIR"
-unset CLAUDE_PLUGIN_OPTION_DEFAULT_MODE CLAUDE_PLUGIN_OPTION_TECH_LEVEL CLAUDE_PLUGIN_OPTION_AUTO_NARRATIVE RESPEAK_CONFIG 2>/dev/null || true
+unset CLAUDE_PLUGIN_OPTION_DEFAULT_MODE CLAUDE_PLUGIN_OPTION_TECH_LEVEL CLAUDE_PLUGIN_OPTION_AUTO_NARRATIVE RESPEAK_CONFIG CLAUDE_CODE_SESSION_ID XDG_STATE_HOME 2>/dev/null || true
 
 BANNED_TEXT="This design is load-bearing for everything downstream."
 CLEAN_TEXT="The plan uses the cache and finishes in three steps."
