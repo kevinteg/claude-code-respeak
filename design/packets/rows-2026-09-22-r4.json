@@ -1,0 +1,3 @@
+[
+  {"id": "r3-respeak-followups", "repo": "~/code/claude-code-respeak", "prompt": "/Users/kevinteg/code/claude-code-respeak/design/packets/r3-respeak-followups.md", "depends_on": ["packets-10"], "worktree": true, "model": "claude-opus-5-5", "max_turns": 60, "why": "the session id read as CLAUDE_CODE_SESSION_ID only (item 25; /respeak:off refused in a real session), scripts/hygiene and scripts/doclint byte-identical to the canonical copies with sha256 pins checked by make hygiene (item 26), items 30 and 38 recorded not built, the R1 and R2 follow-ups folded or named for R4"}
+]
