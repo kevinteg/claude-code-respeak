@@ -1,7 +1,9 @@
 #!/bin/bash
 # Tests for `make install`: add when absent, update when the marketplace is
-# this checkout, refuse (exit 2, nothing run) for any other source. A fake
-# `claude` records its argv. Bash 3.2 compatible.
+# this checkout, refuse (exit 2, nothing run) for any other source or a
+# missing CLI. A fake `claude`, passed as CLAUDE=, records its argv; a
+# decoy `claude` first on PATH records any call that bypassed the variable.
+# Bash 3.2 compatible.
 #
 # Run: bash tests/test_install.sh
 set -u
@@ -30,11 +32,14 @@ esac
 exit 0
 SH
 chmod +x "$work/bin/claude"
+mkdir -p "$work/decoy"
+printf '#!/bin/sh\necho "BARE claude $*" >> "$FAKE_LOG"\nexit 1\n' > "$work/decoy/claude"
+chmod +x "$work/decoy/claude"
 
-run_install() { # $1 = marketplace list JSON
+run_install() { # $1 = marketplace list JSON, $2 = the CLAUDE to pass (default the fake)
   printf '%s\n' "$1" > "$work/mkt.json"; : > "$work/log"
-  FAKE_LOG="$work/log" FAKE_MKT="$work/mkt.json" PATH="$work/bin:$PATH" \
-    make -s -C "$REPO_ROOT" install PYTHON="$py" > "$work/out" 2>&1
+  FAKE_LOG="$work/log" FAKE_MKT="$work/mkt.json" PATH="$work/decoy:$PATH" \
+    make -s -C "$REPO_ROOT" install PYTHON="$py" CLAUDE="${2:-$work/bin/claude}" > "$work/out" 2>&1
 }
 calls() { grep -v '^plugin marketplace list --json$' "$work/log" | tr '\n' ';'; }
 
@@ -54,6 +59,12 @@ check "other source: exit 2" 2 "$rc"
 check "other source: nothing but the list ran" "" "$(calls)"
 check "other source: names the source" 1 "$(grep -c 'comes from example/fork' "$work/out")"
 check "other source: prints the remove command" 1 "$(grep -c '^  claude plugin marketplace remove claude-code-respeak$' "$work/out")"
+
+# 4. No claude CLI at CLAUDE: exit 2, name it, run nothing.
+run_install '[]' "$work/bin/no-such-claude"; rc=$?
+check "missing CLAUDE: exit 2" 2 "$rc"
+check "missing CLAUDE: nothing ran" "" "$(cat "$work/log")"
+check "missing CLAUDE: names it" 1 "$(grep -c "no claude CLI at CLAUDE=$work/bin/no-such-claude" "$work/out")"
 
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

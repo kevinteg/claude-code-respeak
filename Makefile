@@ -1,7 +1,18 @@
 # claude-code-respeak: the repo's checks (conventions section 5).
-# PYTHON is the pyenv virtualenv .python-version declares; override on the command line.
-PYTHON ?= $(shell python3 -c 'import sys; print(sys.executable)')
+# PYTHON is the pyenv virtualenv .python-version declares; override on the command line. When
+# its python3 exists it is found by path, with no process: the pyenv shim takes a lock that
+# stalled every make under load (review R6, T2). `lint` checks the name against .python-version.
+PYENV_ROOT ?= $(HOME)/.pyenv
+VENV = claude-code-respeak
+VENV_PYTHON = $(PYENV_ROOT)/versions/$(VENV)/bin/python3
+ifeq ($(origin PYTHON),undefined)
+PYTHON := $(if $(wildcard $(VENV_PYTHON)),$(VENV_PYTHON),$(shell python3 -c 'import sys; print(sys.executable)'))
+endif
 export PYTHON
+# Its bin dir first on PATH, so every recipe, and every hook a suite runs, skips the shim.
+export PATH := $(patsubst %/,%,$(dir $(PYTHON))):$(PATH)
+# The claude CLI `install` and `validate` run; the install suite passes a fake here.
+CLAUDE ?= claude
 
 .PHONY: check test lint doclint hygiene readme readme-fresh validate doctor install
 
@@ -11,14 +22,15 @@ check: test lint doclint hygiene readme-fresh validate
 # the group at the wall clock (exit 124), so a hung suite or a slow claude fails the target.
 DEADLINE = bash plugin/scripts/respeak-deadline.sh
 
-# The bash suites run the hooks, which find `python3` on PATH: put $(PYTHON) first.
+# The bash suites run the hooks, which find `python3` on PATH: the export above puts $(PYTHON) first.
 test:
 	$(DEADLINE) 120 $(PYTHON) -m unittest discover tests </dev/null
-	@set -e; for t in tests/*.sh; do echo "== $$t"; PATH="$(dir $(PYTHON)):$$PATH" $(DEADLINE) 120 bash "$$t" </dev/null; done
+	@set -e; for t in tests/*.sh; do echo "== $$t"; $(DEADLINE) 120 bash "$$t" </dev/null; done
 
 lint:
 	$(PYTHON) -m compileall -q scripts plugin/scripts tests
 	$(PYTHON) -c 'import sys; assert sys.version_info >= (3, 12)'
+	@[ "$$(cat .python-version)" = "$(VENV)" ] || { echo "lint: .python-version is not $(VENV); update VENV in the Makefile"; exit 2; }
 
 doclint:
 	$(PYTHON) scripts/doclint
@@ -45,8 +57,8 @@ readme-fresh:
 	bash scripts/readme-fresh.sh
 
 validate:
-	@if command -v claude >/dev/null 2>&1; then $(DEADLINE) 60 sh -c 'claude plugin validate plugin/ && claude plugin validate .' </dev/null; \
-	else echo "validate: skipped, no claude on PATH"; fi
+	@if command -v $(CLAUDE) >/dev/null 2>&1; then $(DEADLINE) 60 sh -c '$(CLAUDE) plugin validate plugin/ && $(CLAUDE) plugin validate .' </dev/null; \
+	else echo "validate: skipped, no $(CLAUDE) on PATH"; fi
 
 # One line per check: python, claude, marketplace, plugin, provider, config (conventions section 3).
 doctor:
@@ -56,11 +68,12 @@ doctor:
 # updates it when it already points here, and never removes a registration: any other source is
 # printed with the two commands the owner would run, and the target exits 2.
 install:
-	@src="$$(claude plugin marketplace list --json | $(PYTHON) -c 'import json,sys; m=[m for m in json.load(sys.stdin) if m.get("name")=="claude-code-respeak"]; print(m[0].get("path") or m[0].get("repo") or m[0].get("url") or m[0].get("source") if m else "")')" || exit 2; \
+	@command -v $(CLAUDE) >/dev/null 2>&1 || { echo "install: no claude CLI at CLAUDE=$(CLAUDE); set CLAUDE=/path/to/claude"; exit 2; }
+	@src="$$($(CLAUDE) plugin marketplace list --json | $(PYTHON) -c 'import json,sys; m=[m for m in json.load(sys.stdin) if m.get("name")=="claude-code-respeak"]; print(m[0].get("path") or m[0].get("repo") or m[0].get("url") or m[0].get("source") if m else "")')" || exit 2; \
 	if [ -z "$$src" ]; then \
-	  claude plugin marketplace add "$(CURDIR)" && claude plugin install respeak@claude-code-respeak; \
+	  $(CLAUDE) plugin marketplace add "$(CURDIR)" && $(CLAUDE) plugin install respeak@claude-code-respeak; \
 	elif [ "$$src" = "$(CURDIR)" ]; then \
-	  claude plugin marketplace update claude-code-respeak && claude plugin update respeak@claude-code-respeak; \
+	  $(CLAUDE) plugin marketplace update claude-code-respeak && $(CLAUDE) plugin update respeak@claude-code-respeak; \
 	else \
 	  echo "install: marketplace claude-code-respeak comes from $$src, not $(CURDIR)"; \
 	  echo "install: to install from this checkout, run:"; \

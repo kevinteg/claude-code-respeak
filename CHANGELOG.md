@@ -34,6 +34,12 @@ Versions follow `.claude-plugin/plugin.json`. Dates are commit dates.
   and gives measure 15 s. `validate` and each suite run under the helper.
   The failure: a hung runner, a large file, or a render inside a render
   had no bound, and a failed render was left in `README.md`.
+- The Makefile finds the virtualenv's `python3` by path, with no process,
+  and exports its bin dir first on `PATH`, so no recipe or hook goes
+  through the pyenv shim. `CLAUDE ?= claude` names the CLI that `install`
+  and `validate` run, and `install` exits 2 when it is missing. The
+  failure: the shim's lock stalled every make under load, and the install
+  suite relied on a fake `claude` staying first on `PATH`.
 
 - `scripts/hygiene` and `scripts/doclint` are re-synced to the canonical
   copies (conventions section 6), and the Makefile pins move in the same
