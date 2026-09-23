@@ -2,9 +2,8 @@
 name: respeak
 description: >
   Translate agent/swarm output into a human-facing narrative. Fires on
-  /respeak:respeak [mode] [source], and on natural-language asks like
-  "explain that to my manager", "give me the ELI5", "make this readable",
-  "what would I tell the reviewers", "translate this for the docs".
+  /respeak:respeak [mode] [source] and on asks like "explain that to my manager",
+  "give me the ELI5", "make this readable".
 argument-hint: "[eli5|bluf|technical] [text or file path — defaults to this session's latest outcome]"
 arguments: [mode, source]
 allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/scripts/respeak-config.sh *) Bash(${CLAUDE_PLUGIN_ROOT}/scripts/respeak-py.sh *)

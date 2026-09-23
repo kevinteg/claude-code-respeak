@@ -1,11 +1,9 @@
 ---
 name: init
 description: >
-  Set up respeak in the current project: create .claude/respeak/ state dirs,
-  seed a sparse project config and the lexicon, generate the lexicon digest,
-  show the effective configuration stack, and (with consent) wire the
-  CLAUDE.md import, the gitignore entries, and the statusline. User-invoked
-  only.
+  Set up respeak in this project: state dirs, a sparse config, the lexicon
+  and its digest; with consent, the CLAUDE.md import, the gitignore entries,
+  and the statusline. User-invoked only.
 disable-model-invocation: true
 argument-hint: "(no arguments)"
 allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/scripts/respeak-config.sh *) Bash(bash ${CLAUDE_PLUGIN_ROOT}/scripts/render-lexicon-digest.sh *)

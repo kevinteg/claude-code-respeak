@@ -1,9 +1,8 @@
 ---
 name: on
 description: >
-  Undo /respeak:off for this session, so the layered configuration decides
-  again. With the argument `gate`, run the style gate for this session even
-  where gate.enabled is false, as a trial. User-invoked only.
+  Undo /respeak:off for this session. With `gate`, run the style gate this
+  session even where gate.enabled is false, as a trial. User-invoked only.
 disable-model-invocation: true
 argument-hint: "[gate]"
 allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/scripts/respeak-session.sh *)

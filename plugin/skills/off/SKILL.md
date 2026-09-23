@@ -1,11 +1,9 @@
 ---
 name: off
 description: >
-  Silence the respeak hooks for this session only: the session-start lexicon
-  note, the Stop-hook narrative nudge, and the PostToolUse style gate. With
-  the argument `gate`, only the style gate goes quiet. Nothing in the project
-  changes; a per-session marker in the cache carries the choice and
-  /respeak:on removes it. User-invoked only.
+  Silence the respeak hooks for this session only: the lexicon note, the
+  narrative nudge, the style gate. With `gate`, only the style gate.
+  /respeak:on undoes it. User-invoked only.
 disable-model-invocation: true
 argument-hint: "[gate]"
 allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/scripts/respeak-session.sh *)
