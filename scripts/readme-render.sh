@@ -10,7 +10,8 @@
 # does it move over README.md, and then readme-fresh.sh stamps both.
 #   0  README.md written and stamped
 #   1  the render still failed the style gate; README.md untouched
-#   2  setup, the renderer's refusals, or the verifier; README.md untouched
+#   2  setup, a source without its status line, the renderer's refusals,
+#      or the verifier; README.md untouched
 # The verifier runs under $PYTHON (the Makefile exports it), else python3.
 #
 # bash 3.2 compatible.
@@ -41,6 +42,31 @@ tmpd="$(mktemp -d "$REPO/.readme-render.XXXXXX" 2>/dev/null)" || { echo "readme-
 trap 'rm -rf "$tmpd"' EXIT
 out="$tmpd/README.md"
 
+# The status step: the source's one `Status: version` line is rewritten from
+# the manifest's version, today's date, the unittest collection under tests/
+# (collected, not run) and the count of tests/*.sh. A source without the line
+# exits 2 before any render.
+"$PY" - "$SOURCE" <<'PY' || exit 2
+import datetime, glob, json, os, re, sys, unittest
+src = sys.argv[1]
+text = open(src, encoding="utf-8").read()
+line_re = re.compile(r"^Status: version .*$", re.M)
+if len(line_re.findall(text)) != 1:
+    sys.exit("readme-render: no status line in " + src)
+try:
+    with open("plugin/.claude-plugin/plugin.json", encoding="utf-8") as f:
+        version = json.load(f)["version"]
+except (OSError, ValueError, KeyError) as e:
+    sys.exit("readme-render: no version in plugin/.claude-plugin/plugin.json (%s)" % e)
+cases = unittest.TestLoader().discover("tests").countTestCases() if os.path.isdir("tests") else 0
+suites = len(glob.glob("tests/*.sh"))
+line = "Status: version `%s`, rendered `%s`, `%d` unittest cases and `%d` bash suites." % (
+    version, datetime.date.today().isoformat(), cases, suites)
+text = line_re.sub(lambda m: line, text)
+with open(src, "w", encoding="utf-8") as f:
+    f.write(text)
+PY
+
 bash "$PLUGIN_ROOT/scripts/respeak-render.sh" --mode technical --source "$SOURCE" --out "$out" --contract "$CONTRACT"
 rc=$?
 if [ "$rc" -ne 0 ]; then
@@ -48,6 +74,21 @@ if [ "$rc" -ne 0 ]; then
   [ "$rc" -eq 1 ] && exit 1
   exit 2
 fi
+# The status line is prose to the verifier, so a render may reword it; the
+# render's first line under `## Status` becomes the source's line again.
+"$PY" - "$SOURCE" "$out" <<'PY' || exit 2
+import re, sys
+line = re.search(r"^Status: version .*$", open(sys.argv[1], encoding="utf-8").read(), re.M).group(0)
+lines = open(sys.argv[2], encoding="utf-8").read().split("\n")
+if "## Status" in lines:
+    i = lines.index("## Status") + 1
+    while i < len(lines) and not lines[i].strip():
+        i += 1
+    if i < len(lines):
+        lines[i] = line
+with open(sys.argv[2], "w", encoding="utf-8") as f:
+    f.write("\n".join(lines))
+PY
 if ! "$PY" "$PLUGIN_ROOT/scripts/respeak-verify-edit.py" "$SOURCE" "$out"; then
   echo "readme-render: the render is not prose-only against $SOURCE; README.md untouched" >&2
   exit 2
