@@ -21,7 +21,9 @@ doclint:
 	bash plugin/scripts/respeak-check.sh
 
 # scripts/hygiene and scripts/doclint are byte-identical to claude-code-session's (conventions
-# section 6); a re-sync moves the files and these pins together.
+# section 6); a re-sync moves the files and these pins together. The copy source is the
+# claude-code-session checkout beside this one, found from `git rev-parse --git-common-dir`
+# (the main checkout's .git, whose parent's parent holds both repos), never a home path.
 HYGIENE_SHA = d9e99149ec88c943c871795a2d0638a40dd344d0f5a4cac19be8fc02b86f9aa0
 DOCLINT_SHA = 4318bc912b4fd57ad111f037dab13f11fb137255515a23f215f2a59c10b1e81a
 

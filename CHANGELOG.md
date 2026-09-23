@@ -4,6 +4,14 @@ Versions follow `.claude-plugin/plugin.json`. Dates are commit dates.
 
 ## Unreleased
 
+- Six notes from review R6 move into the files they govern. `CLAUDE.md`
+  says a change under about ten lines is gated, not passed; README links
+  are `/`-rooted; the README source has a 24,576-byte ceiling.
+  config-layers records that Apple's python stays a hook-time candidate
+  and names `--committed` for CI. The Makefile names where the pinned
+  scripts are copied from, and the renderer says why the icon line sits
+  under the title. The failure: these rules lived only in sitting notes.
+
 - `scripts/hygiene` and `scripts/doclint` are re-synced to the canonical
   copies (conventions section 6), and the Makefile pins move in the same
   commit. Hygiene no longer checks charters under `history/sittings/` for

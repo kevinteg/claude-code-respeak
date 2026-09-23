@@ -30,6 +30,9 @@
 #      leading `---` front-matter fence or a `#` heading) — belt-and-suspenders
 #      against a chatty preamble the agent's own output contract forbids but
 #      a model might still emit — and writes it to --out.
+#      Everything above that first line is dropped, which is why a README
+#      source keeps its icon line (the HTML img) under the title, never
+#      above it: above the title, the strip would remove it.
 #   4. Gates --out with respeak-measure.py --fail-on error. On FAIL, re-runs
 #      with the measure report appended to the prompt as a rewrite request,
 #      then gates again; repeats up to --max-rounds (default 2, i.e. one

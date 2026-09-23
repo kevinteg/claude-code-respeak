@@ -20,13 +20,17 @@ bash plugin/scripts/respeak-check.sh --verify HEAD                        # gate
 
 Headings, links, fenced code, inline code, and numbers must be byte-identical
 across an editorial pass. New content is written once, then passed the same
-way.
+way. Under about ten new lines, the gate is the pass: write the change once
+and let the hook check it.
 
 **The README is rendered.** `README.md` is written by `make readme` only:
 it renders `design/readme/source.md` through the translator in technical
 mode, proves the render prose-only with `respeak-verify-edit.py`, and stamps
 both files in `design/readme/rendered.sha256`. Edit the source, then run
 `make readme`. `make check` refuses a README whose stamp no longer matches.
+Links in the source are `/`-rooted, so one target resolves from the source
+and from the root. The source stays at or under 24,576 bytes;
+`scripts/readme-fresh.sh` enforces the ceiling.
 
 **The gate is on.** Every Markdown write outside `research/`, `examples/`,
 and `plugin/corpus/` is scanned by the PostToolUse hook and blocked on an
