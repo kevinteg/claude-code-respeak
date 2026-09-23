@@ -21,10 +21,10 @@ fi
 "$RESPEAK_PY" "$script_dir/respeak-config.py" "$@"; rc=$?
 if [ -f "$script_dir/respeak-override.sh" ]; then
   . "$script_dir/respeak-override.sh"
-  sid="${CLAUDE_SESSION_ID:-}"
+  sid="${CLAUDE_CODE_SESSION_ID:-}"
   g="$(respeak_override gate "$sid")"; h="$(respeak_override stop "$sid")"
   if [ -z "$g$h" ]; then
-    if [ -n "$sid" ]; then echo "session overrides: none"; else echo "session overrides: none (no CLAUDE_SESSION_ID, so markers were not consulted)"; fi
+    if [ -n "$sid" ]; then echo "session overrides: none"; else echo "session overrides: none (no CLAUDE_CODE_SESSION_ID, so markers were not consulted)"; fi
   else
     hooks_state="config"; [ "${h%% *}" = off ] && hooks_state="off (${h#* })"
     gate_state="config"

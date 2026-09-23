@@ -512,7 +512,7 @@ Markers live under `${RESPEAK_CACHE_DIR:-${XDG_CACHE_HOME:-~/.cache}/respeak}/se
 hold one word, and are swept when older than 24 hours, so a session that
 crashed never leaves a silent hook behind. A marker with any other content
 is ignored. The session id is the one Claude Code hands to hooks on stdin
-and to skills as `CLAUDE_SESSION_ID`; without one, `/respeak:off` refuses
+and to skills as `CLAUDE_CODE_SESSION_ID`; without one, `/respeak:off` refuses
 and points at the environment variables.
 
 `respeak-config.sh explain` ends with a `session overrides:` line, so the

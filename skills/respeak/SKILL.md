@@ -38,7 +38,7 @@ Steps:
    when `$source` is a file path (a folder's `.respeak.yaml` governs the
    files in it), otherwise the working directory. Run (quote the paths as
    shown; `--out` writes the file so no shell redirect is needed):
-   `"${CLAUDE_PLUGIN_ROOT}/scripts/respeak-config.sh" resolve --for "<target>" --launch-dir "${CLAUDE_PROJECT_DIR}" [--mode <mode>] --format yaml --out "/tmp/respeak-${CLAUDE_SESSION_ID}.yaml"`
+   `"${CLAUDE_PLUGIN_ROOT}/scripts/respeak-config.sh" resolve --for "<target>" --launch-dir "${CLAUDE_PROJECT_DIR}" [--mode <mode>] --format yaml --out "/tmp/respeak-${CLAUDE_CODE_SESSION_ID}.yaml"`
    Add `--profile <name>` when the user named an audience that matches a
    profile the config defines under `profiles:` (for example "for the exec
    audience" → `exec`, or a household profile the user defined at user level);
@@ -53,7 +53,7 @@ Steps:
    report. Feed the narrative to the scanner on stdin (a heredoc; no temp
    file, so no file-write permission is needed):
    ```
-   "${CLAUDE_PLUGIN_ROOT}/scripts/respeak-py.sh" respeak-measure.py - --fail-on error --config "/tmp/respeak-${CLAUDE_SESSION_ID}.yaml" <<'RESPEAK_EOF'
+   "${CLAUDE_PLUGIN_ROOT}/scripts/respeak-py.sh" respeak-measure.py - --fail-on error --config "/tmp/respeak-${CLAUDE_CODE_SESSION_ID}.yaml" <<'RESPEAK_EOF'
    <the narrative, verbatim>
    RESPEAK_EOF
    ```

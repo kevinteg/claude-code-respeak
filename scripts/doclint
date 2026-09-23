@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 """doclint: the doc gate (conventions section 5).
 
 Rules, each a function returning `path: rule: detail` lines:

@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 """hygiene: the public-hygiene scan (conventions section 6, overhaul-r1 section 5).
 
 Scans the tracked files of a repo (`git ls-files -z`) for six pattern groups

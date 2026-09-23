@@ -482,7 +482,6 @@ class CLI(unittest.TestCase):
         self.env.pop("CLAUDE_PROJECT_DIR", None)
         self.env.pop("RESPEAK_CONFIG", None)
         # no session provider leaks in from the session running the suite
-        self.env.pop("CLAUDE_SESSION_ID", None)
         self.env.pop("CLAUDE_CODE_SESSION_ID", None)
         self.env["XDG_STATE_HOME"] = os.path.join(self.fx.root, "state")
         for k in list(self.env):
