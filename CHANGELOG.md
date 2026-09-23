@@ -18,6 +18,11 @@ Versions follow `.claude-plugin/plugin.json`. Dates are commit dates.
   `XDG_STATE_HOME`. A file the gate cannot judge exits 3 and counts as an
   error. The failure: a folder file, an ignored local file, the
   environment, or the session provider could turn the check green.
+- `scripts/readme-fresh.sh` runs `respeak-verify-edit.py` over the source
+  and the README once the hashes match, and `--stamp` refuses a README
+  the verifier rejects. A stamp without its source is stale, and a source
+  over 24,576 bytes is its own verdict. The failure: a README edited by
+  hand and re-stamped read fresh, and deleting the source read skipped.
 
 - `scripts/hygiene` and `scripts/doclint` are re-synced to the canonical
   copies (conventions section 6), and the Makefile pins move in the same
