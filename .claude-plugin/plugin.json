@@ -2,7 +2,7 @@
   "name": "respeak",
   "displayName": "Respeak",
   "description": "Two-lane communication for agent swarms: an efficient machine-facing shorthand lexicon for long-running sessions, plus a translator agent that renders human-facing narratives (ELI5, BLUF, technical) tuned by a layered tone configuration: plugin defaults, user (~/.claude/respeak), project (.claude/respeak), and per-folder .respeak.yaml files, nearest wins. Session overrides (/respeak:off, /respeak:on, RESPEAK_HOOKS, RESPEAK_GATE) silence or force the hooks for one session without editing any file.",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "license": "MIT",
   "author": {
     "name": "Kevin Tegtmeier"

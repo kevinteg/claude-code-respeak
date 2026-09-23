@@ -27,7 +27,7 @@ check() {
 
 hook_json_for() {
   # $1 = file path -> {"tool_input": {"file_path": "..."}}
-  python3 -c 'import json, sys; print(json.dumps({"tool_input": {"file_path": sys.argv[1]}}))' "$1"
+  "${PYTHON:-python3}" -c 'import json, sys; print(json.dumps({"tool_input": {"file_path": sys.argv[1]}}))' "$1"
 }
 
 run_gate() {
@@ -284,7 +284,7 @@ check "user file under \$HOME is never discovered as a project file (exit 0)" 0 
 
 edit_json_for() {
   # $1 = file path, $2 = old_string, $3 = new_string -> an Edit hook event
-  python3 -c 'import json, sys; print(json.dumps({"tool_name": "Edit", "tool_input": {"file_path": sys.argv[1], "old_string": sys.argv[2], "new_string": sys.argv[3]}}))' "$1" "$2" "$3"
+  "${PYTHON:-python3}" -c 'import json, sys; print(json.dumps({"tool_name": "Edit", "tool_input": {"file_path": sys.argv[1], "old_string": sys.argv[2], "new_string": sys.argv[3]}}))' "$1" "$2" "$3"
 }
 
 run_gate_event() {

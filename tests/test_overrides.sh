@@ -31,7 +31,7 @@ unset RESPEAK_HOOKS RESPEAK_GATE CLAUDE_SESSION_ID CLAUDE_PLUGIN_OPTION_AUTO_NAR
 MARKERS="$RESPEAK_CACHE_DIR/session"
 
 # ----- hooks.json pins its events -------------------------------------------------
-out="$(python3 - "$REPO_ROOT/hooks/hooks.json" <<'PY'
+out="$("${PYTHON:-python3}" - "$REPO_ROOT/hooks/hooks.json" <<'PY'
 import json, sys
 h = json.load(open(sys.argv[1]))["hooks"]
 print("events=" + ",".join(sorted(h)))
@@ -123,7 +123,7 @@ printf 'version: 1\nterms: []\n' > "$on/.claude/respeak/lexicon.yaml"
 out="$(cd "$on" && printf '{"session_id": "S1"}' | bash "$LEXSTAT")"
 check_out "session-start: a respeak project gets the status" 'with 0 ratified terms' "$out"
 check_out "session-start: ...naming the session commands" '/respeak:off' "$out"
-out="$(cd "$on" && printf '{"session_id": "S1"}' | bash "$LEXSTAT" | python3 -c 'import json,sys; json.load(sys.stdin); print("json-ok")')"
+out="$(cd "$on" && printf '{"session_id": "S1"}' | bash "$LEXSTAT" | "${PYTHON:-python3}" -c 'import json,sys; json.load(sys.stdin); print("json-ok")')"
 check_out "session-start: output is valid hook JSON" 'json-ok' "$out"
 out="$(cd "$on" && printf '{"session_id": "S1"}' | RESPEAK_HOOKS=off bash "$LEXSTAT")"
 check_out "session-start: RESPEAK_HOOKS=off silences it" '' "$out"

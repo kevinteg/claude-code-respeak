@@ -23,9 +23,9 @@ gave up the compression.
 ## What respeak does
 
 Respeak splits the traffic into two lanes and joins them with a feedback
-loop. The research found tools that compress (Caveman, LLMLingua) and tools
-that narrate (PagerDuty Advance, LangSmith Insights). One protocol has the
-right economics (Oxford's Agora), but none close the loop:
+loop. The research found tools that compress (Caveman, LLMLingua), tools
+that narrate (PagerDuty Advance, LangSmith Insights), and one protocol with
+the right economics (Oxford's Agora), but none that close the loop:
 [`research/synthesis/solutions-and-media.md`](/research/synthesis/solutions-and-media.md).
 
 The **machine lane**: agents may use shorthand *ratified* in a lexicon file
@@ -45,12 +45,11 @@ modes:
 | `bluf` | Sentence one is the result, decision, or ask, with owner and deadline. A manager can forward it unedited. |
 | `technical` | Conclusion first, then evidence as `file:line`, then open questions. Technical readers get no fluff; they resent it most. |
 
-Every mode passes the same style gates. The corpus bans 234 phrases across
-22 categories (AI tells, from `delve` to `load-bearing`), each with a
-severity. 60 replacement rules also apply. Sentence and paragraph budgets
-come from Simplified Technical English and plain-language standards. Tone
-axes map to behavior tables. A config field with no observable behavior is
-deleted.
+Every mode passes the same style gates: 234 banned phrases across 22
+categories (AI tells, from `delve` to `load-bearing`), each with a severity;
+60 replacement rules; sentence and paragraph budgets from Simplified
+Technical English and plain-language standards; tone axes as behavior
+tables. A config field with no observable behavior is deleted.
 
 The **loop**: while translating, the agent files proposals for unratified
 shorthand it had to decode, preferring the variant closest to plain English.
@@ -104,11 +103,11 @@ python3 scripts/respeak-measure.py path/to/doc.md
 
 **The gate hook** (`scripts/respeak-gate.sh`) is a `PostToolUse` hook on
 `Write|Edit` (`hooks/hooks.json`). It measures each Markdown file a tool
-call wrote and blocks a failing report with exit code 2. Claude Code
-returns that code to the model as a correctable error. Setup problems never
-block. It is **opt-in per project**: only the project layer sets
-`gate.enabled: true`. `gate.block_on: introduced` blocks only on hits the
-write added; `block_on: any` judges the whole file.
+call wrote and blocks a failing report with exit code 2, which Claude Code
+returns to the model as a correctable error. Setup problems never block.
+It is **opt-in per project**: only the project layer sets `gate.enabled: true`.
+`gate.block_on: introduced` blocks only on hits the write added;
+`block_on: any` judges the whole file.
 
 ```yaml
 gate:
@@ -121,14 +120,14 @@ gate:
 ```
 
 **The scanner** counts prose only: code, blockquotes, front matter, HTML
-comments, and URLs are dropped. Each list item or table row is its own
+comments, and URLs are dropped, and each list item or table row is its own
 unit. `--fail-on {none,error,warn}` sets the exit; `--baseline BASE` reports
 `[new N, pre-existing M]` per rule; `--config` carries the project's
 `style.budgets` and `gate.allow`.
 
 **Exceptions and allow.** A corpus entry's `exceptions:` regexes ship with
-the corpus (the `the spine` rule exempts `spine switch`). `gate.allow`
-skips a rule for one project, as a stopgap.
+the corpus (the `the spine` rule exempts `spine switch`); `gate.allow` skips
+a rule for one project, as a stopgap.
 
 **Verify-then-relay.** The `respeak:respeak` skill gates the agent's output
 and sends failures back for up to 2 rewrites. `scripts/respeak-render.sh`
@@ -231,9 +230,8 @@ Disabling the plugin is `claude plugin disable respeak@claude-code-respeak`.
 /respeak:report bug "gate blocks .mdx"  # kind and title preset
 ```
 
-It files a GitHub issue with `gh`, including an environment footer and a
-privacy pass you confirm; project files attach only with
-`--include-content`.
+It files a GitHub issue with `gh`, with an environment footer and a privacy
+pass you confirm; project files attach only with `--include-content`.
 
 ## The knobs
 
