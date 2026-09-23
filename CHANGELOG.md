@@ -42,6 +42,10 @@ names the failure behind it.
   canonical copies in `claude-code-session` again. Before this, both had
   drifted from them in their first line, and nothing noticed: `make hygiene`
   now checks their sha256 pins before it scans.
+- `scripts/doclint` carries the canonical copy's own ceiling for
+  `design/conventions*.md`, 8,192 bytes, and its pin moves with it. Before
+  this, the copy here checked those files against the 6,144-byte record
+  ceiling and differed from the canonical copy by that one rule.
 
 ## 0.6.0 (2026-09-21)
 

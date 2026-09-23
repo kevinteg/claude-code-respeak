@@ -26,6 +26,7 @@ import sys
 CHARTER_CEILING = 4096
 PACKET_CEILING = 9216
 RECORD_CEILING = 6144
+CONVENTIONS_CEILING = 8192
 CHARTER_ROWS = ("goal", "budget", "pin", "window", "agents")
 CHARTER_PARTS = ("## Done-ness", "## Handover", "## Next act")
 CHARTER_TITLE = re.compile(r"^# Sitting \d{4}-\d{2}-\d{2}-\d+: .+, .+$")
@@ -121,10 +122,15 @@ def check_packets(repo, paths):
 def check_sizes(repo, paths):
     out = []
     for path in paths:
-        if match(path, "design/research*.md") or match(path, "design/conventions*.md"):
-            size = len(read(repo, path))
-            if size >= RECORD_CEILING:
-                out.append("%s: size: %d bytes, ceiling %d" % (path, size, RECORD_CEILING))
+        if match(path, "design/conventions*.md"):
+            ceiling = CONVENTIONS_CEILING
+        elif match(path, "design/research*.md"):
+            ceiling = RECORD_CEILING
+        else:
+            continue
+        size = len(read(repo, path))
+        if size >= ceiling:
+            out.append("%s: size: %d bytes, ceiling %d" % (path, size, ceiling))
     return out
 
 
