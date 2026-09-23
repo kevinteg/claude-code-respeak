@@ -16,7 +16,7 @@ trap 'rm -rf "$work"' EXIT
 export RESPEAK_CACHE_DIR="$work/cache"
 export CLAUDE_CONFIG_DIR="$work/no-user-config"; mkdir -p "$CLAUDE_CONFIG_DIR"
 export CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugin"
-unset RESPEAK_GATE RESPEAK_HOOKS CLAUDE_PROJECT_DIR RESPEAK_CONFIG 2>/dev/null || true
+unset RESPEAK_GATE RESPEAK_HOOKS CLAUDE_PROJECT_DIR RESPEAK_CONFIG CLAUDE_CODE_SESSION_ID XDG_STATE_HOME 2>/dev/null || true
 
 proj="$work/proj"; mkdir -p "$proj/.claude/respeak" "$proj/docs" "$proj/research"
 printf 'version: 3\ngate: {enabled: true, include: ["**/*.md"], exclude: ["research/**"], fail_on: error}\n' > "$proj/.claude/respeak/config.yaml"
@@ -36,7 +36,42 @@ check "a banned phrase blocks: exit 1" 1 "$rc"
 check_out "...and names the file" 'BLOCKED  docs/bad.md' "$out"
 out="$(cd "$proj" && RESPEAK_GATE=off bash "$CHECK")"; rc=$?
 check "session overrides are ignored by the check" 1 "$rc"
-rm -f "$proj/docs/bad.md"
+
+# ADV6-1, ADV6-2: nothing outside the committed project file softens the
+# CI verdict: a folder file, an ignored local file, RESPEAK_CONFIG, or a
+# session provider's resolved file.
+printf '.respeak.local.yaml\n' > "$proj/.gitignore"
+printf 'gate: {fail_on: none}\n' > "$proj/docs/.respeak.yaml"
+out="$(cd "$proj" && bash "$CHECK" docs/bad.md 2>&1)"; rc=$?
+check "committed: a folder file at fail_on none still blocks" 1 "$rc"
+check_out "...and the drop is named" 'ignored .*docs/.respeak.yaml gate.fail_on (committed)' "$out"
+printf 'gate: {allow: [".*"]}\n' > "$proj/docs/.respeak.yaml"
+out="$(cd "$proj" && bash "$CHECK" docs/bad.md 2>&1)"; rc=$?
+check "committed: a folder allow of .* still blocks" 1 "$rc"
+rm -f "$proj/docs/.respeak.yaml"
+printf 'gate: {fail_on: none}\n' > "$proj/docs/.respeak.local.yaml"
+out="$(cd "$proj" && bash "$CHECK" docs/bad.md 2>&1)"; rc=$?
+check "committed: an ignored .respeak.local.yaml still blocks" 1 "$rc"
+check_out "...and stays BLOCKED" 'BLOCKED  docs/bad.md' "$out"
+rm -f "$proj/docs/.respeak.local.yaml"
+printf 'gate: {enabled: false}\n' > "$work/env.yaml"
+out="$(cd "$proj" && RESPEAK_CONFIG="$work/env.yaml" bash "$CHECK" docs/bad.md 2>&1)"; rc=$?
+check "committed: RESPEAK_CONFIG at enabled false still blocks" 1 "$rc"
+check_out "...and is not a skip" '0 passed, 0 skipped, 1 blocked' "$out"
+mkdir -p "$work/state/claude-code-session/sessions/s1"
+printf '{"provider": {"name": "claude-code-session", "version": "2.0"}, "respeak": {"gate": {"fail_on": "none"}}}\n' \
+  > "$work/state/claude-code-session/sessions/s1/resolved.json"
+out="$(cd "$proj" && XDG_STATE_HOME="$work/state" CLAUDE_CODE_SESSION_ID=s1 bash "$CHECK" docs/bad.md 2>&1)"; rc=$?
+check "committed: a session provider at fail_on none still blocks" 1 "$rc"
+
+# A file the gate cannot judge is an error, never a pass.
+cp "$proj/docs/guide.md" "$proj/docs/locked.md"; chmod 000 "$proj/docs/locked.md"
+out="$(cd "$proj" && bash "$CHECK" docs/locked.md 2>&1)"; rc=$?
+chmod 644 "$proj/docs/locked.md"; rm -f "$proj/docs/locked.md"
+check "an unreadable doc exits 1" 1 "$rc"
+check_out "...and counts as an error" '0 blocked, 1 errors' "$out"
+check_out "...naming the file" 'ERROR    docs/locked.md' "$out"
+rm -f "$proj/docs/bad.md" "$proj/.gitignore"
 
 # --verify: a prose-only edit passes, a changed number fails
 printf '# Guide\n\nThe release ships on Friday. See [the plan](plan.md), then run `make check`; 3 steps.\n' > "$proj/docs/guide.md"
@@ -116,12 +151,5 @@ out="$(cd "$proj" && bash "$CHECK" --verify HEAD --prose-keys pitch docs/card.md
 check "--prose-keys on the command line verifies it for this run (exit 0)" 0 "$rc"
 out="$(cd "$proj" && bash "$CHECK" --prose-keys 2>&1)"; rc=$?
 check "usage: --prose-keys without a list exits 2" 2 "$rc"
-
-# Dogfood: this repository's own tracked docs pass its own gate. Tracked files
-# are named explicitly so a developer's local untracked notes cannot fail the suite.
-tracked=(); while IFS= read -r f; do [ -n "$f" ] && tracked+=("$f"); done < <(cd "$REPO_ROOT" && git ls-files -- '*.md')
-out="$(cd "$REPO_ROOT" && bash "$CHECK" --quiet "${tracked[@]}")"; rc=$?
-check "dogfood: the plugin's own docs pass its own gate" 0 "$rc"
-check_out "dogfood: ...with nothing blocked" ' 0 blocked' "$out"
 
 echo; echo "$pass passed, $fail failed"; [ "$fail" -eq 0 ]

@@ -3,7 +3,11 @@
 #
 #   PostToolUse hook (hooks/hooks.json, matcher Write|Edit): reads the hook
 #     JSON on stdin and gates tool_input.file_path.
-#   CLI / CI:  respeak-gate.sh --file <path>   gates one file the same way.
+#   CLI / CI:  respeak-gate.sh --file <path> [--committed] [--baseline-ref R]
+#     gates one file the same way. --committed is the CI verdict: every
+#     gate.* key comes from the plugin defaults and the committed project
+#     file (its scopes included), each key dropped from another layer is
+#     named on stderr, and a setup failure is exit 3, never an allow.
 #
 # It runs respeak-measure.py against a Markdown file (.md .markdown .mdx —
 # the resolver's gate decision uses the same list) and blocks on a failing
@@ -52,6 +56,14 @@
 #          additionalContext.
 # Exit 2 = block; stderr carries the measure report, which Claude Code feeds
 #          back to the model as the error to fix. In CI, `|| exit 1` on it.
+# Bounds, so a write never waits on the gate past the hook's 20 s: a file
+# over RESPEAK_GATE_MAX_BYTES (default 2097152) blocks with "too large to
+# gate", and measure runs under respeak-deadline.sh for RESPEAK_GATE_DEADLINE
+# seconds (default 15); a measure past its deadline is a setup failure.
+#
+# Exit 3 = --committed only: no verdict (no python, a resolver failure, a
+#          measure setup error); stderr names the reason. The CI side
+#          refuses to guess where the hook fails open.
 #
 # bash 3.2 compatible (macOS default).
 set -u
@@ -63,14 +75,17 @@ RESPEAK_PY=""; RESPEAK_PY_STD=""
 
 trace() { [ "${RESPEAK_GATE_TRACE:-0}" = "1" ] && echo "respeak gate: $*" >&2; return 0; }
 
-file_path=""; session_id=""; cli_mode=0; has_edit=0; baseline_ref=""; HOOK_JSON=""
+file_path=""; session_id=""; cli_mode=0; has_edit=0; baseline_ref=""; HOOK_JSON=""; committed=0
 if [ "${1:-}" = "--file" ]; then
   cli_mode=1
   shift
   file_path="${1:-}"
   [ $# -gt 0 ] && shift
   while [ $# -gt 0 ]; do
-    if [ "$1" = "--baseline-ref" ]; then baseline_ref="${2:-}"; shift; fi
+    case "$1" in
+      --baseline-ref) baseline_ref="${2:-}"; shift ;;
+      --committed) committed=1 ;;
+    esac
     shift
   done
 else
@@ -98,6 +113,17 @@ fi
 
 [ -z "$file_path" ] && exit 0
 
+# A setup failure: the hook allows (fails open, as the header promises);
+# --committed has no verdict to give and says so with exit 3.
+no_verdict() {
+  if [ "$committed" -eq 1 ]; then
+    echo "respeak gate: $1; no verdict for $file_path (committed)" >&2
+    exit 3
+  fi
+  trace "$1; allowing $file_path"
+  exit 0
+}
+
 # Session overrides outrank the configuration (see the header).
 force_on=0
 if command -v respeak_override >/dev/null 2>&1; then
@@ -116,12 +142,12 @@ case "$(printf '%s' "$file_path" | tr '[:upper:]' '[:lower:]')" in
   *) exit 0 ;;
 esac
 
-if [ -z "$RESPEAK_PY" ]; then trace "no python3 with PyYAML; allowing $file_path"; exit 0; fi
+[ -n "$RESPEAK_PY" ] || no_verdict "no python3 with PyYAML"
 resolver="$script_dir/respeak-config.py"
 measure="$script_dir/respeak-measure.py"
-if [ ! -f "$resolver" ] || [ ! -f "$measure" ]; then trace "resolver or measure script missing; allowing"; exit 0; fi
+if [ ! -f "$resolver" ] || [ ! -f "$measure" ]; then no_verdict "resolver or measure script missing"; fi
 
-resolved="$(mktemp 2>/dev/null || echo "/tmp/respeak-gate.$$.yaml")"
+resolved="$(mktemp 2>/dev/null)" || { echo "respeak gate: mktemp failed; cannot gate $file_path" >&2; exit 2; }
 baseline=""
 trap 'rm -f "$resolved" ${baseline:+"$baseline"}' EXIT
 
@@ -131,10 +157,12 @@ gate_args=(gate --for "$file_path" --write-config "$resolved")
 [ "$force_on" -eq 1 ] && gate_args+=(--set gate.enabled=true)
 # The payload's session names claude-code-session's resolved file, when there is one.
 [ -n "$session_id" ] && gate_args+=(--session "$session_id")
-decision="$("$RESPEAK_PY" "$resolver" "${gate_args[@]}" 2>/dev/null)" || {
-  trace "resolver failed; allowing $file_path"; exit 0; }
-[ -n "$decision" ] || { trace "resolver returned nothing; allowing $file_path"; exit 0; }
+[ "$committed" -eq 1 ] && gate_args+=(--committed)
+decision="$("$RESPEAK_PY" "$resolver" "${gate_args[@]}" 2>/dev/null)" || no_verdict "resolver failed"
+[ -n "$decision" ] || no_verdict "resolver returned nothing"
 
+# Line 1 is the verdict; under --committed, each later line names one
+# gate key a non-committed layer tried to set.
 verdict="$(printf '%s' "$decision" | "$RESPEAK_PY" -c '
 import json, sys
 try:
@@ -145,12 +173,32 @@ fail_on = d.get("fail_on") if d.get("fail_on") in ("none", "warn", "error") else
 block_on = d.get("block_on") if d.get("block_on") in ("introduced", "any") else "introduced"
 print(("1" if d.get("applies") else "0") + " " + fail_on + " " + block_on + " "
       + (d.get("reason") or "").replace(" ", "_"))
+for x in d.get("dropped") or []:
+    layer, _, key = str(x).rpartition(": ")
+    print("respeak gate: ignored %s %s (committed)" % (layer, key))
 ' 2>/dev/null)"
+[ -n "$verdict" ] || no_verdict "could not read the resolver output"
+drops="$(printf '%s\n' "$verdict" | sed '1d')"
+verdict="$(printf '%s\n' "$verdict" | sed -n '1p')"
+[ -n "$drops" ] && printf '%s\n' "$drops" >&2
+case "$verdict" in *resolver-output-unparseable) no_verdict "resolver output unparseable" ;; esac
 applies="${verdict%% *}"; rest="${verdict#* }"
 fail_on="${rest%% *}"; rest="${rest#* }"
 block_on="${rest%% *}"; reason="${rest#* }"
 
 if [ "${applies:-0}" != "1" ]; then trace "not applicable to $file_path (${reason:-?})"; exit 0; fi
+
+# Fail early: a file too large to measure inside the hook's timeout blocks
+# instead of passing unmeasured when the hook is killed.
+max_bytes="${RESPEAK_GATE_MAX_BYTES:-2097152}"
+case "$max_bytes" in ''|*[!0-9]*) max_bytes=2097152 ;; esac
+size="$(wc -c < "$file_path" 2>/dev/null | tr -d ' ')"
+if [ -n "$size" ] && [ "$size" -gt "$max_bytes" ]; then
+  echo "respeak gate: $file_path is too large to gate ($size bytes, over RESPEAK_GATE_MAX_BYTES=$max_bytes); split it or exclude it in gate.exclude" >&2
+  exit 2
+fi
+deadline="${RESPEAK_GATE_DEADLINE:-15}"
+case "$deadline" in ''|*[!0-9]*|0) deadline=15 ;; esac
 
 args=("$file_path" --fail-on "${fail_on:-error}" --config "$resolved")
 plugin_root="${CLAUDE_PLUGIN_ROOT:-}"
@@ -167,7 +215,7 @@ want_baseline=0
 [ "$cli_mode" -eq 0 ] && [ "${block_on:-introduced}" = "introduced" ] && want_baseline=1
 [ "$cli_mode" -eq 1 ] && [ -n "$baseline_ref" ] && want_baseline=1
 if [ "$want_baseline" -eq 1 ]; then
-  baseline="$(mktemp 2>/dev/null || echo "/tmp/respeak-gate.$$.base")"
+  baseline="$(mktemp 2>/dev/null)" || { echo "respeak gate: mktemp failed; cannot gate $file_path" >&2; exit 2; }
   baseline_from=""
   ref="${baseline_ref:-HEAD}"
   # `-C <dir>` with a `./<name>` path resolves the file inside whatever
@@ -208,8 +256,9 @@ with open(sys.argv[2], "w", encoding="utf-8") as f:
   fi
 fi
 
-report="$("$RESPEAK_PY" "$measure" "${args[@]}" 2>&1)"
+report="$(bash "$script_dir/respeak-deadline.sh" "$deadline" "$RESPEAK_PY" "$measure" "${args[@]}" 2>&1 </dev/null)"
 status=$?
+[ "$status" -eq 124 ] && no_verdict "measure passed its ${deadline} s deadline (RESPEAK_GATE_DEADLINE)"
 
 # measure: 0 = passed, 1 = a gate hit at or above --fail-on, 2 = setup/IO
 # error (unreadable doc, corrupt corpus or config). Only 1 is a verdict;
@@ -220,9 +269,8 @@ if [ "$status" -eq 1 ]; then
   exit 2
 fi
 if [ "$status" -ne 0 ]; then
-  trace "measure exited $status (setup error, not a verdict); allowing $file_path"
-  [ "${RESPEAK_GATE_TRACE:-0}" = "1" ] && echo "$report" >&2
-  exit 0
+  { [ "${RESPEAK_GATE_TRACE:-0}" = "1" ] || [ "$committed" -eq 1 ]; } && echo "$report" >&2
+  no_verdict "measure exited $status (setup error, not a verdict)"
 fi
 # A pass with notes: the write introduced nothing, but the document still
 # carries hits it inherited. Blocking on those is the trap block_on exists

@@ -88,6 +88,12 @@ PROJECT_ONLY = (
 PROJECT_KINDS = {"plugin", "project", "project-local", "env", "invocation"}
 CANONICAL_KINDS = ("plugin", "userconfig", "user", "project", "project-local", "invocation")
 
+# The CI verdict (`gate --committed`) reads every gate.* key from these kinds
+# only: the plugin defaults and the committed project file, its scopes
+# included. A folder file, an ignored local file, the user file, the session
+# provider, RESPEAK_CONFIG and --set cannot move it (review ADV6-1, ADV6-2).
+COMMITTED_GATE_KINDS = ("plugin", "project")
+
 # Lists that accumulate across layers instead of replacing.
 APPEND_LISTS = ("gate.allow", "gate.exclude")
 
@@ -340,10 +346,11 @@ def coerce_env(key, raw):
 # --------------------------------------------------------------------------
 
 class Layer:
-    __slots__ = ("kind", "label", "path", "data", "base", "present")
+    __slots__ = ("kind", "label", "path", "data", "base", "present", "grade")
 
-    def __init__(self, kind, label, path=None, data=None, base=None, present=None):
+    def __init__(self, kind, label, path=None, data=None, base=None, present=None, grade=None):
         self.kind = kind
+        self.grade = grade or kind  # the kind of the file a scope or profile layer came from
         self.label = label
         self.path = path
         self.data = data
@@ -365,6 +372,7 @@ class Resolution:
         self.plugin_root = plugin_root
         self.launch_dir = launch_dir
         self.provider = provider    # the accepted session provider block, or None
+        self.dropped = None         # gate keys --committed dropped, as "<layer>: <key>"
 
     def provider_line(self):
         p = self.provider
@@ -619,11 +627,15 @@ def key_allowed(key, kind):
     return not any(key == p or key.startswith(p + ".") for p in PROJECT_ONLY)
 
 
-def merge(dst, src, prefix, layer, origins, warnings):
+def merge(dst, src, prefix, layer, origins, warnings, dropped=None):
     for k, v in src.items():
         key = "%s.%s" % (prefix, k) if prefix else str(k)
         if not key_allowed(key, layer.kind):
             warnings.append("%s: %s is project-only; ignored" % (layer.label, key))
+            continue
+        if (dropped is not None and layer.grade not in COMMITTED_GATE_KINDS
+                and (key.startswith("gate.") or (key == "gate" and not isinstance(v, dict)))):
+            dropped.append("%s: %s" % (layer.label, key))
             continue
         if key in APPEND_LISTS and isinstance(v, list):
             cur = dst.get(k)
@@ -642,7 +654,7 @@ def merge(dst, src, prefix, layer, origins, warnings):
                 dst[k] = {}
                 for o in [o for o in origins if o == key or o.startswith(key + ".")]:
                     del origins[o]
-            merge(dst[k], v, key, layer, origins, warnings)
+            merge(dst[k], v, key, layer, origins, warnings, dropped)
             continue
         if isinstance(dst.get(k), dict):
             warnings.append("%s: %s is a mapping in a lower layer but %s here; ignored"
@@ -692,7 +704,7 @@ def scope_matches(patterns, layer, target, warnings, idx):
     return False
 
 
-def apply_layer(cfg, origins, layer, data, target, warnings, applied):
+def apply_layer(cfg, origins, layer, data, target, warnings, applied, dropped=None):
     data = dict(data)
     scopes = data.pop("scopes", None)
 
@@ -708,15 +720,16 @@ def apply_layer(cfg, origins, layer, data, target, warnings, applied):
         p = profiles.get(prof) if isinstance(prof, str) else None
         if isinstance(p, dict):
             expanded = {"narrative": {k: v for k, v in p.items() if k in PROFILE_KEYS}}
-            sub = Layer(layer.kind, "%s (profile %s)" % (layer.label, prof), base=layer.base)
-            merge(cfg, expanded, "", sub, origins, warnings)
+            sub = Layer(layer.kind, "%s (profile %s)" % (layer.label, prof), base=layer.base,
+                        grade=layer.grade)
+            merge(cfg, expanded, "", sub, origins, warnings, dropped)
         else:
             warnings.append("%s: narrative.profile %r is not a known profile; ignored" % (layer.label, prof))
             narrative = dict(narrative)
             narrative.pop("profile")
             data["narrative"] = narrative
 
-    merge(cfg, data, "", layer, origins, warnings)
+    merge(cfg, data, "", layer, origins, warnings, dropped)
     applied.append(layer)
 
     if scopes is None:
@@ -740,12 +753,13 @@ def apply_layer(cfg, origins, layer, data, target, warnings, applied):
             overlay.pop("scopes")
         if not scope_matches(paths, layer, target, warnings, i):
             continue
-        sub = Layer("scope", "%s#scopes[%d]" % (layer.label, i), base=layer.base, data=overlay)
-        apply_layer(cfg, origins, sub, overlay, target, warnings, applied)
+        sub = Layer("scope", "%s#scopes[%d]" % (layer.label, i), base=layer.base, data=overlay,
+                    grade=layer.grade)
+        apply_layer(cfg, origins, sub, overlay, target, warnings, applied, dropped)
 
 
 def resolve(target=None, project=None, plugin_root=None, env=None, overrides=None, walk_from=None,
-            launch_dir=None, session_id=None):
+            launch_dir=None, session_id=None, committed=False):
     env = os.environ if env is None else env
     warnings = []
     given = os.path.abspath(os.path.expanduser(target or os.getcwd()))
@@ -763,11 +777,14 @@ def resolve(target=None, project=None, plugin_root=None, env=None, overrides=Non
     if not layers[0].present:
         warnings.append("plugin defaults not found at %s" % layers[0].path)
     config, origins, applied = {}, {}, []
+    dropped = [] if committed else None
     for layer in layers:
         if layer.present:
-            apply_layer(config, origins, layer, layer.data, target, warnings, applied)
-    return Resolution(config, origins, warnings, layers, applied, project, target, plugin_root,
-                      project_how=how, launch_dir=launch_dir, provider=provider)
+            apply_layer(config, origins, layer, layer.data, target, warnings, applied, dropped)
+    res = Resolution(config, origins, warnings, layers, applied, project, target, plugin_root,
+                     project_how=how, launch_dir=launch_dir, provider=provider)
+    res.dropped = dropped
+    return res
 
 
 # --------------------------------------------------------------------------
@@ -1113,6 +1130,9 @@ def main(argv=None):
     p = sub.add_parser("gate", help="decide whether the style gate applies to --for")
     add_common(p)
     p.add_argument("--write-config", default=None, help="also write the resolved config (YAML) here")
+    p.add_argument("--committed", action="store_true",
+                   help="the CI verdict: gate.* keys from the plugin defaults and the project file "
+                        "with its scopes only; every other layer's are dropped and listed in `dropped`")
 
     p = sub.add_parser("validate", help="check config files for shape and policy")
     p.add_argument("files", nargs="+")
@@ -1145,7 +1165,8 @@ def main(argv=None):
         return 2
     res = resolve(target=args.target, project=args.project, plugin_root=args.plugin_root,
                   env=env, overrides=overrides, walk_from=args.walk_from,
-                  launch_dir=args.launch_dir or None, session_id=args.session or None)
+                  launch_dir=args.launch_dir or None, session_id=args.session or None,
+                  committed=getattr(args, "committed", False))
 
     if args.cmd == "resolve":
         if args.format == "yaml":
@@ -1179,6 +1200,9 @@ def main(argv=None):
             with open(args.write_config, "w") as f:
                 yaml.safe_dump(res.config, f, sort_keys=False, default_flow_style=False)
         decision["warnings"] = res.warnings
+        if args.committed:
+            decision["committed"] = True
+            decision["dropped"] = res.dropped
         print(json.dumps(decision))
         return 0
     return 2

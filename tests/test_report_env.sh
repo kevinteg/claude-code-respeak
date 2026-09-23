@@ -22,6 +22,10 @@ jget() { # $1 = json, $2 = key -> value, or "null"
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
+# A fake `claude` first on PATH for every case: the suite never runs the real CLI.
+mkdir -p "$work/bin"
+printf '#!/bin/sh\necho "9.8.7 (Claude Code)"\n' > "$work/bin/claude"; chmod +x "$work/bin/claude"
+export PATH="$work/bin:$PATH"
 
 # 1. Real plugin: valid JSON, owner_repo from the manifest, version matches.
 out="$(bash "$ENV_SH")"; rc=$?
@@ -32,6 +36,7 @@ check "owner_repo parsed from the https URL" "$want_repo" "$(jget "$out" owner_r
 want_version="$("${PYTHON:-python3}" -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$REPO_ROOT/plugin/.claude-plugin/plugin.json")"
 check "version matches plugin.json" "$want_version" "$(jget "$out" version)"
 check "plugin_root is the repo" "$REPO_ROOT/plugin" "$(jget "$out" plugin_root)"
+check "claude_version comes from the fake on PATH" "9.8.7 (Claude Code)" "$(jget "$out" claude_version)"
 
 # 2. Footer form.
 footer="$(bash "$ENV_SH" --footer)"

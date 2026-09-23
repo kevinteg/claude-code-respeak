@@ -4,6 +4,48 @@ Versions follow `.claude-plugin/plugin.json`. Dates are commit dates.
 
 ## Unreleased
 
+- Six notes from review R6 move into the files they govern. `CLAUDE.md`
+  says a change under about ten lines is gated, not passed; README links
+  are `/`-rooted; the README source has a 24,576-byte ceiling.
+  config-layers records that Apple's python stays a hook-time candidate
+  and names `--committed` for CI. The Makefile names where the pinned
+  scripts are copied from, and the renderer says why the icon line sits
+  under the title. The failure: these rules lived only in sitting notes.
+- `respeak-check.sh` is hermetic. It gates each file with
+  `respeak-gate.sh --committed`, which reads `gate.*` from the plugin
+  defaults and the committed project file only and names each key it
+  dropped. It also unsets `RESPEAK_CONFIG`, `CLAUDE_CODE_SESSION_ID` and
+  `XDG_STATE_HOME`. A file the gate cannot judge exits 3 and counts as an
+  error. The failure: a folder file, an ignored local file, the
+  environment, or the session provider could turn the check green.
+- `scripts/readme-fresh.sh` runs `respeak-verify-edit.py` over the source
+  and the README once the hashes match, and `--stamp` refuses a README
+  the verifier rejects. A stamp without its source is stale, and a source
+  over 24,576 bytes is its own verdict. The failure: a README edited by
+  hand and re-stamped read fresh, and deleting the source read skipped.
+- Every spawn has a bound. The new `respeak-deadline.sh` runs a command in
+  its own process group and kills the whole group at its wall clock (exit
+  124). The renderer refuses before it starts a runner when
+  `RESPEAK_RENDER_DEPTH` is set, when the load is over `RESPEAK_LOAD_MAX`,
+  or when `--max-rounds` is not 1 to 5. The runner gets `--tools` and
+  `--max-turns` and a 600 s wall clock. `make readme` calls
+  `scripts/readme-render.sh`, which writes `README.md` only after the
+  verifier passes. The gate blocks a file over 2 MB as too large to gate
+  and gives measure 15 s. `validate` and each suite run under the helper.
+  The failure: a hung runner, a large file, or a render inside a render
+  had no bound, and a failed render was left in `README.md`.
+- The Makefile finds the virtualenv's `python3` by path, with no process,
+  and exports its bin dir first on `PATH`, so no recipe or hook goes
+  through the pyenv shim. `CLAUDE ?= claude` names the CLI that `install`
+  and `validate` run, and `install` exits 2 when it is missing. The
+  failure: the shim's lock stalled every make under load, and the install
+  suite relied on a fake `claude` staying first on `PATH`.
+- The suites stay off the real checkout. `tests/test_check.sh` no longer
+  gates this repository's own docs, because `make doclint` does, and
+  `tests/test_report_env.sh` runs a fake `claude` in every case. The
+  failure: every `make check` scanned the same 36 docs twice and ran the
+  real `claude --version`.
+
 - `scripts/hygiene` and `scripts/doclint` are re-synced to the canonical
   copies (conventions section 6), and the Makefile pins move in the same
   commit. Hygiene no longer checks charters under `history/sittings/` for

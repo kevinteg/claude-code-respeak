@@ -44,7 +44,7 @@ export RESPEAK_CACHE_DIR="$work/cache"   # the suite never reads or rewrites the
 # HOME stays real because PyYAML may live in the interpreter's user site.
 export CLAUDE_CONFIG_DIR="$work/no-user-config"
 mkdir -p "$CLAUDE_CONFIG_DIR"
-unset CLAUDE_PLUGIN_OPTION_DEFAULT_MODE CLAUDE_PLUGIN_OPTION_TECH_LEVEL CLAUDE_PLUGIN_OPTION_AUTO_NARRATIVE RESPEAK_CONFIG 2>/dev/null || true
+unset CLAUDE_PLUGIN_OPTION_DEFAULT_MODE CLAUDE_PLUGIN_OPTION_TECH_LEVEL CLAUDE_PLUGIN_OPTION_AUTO_NARRATIVE RESPEAK_CONFIG CLAUDE_CODE_SESSION_ID XDG_STATE_HOME 2>/dev/null || true
 
 BANNED_TEXT="This design is load-bearing for everything downstream."
 CLEAN_TEXT="The plan uses the cache and finishes in three steps."
@@ -351,6 +351,17 @@ check "--file gates the whole file whatever block_on says (exit 2)" 2 "$?"
 RESPEAK_GATE_TRACE=1 CLAUDE_PROJECT_DIR="$proj_git" CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugin" "$GATE" --file "$proj_git/tracked.md" --baseline-ref HEAD > "$work/gate-cli-ref.out" 2>&1
 check "--file --baseline-ref HEAD measures against the commit (exit 0)" 0 "$?"
 check_grep "...and says what remains" "pre-existing style hit(s) remain" "$work/gate-cli-ref.out"
+
+# --- ADV6-7: fail early on a file too large to measure in the hook's 20 s --
+big="$proj_on/big.md"
+{ echo "# Big"; echo; i=0; while [ $i -lt 60000 ]; do echo "$CLEAN_TEXT"; i=$((i + 1)); done; } > "$big"
+start=$(date +%s)
+run_gate "$proj_on" "$big" "$work/gate-big.out"
+check "a 3 MB file blocks (exit 2)" 2 "$?"
+check_grep "...as too large to gate" "too large to gate" "$work/gate-big.out"
+[ $(( $(date +%s) - start )) -lt 5 ] && { pass=$((pass + 1)); echo "ok   - ...before measure runs"; } \
+  || { fail=$((fail + 1)); echo "FAIL - ...before measure runs (took $(( $(date +%s) - start )) s)"; }
+rm -f "$big"
 
 echo
 echo "$pass passed, $fail failed"

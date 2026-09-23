@@ -436,8 +436,14 @@ the same layers, the same `fail_on`, and the same Markdown-only contract
 the editor session saw. It differs in one way, on purpose: it has no edit
 to measure against, so it asks whether the whole file is clean rather than
 what a write added, whatever `block_on` says. `--baseline-ref REF` asks the
-other question, for a build that gates a branch on what it changed. A
-CI-only file on `RESPEAK_CONFIG` can harden the verdict for the build. Use
+other question, for a build that gates a branch on what it changed.
+`--committed` reads every `gate.*` key from the plugin defaults and the
+committed project file with its scopes only; it drops the same keys from
+every other layer, names each drop on stderr, and exits 3 when it cannot
+reach a verdict. `respeak-check.sh` always passes it, so a folder file, an
+ignored local file, `RESPEAK_CONFIG`, or the session provider cannot turn
+that check green. Without `--committed`, a CI-only file on `RESPEAK_CONFIG`
+can harden the verdict for the build. Use
 `find`, not `**`: bash 3.2 (the macOS default)
 and GitHub Actions' default shell have no `globstar`, so `wiki/**/*.md`
 silently matches one directory level there.
@@ -553,6 +559,10 @@ in `config.local.yaml`.
   `RESPEAK_PYTHON` overrides) and parse hook JSON with the same one. A
   `python3` shim without PyYAML, or one that exits 127, used to make every
   hook a silent no-op.
+- **Apple's python stays a hook-time candidate.** On a Mac without pyenv,
+  `/usr/bin/python3` with PyYAML may be the only interpreter the hooks can
+  find, so `respeak-python.sh` keeps it in its list. The repository's checks
+  never use it: the Makefile runs the virtualenv `.python-version` declares.
 - **A session override can only silence a hook or run the gate.** Markers
   live in the same trust-bounded cache directory as the interpreter cache,
   hold one of three fixed words, are ignored with any other content, and
