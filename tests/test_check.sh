@@ -152,11 +152,4 @@ check "--prose-keys on the command line verifies it for this run (exit 0)" 0 "$r
 out="$(cd "$proj" && bash "$CHECK" --prose-keys 2>&1)"; rc=$?
 check "usage: --prose-keys without a list exits 2" 2 "$rc"
 
-# Dogfood: this repository's own tracked docs pass its own gate. Tracked files
-# are named explicitly so a developer's local untracked notes cannot fail the suite.
-tracked=(); while IFS= read -r f; do [ -n "$f" ] && tracked+=("$f"); done < <(cd "$REPO_ROOT" && git ls-files -- '*.md')
-out="$(cd "$REPO_ROOT" && bash "$CHECK" --quiet "${tracked[@]}")"; rc=$?
-check "dogfood: the plugin's own docs pass its own gate" 0 "$rc"
-check_out "dogfood: ...with nothing blocked" ' 0 blocked' "$out"
-
 echo; echo "$pass passed, $fail failed"; [ "$fail" -eq 0 ]

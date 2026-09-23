@@ -40,6 +40,11 @@ Versions follow `.claude-plugin/plugin.json`. Dates are commit dates.
   and `validate` run, and `install` exits 2 when it is missing. The
   failure: the shim's lock stalled every make under load, and the install
   suite relied on a fake `claude` staying first on `PATH`.
+- The suites stay off the real checkout. `tests/test_check.sh` no longer
+  gates this repository's own docs, because `make doclint` does, and
+  `tests/test_report_env.sh` runs a fake `claude` in every case. The
+  failure: every `make check` scanned the same 36 docs twice and ran the
+  real `claude --version`.
 
 - `scripts/hygiene` and `scripts/doclint` are re-synced to the canonical
   copies (conventions section 6), and the Makefile pins move in the same
