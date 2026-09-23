@@ -54,6 +54,12 @@ names the failure behind it.
   plugin cache, research, tests and history included. A checkout now loads
   with `claude --plugin-dir "$RESPEAK_SRC/plugin"`; paths under
   `${CLAUDE_PLUGIN_ROOT}` do not change.
+- `make doctor` runs `plugin/scripts/respeak-doctor.sh`: one line each for
+  the python and PyYAML, `claude`, the marketplace and its source, the
+  installed and manifest versions, the session provider, and unknown config
+  keys. It exits 2 only when no python3 imports PyYAML. Before this, a hook
+  with no PyYAML python exited 0 without a word, and nothing showed which
+  source or version a session had loaded.
 
 ## 0.6.0 (2026-09-21)
 
