@@ -8,9 +8,14 @@ Rules, each a function returning `path: rule: detail` lines:
               `## Next act`
   packet      design/packets/*.md under 9,216 bytes, the header table's six
               rows (from, pin, wall, may touch, acceptance, budget) and the six
-              sections `## 1.` to `## 6.`
+              sections `## 1.` to `## 6.`; with a `verify` row (the gate's line),
+              no acceptance line runs a whole suite: a command `make check|test`,
+              `go test ./...`, `pytest` with no path argument, or `relay
+              plan|run|gate` without `--rows` (quoted text is not a command; the
+              cell's code spans are its lines, else the cell is one line; rowless
+              packets are grandfathered)
   size        design/research*.md under 6,144 bytes, design/conventions*.md
-              under 8,192
+              under 8,192, design/review-*.md under 9,216
   plugin      every plugin/commands/*.md under 31 lines with `description` and
               `allowed-tools` in its frontmatter; every plugin/agents/*.md with
               `name`, `description`, `model` and `tools`; every
@@ -18,7 +23,8 @@ Rules, each a function returning `path: rule: detail` lines:
               chars, a `>` or `|` block joined by spaces) and `allowed-tools`,
               its body under 501 lines; a plugin's verb set is its own
   link        every relative markdown link in a .md file resolves
-  next        no file named NEXT
+  next        no file named NEXT, except history/sessions/NEXT (the relay's safe
+              next phase, tracked or not)
 
 Files are the repo's tracked and untracked-not-ignored ones.
 Usage: doclint [--repo DIR]. Exit 0 when clean, 2 on a refusal, 1 on usage or
@@ -49,6 +55,16 @@ PACKET_SECTIONS = ("What the source says", "Rulings", "Interfaces",
 LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
 FENCE = re.compile(r"^\s*(```|~~~)")
 CODE_SPAN = re.compile(r"`[^`]*`")
+CELL_SPLIT = re.compile(r"(?<!\\)\|")
+QUOTED = re.compile(r"'[^']*'|\"(?:[^\"\\]|\\.)*\"")
+COMMAND_SPLIT = re.compile(r"&&|\|\||(?<![<>&])&(?![>&])|[;|()`\n]|\$\(")
+ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+# pytest options that take a value, so the value is not a path
+PYTEST_VALUED = {"-k", "-m", "-p", "-c", "-o", "-W", "--rootdir", "--confcutdir",
+                 "--deselect", "--ignore", "--ignore-glob", "--basetemp", "--maxfail",
+                 "--tb", "-r", "--durations", "--junitxml", "--log-level"}
+SUITE = "acceptance runs a whole suite"
+NEXT_EXEMPT = "history/sessions/NEXT"
 
 
 class UsageError(Exception):
@@ -90,6 +106,64 @@ def table_rows(lines):
     return [r for r in rows[1:] if not set(r) <= set("-: ")]
 
 
+def table_cells(lines):
+    """First-column key to second cell, over the first markdown table (`\\|` kept)."""
+    cells, seen = {}, False
+    for line in lines:
+        if line.startswith("|"):
+            seen = True
+            parts = [c.strip() for c in CELL_SPLIT.split(line.strip().strip("|"))]
+            cells.setdefault(parts[0], parts[1] if len(parts) > 1 else "")
+        elif seen:
+            break
+    return cells
+
+
+def runs_suite(command):
+    """True when one shell command (quotes already blanked) runs a whole suite."""
+    words = command.split()
+    while words and ASSIGNMENT.match(words[0]):
+        words = words[1:]
+    if not words:
+        return False
+    head = os.path.basename(words[0])
+    if head == "make":
+        return any(re.match(r"^(check|test)\b", w) for w in words[1:])
+    if head == "go":
+        return words[1:2] == ["test"] and "./..." in words[2:]
+    if head == "relay":
+        return (words[1:2] in (["plan"], ["run"], ["gate"])
+                and not any(w.startswith("--rows") for w in words))
+    if head == "pytest":
+        rest = words[1:]
+    elif head.startswith("python") and words[1:3] == ["-m", "pytest"]:
+        rest = words[3:]
+    else:
+        return False
+    skip = False
+    for w in rest:
+        if skip:
+            skip = False
+        elif w in PYTEST_VALUED:
+            skip = True
+        elif not w.startswith("-") and w != "Q" and not re.match(r"^[0-9]*[<>]", w):
+            return False  # a path argument: targeted
+    return True
+
+
+def suite_lines(cell):
+    """The acceptance cell's commands that run a whole suite."""
+    spans = re.findall(r"`([^`]*)`", cell) or [cell]
+    out = []
+    for span in spans:
+        span = QUOTED.sub(" Q ", span.replace("\\|", "|"))
+        for command in COMMAND_SPLIT.split(span):
+            command = command.strip()
+            if runs_suite(command):
+                out.append(command)
+    return out
+
+
 def check_charters(repo, paths):
     out = []
     for path in paths:
@@ -125,6 +199,10 @@ def check_packets(repo, paths):
         for row in PACKET_ROWS:
             if row not in rows:
                 out.append("%s: packet: header row missing: %s" % (path, row))
+        cells = table_cells(lines)
+        if "verify" in cells:
+            for command in suite_lines(cells.get("acceptance", "")):
+                out.append("%s: packet: %s: %s" % (path, SUITE, command))
         for n, title in enumerate(PACKET_SECTIONS, 1):
             prefix = "## %d. %s" % (n, title)
             if not any(l.startswith(prefix) for l in lines):
@@ -139,6 +217,8 @@ def check_sizes(repo, paths):
             ceiling = CONVENTIONS_CEILING
         elif match(path, "design/research*.md"):
             ceiling = RECORD_CEILING
+        elif match(path, "design/review-*.md"):
+            ceiling = PACKET_CEILING
         else:
             continue
         size = len(read(repo, path))
@@ -235,7 +315,7 @@ def check_links(repo, paths):
 
 def check_next(repo, paths):
     return ["%s: next: a NEXT file is present" % p for p in paths
-            if os.path.basename(p) == "NEXT"]
+            if os.path.basename(p) == "NEXT" and p != NEXT_EXEMPT]
 
 
 RULES = (check_charters, check_packets, check_sizes, check_plugin, check_links,

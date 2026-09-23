@@ -19,14 +19,20 @@ plugin/docs/*: sibling
 examples/layered/*: sibling
 examples/layered/home/.claude/respeak/*: sibling
 examples/layered/project/.claude/respeak/*: sibling
+# The folder fixtures' file name is the plugin's own (`.respeak.yaml`); the scan reads path names.
+examples/layered/project/docs/api/*: sibling
+examples/layered/project/docs/exec/*: sibling
+examples/layered/project/notes/*: sibling
 plugin/hooks/*: sibling
-research/sources/*: sibling
+research/sources/*: sibling,email
 research/synthesis/*: sibling
 scripts/*: sibling
-plugin/scripts/*: sibling
+plugin/scripts/*: sibling,email
 plugin/skills/*/*: sibling
-tests/*: sibling
+tests/*: sibling,lan,email
 .hygiene-allow: sibling
+# email: a comment's SSH URL form (plugin/scripts), fixture addresses (tests), a quoted
+# example address (research/sources). lan: the fixture's `.local(` method (tests).
 # person: the author (LICENSE, the manifests' author and owner) and the repo URL.
 LICENSE: person
 README.md: sibling,person

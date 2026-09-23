@@ -2,14 +2,18 @@
 """hygiene: the public-hygiene scan (conventions section 6, overhaul-r1 section 5).
 
 Scans the working tree of a repo (`git ls-files -co --exclude-standard`: the
-tracked and untracked-not-ignored regular files) for six pattern groups and
-prints counts only, never a matched line: an uncommitted file is scanned before
-its commit, an ignored one never. A file is skipped when its first
-8 KB hold a NUL (binary). `.hygiene-allow` lists exceptions, one per line:
-`<path-glob>: <group>[,<group>]`, `#` comments; a glob's `*` stays inside one
-path segment. Under `history/sittings/` (charters are records) the `person`
-and `sibling` groups are not evaluated; `home`, `lan`, `domain` and `private`
-still scan there.
+tracked and untracked-not-ignored regular files and symlinks) for eight pattern
+groups and prints counts only, never a matched line: an uncommitted file is
+scanned before its commit, an ignored one never. Each file's path is a scanned
+line of that file, for every group; a symlink is its path and its target
+(`readlink`), never the target's content. A file whose first 8 KB hold a NUL is
+binary: it is scanned for the `home` group only, over its printable runs of 8 or
+more bytes (as `strings` would), one line per run. `.hygiene-allow` lists
+exceptions, one per line: `<path-glob>: <group>[,<group>]`, `#` comments; a
+glob's `*` stays inside one path segment; a `secret` exception outside
+`tests/fixtures/` is a usage error. Under `history/sittings/` (charters are
+records) the `person` and `sibling` groups are not evaluated; the rest still
+scan there. `secret` is matched case-sensitively, the others ignore case.
 
 Usage: hygiene [--json] [--allow FILE] [--repo DIR]
 Exit 0 when no hit lies outside the allowlist, 2 when one does, 1 on usage or
@@ -26,19 +30,30 @@ import sys
 
 GROUPS = (
     ("home", (r"/Users/[a-z]+", r"~/cod[e]/")),
-    ("lan", (r"192\.168\.", r"\b10\.\d+\.\d+\.\d+")),
+    ("lan", (r"192\.168\.", r"\b10\.\d+\.\d+\.\d+",
+             r"\b172\.(?:1[6-9]|2\d|3[01])\.\d+\.\d+",
+             r"\b[a-z0-9-]+\.loca[l](?![\w.-])")),
     ("domain", (r"konsume\.org", r"tegtme[i]er\.me")),
     ("private", (r"hom[e]-tech", r"macbas[e]", r"homeassis[t]", r"photoli[b]",
                  r"photos-ka[l]", r"photos-record[s]", r"anonymous-tec[h]")),
     ("person", (r"kev[i]nteg", r"kev[i]n", r"tegtme[i]er", r"anton\s+yamo[s]")),
     ("sibling", (r"syrvi[s]", r"respea[k]", r"decision[s]",
                  r"claude-code-sessio[n]", r"claude-code-agent[s]")),
+    ("secret", (r"sk-an[t]-[A-Za-z0-9_-]+", r"gh[p]_[A-Za-z0-9]{20,}",
+                r"github_pa[t]_[A-Za-z0-9_]{20,}", r"AGE-SECRET-KE[Y]-1[0-9A-Z]{20,}",
+                r"\bAKI[A][0-9A-Z]{16}\b", r"BEGI[N] [A-Z0-9 ]*PRIVATE KEY")),
+    ("email", (r"\b[A-Za-z0-9._%+-]+[@][A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}\b",)),
 )
-COMPILED = [(name, re.compile("|".join(pats), re.IGNORECASE)) for name, pats in GROUPS]
+CASE_SENSITIVE = ("secret",)
+COMPILED = [(name, re.compile("|".join(pats), 0 if name in CASE_SENSITIVE else re.IGNORECASE))
+            for name, pats in GROUPS]
 GROUP_NAMES = [name for name, _ in GROUPS]
 BINARY_PROBE = 8192
 RECORDS = ("history/sittings/",)
 RECORDS_SKIP = ("person", "sibling")
+BINARY_GROUPS = ("home",)
+PRINTABLE_RUN = re.compile(rb"[\x20-\x7e\t]{8,}")
+SECRET_ALLOW_ROOT = ["tests", "fixtures"]
 
 
 class UsageError(Exception):
@@ -79,9 +94,14 @@ def load_allow(path, required):
                 continue
             glob, sep, groups = line.rpartition(":")
             names = {g.strip() for g in groups.split(",") if g.strip()}
-            if not sep or not glob.strip() or not names or names - set(GROUP_NAMES):
+            glob = glob.strip()
+            if not sep or not glob or not names or names - set(GROUP_NAMES):
                 raise UsageError("%s:%d: bad entry" % (path, n))
-            entries.append((glob.strip(), names))
+            parts = glob.split("/")
+            if "secret" in names and (parts[:2] != SECRET_ALLOW_ROOT or len(parts) < 3):
+                raise UsageError("%s:%d: a secret exception lies only under tests/fixtures/"
+                                 % (path, n))
+            entries.append((glob, names))
     return entries
 
 
@@ -103,30 +123,35 @@ def files(repo):
     except (OSError, subprocess.CalledProcessError) as exc:
         raise UsageError("git ls-files failed in %s: %s" % (repo, exc))
     paths = {p for p in out.decode("utf-8", "surrogateescape").split("\0") if p}
-    return sorted(p for p in paths if os.path.isfile(os.path.join(repo, p)))
+    return sorted(p for p in paths if os.path.islink(os.path.join(repo, p))
+                  or os.path.isfile(os.path.join(repo, p)))
 
 
-def read_text(full):
-    """The file's text, or None when it is not a regular text file."""
-    if os.path.islink(full) or not os.path.isfile(full):
-        return None
+def read_lines(path, full):
+    """[(line, groups)] for one entry: its path, then a symlink's target, a text
+    file's lines, or a binary's printable runs (for BINARY_GROUPS only)."""
+    rows = [(path, GROUP_NAMES)]
+    if os.path.islink(full):
+        target = os.readlink(full)
+        return rows + [(target, GROUP_NAMES)]
     with open(full, "rb") as fh:
         data = fh.read()
     if b"\0" in data[:BINARY_PROBE]:
-        return None
-    return data.decode("utf-8", "replace")
+        return rows + [(m.group().decode("ascii"), BINARY_GROUPS)
+                       for m in PRINTABLE_RUN.finditer(data)]
+    return rows + [(line, GROUP_NAMES)
+                   for line in data.decode("utf-8", "replace").splitlines()]
 
 
 def scan(repo, entries):
     groups = {name: {"lines": 0, "files": 0} for name in GROUP_NAMES}
     outside = []
     for path in files(repo):
-        text = read_text(os.path.join(repo, path))
-        if text is None:
-            continue
         counts = dict.fromkeys(GROUP_NAMES, 0)
-        for line in text.splitlines():
+        for line, names in read_lines(path, os.path.join(repo, path)):
             for name, rx in COMPILED:
+                if name not in names:
+                    continue
                 if name in RECORDS_SKIP and path.startswith(RECORDS):
                     continue
                 if rx.search(line):
