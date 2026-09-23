@@ -1,0 +1,32 @@
+# .hygiene-allow: <path-glob>: <group>[,<group>]; `*` stays inside one path segment.
+# sibling: every hit below is the plugin's own name (`respeak`); no other sibling
+# appears outside design/ and history/. One glob per directory.
+.claude-plugin/*: sibling,person
+.claude/respeak/*: sibling
+.gitignore: sibling
+.python-version: sibling
+CHANGELOG.md: sibling
+CLAUDE.md: sibling
+Makefile: sibling
+agents/*: sibling
+assets/*: sibling
+config/*: sibling
+corpus/*: sibling
+corpus/style/*: sibling
+docs/*: sibling
+examples/layered/*: sibling
+examples/layered/home/.claude/respeak/*: sibling
+examples/layered/project/.claude/respeak/*: sibling
+hooks/*: sibling
+research/sources/*: sibling
+research/synthesis/*: sibling
+scripts/*: sibling
+skills/*/*: sibling
+tests/*: sibling
+.hygiene-allow: sibling
+# person: the author (LICENSE, the manifests' author and owner) and the repo URL.
+LICENSE: person
+README.md: sibling,person
+# The packets and the relay rows name the siblings, the builders' paths and the owner.
+design/packets/*: sibling,home,person
+history/sittings/*.md: sibling,private

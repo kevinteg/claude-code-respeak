@@ -1,0 +1,189 @@
+#!/usr/bin/python3
+"""doclint: the doc gate (conventions section 5).
+
+Rules, each a function returning `path: rule: detail` lines:
+  charter     history/sittings/*.md under 4,096 bytes, in the five-part shape:
+              `# Sitting <date>-<n>: <repo>, <component>`, the table (goal,
+              budget, pin, window, agents), `## Done-ness`, `## Handover`,
+              `## Next act`
+  packet      design/packets/*.md under 9,216 bytes, the header table's six
+              rows (from, pin, wall, may touch, acceptance, budget) and the six
+              sections `## 1.` to `## 6.`
+  size        design/research*.md and design/conventions*.md under 6,144 bytes
+  link        every relative markdown link in a .md file resolves
+  next        no file named NEXT
+
+Files are the repo's tracked and untracked-not-ignored ones.
+Usage: doclint [--repo DIR]. Exit 0 when clean, 2 on a refusal, 1 on usage or
+when git fails.
+"""
+import fnmatch
+import os
+import re
+import subprocess
+import sys
+
+CHARTER_CEILING = 4096
+PACKET_CEILING = 9216
+RECORD_CEILING = 6144
+CHARTER_ROWS = ("goal", "budget", "pin", "window", "agents")
+CHARTER_PARTS = ("## Done-ness", "## Handover", "## Next act")
+CHARTER_TITLE = re.compile(r"^# Sitting \d{4}-\d{2}-\d{2}-\d+: .+, .+$")
+PACKET_ROWS = ("from", "pin", "wall", "may touch", "acceptance", "budget")
+PACKET_SECTIONS = ("What the source says", "Rulings", "Interfaces",
+                   "Findings that name this row", "Forbidden reads", "Report")
+LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
+FENCE = re.compile(r"^\s*(```|~~~)")
+CODE_SPAN = re.compile(r"`[^`]*`")
+
+
+class UsageError(Exception):
+    pass
+
+
+def files(repo):
+    try:
+        out = subprocess.run(
+            ["git", "-C", repo, "ls-files", "-z", "--cached", "--others",
+             "--exclude-standard"], capture_output=True, check=True).stdout
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise UsageError("git ls-files failed in %s: %s" % (repo, exc))
+    paths = {p for p in out.decode("utf-8", "surrogateescape").split("\0") if p}
+    return sorted(p for p in paths if os.path.isfile(os.path.join(repo, p)))
+
+
+def match(path, glob):
+    parts, pats = path.split("/"), glob.split("/")
+    return len(parts) == len(pats) and all(
+        fnmatch.fnmatchcase(p, g) for p, g in zip(parts, pats))
+
+
+def read(repo, path):
+    with open(os.path.join(repo, path), "rb") as fh:
+        return fh.read()
+
+
+def table_rows(lines):
+    """The first-column keys of the first markdown table, header excluded."""
+    rows, seen = [], False
+    for line in lines:
+        if line.startswith("|"):
+            seen = True
+            cells = [c.strip() for c in line.strip().strip("|").split("|")]
+            rows.append(cells[0])
+        elif seen:
+            break
+    return [r for r in rows[1:] if not set(r) <= set("-: ")]
+
+
+def check_charters(repo, paths):
+    out = []
+    for path in paths:
+        if not match(path, "history/sittings/*.md"):
+            continue
+        data = read(repo, path)
+        if len(data) >= CHARTER_CEILING:
+            out.append("%s: charter: %d bytes, ceiling %d" % (path, len(data), CHARTER_CEILING))
+        lines = data.decode("utf-8", "replace").splitlines()
+        if not lines or not CHARTER_TITLE.match(lines[0]):
+            out.append("%s: charter: title is not `# Sitting <date>-<n>: <repo>, <component>`" % path)
+        rows = table_rows(lines)
+        for row in CHARTER_ROWS:
+            if row not in rows:
+                out.append("%s: charter: table row missing: %s" % (path, row))
+        heads = [l.rstrip() for l in lines]
+        for part in CHARTER_PARTS:
+            if part not in heads:
+                out.append("%s: charter: part missing: %s" % (path, part))
+    return out
+
+
+def check_packets(repo, paths):
+    out = []
+    for path in paths:
+        if not match(path, "design/packets/*.md"):
+            continue
+        data = read(repo, path)
+        if len(data) >= PACKET_CEILING:
+            out.append("%s: packet: %d bytes, ceiling %d" % (path, len(data), PACKET_CEILING))
+        lines = data.decode("utf-8", "replace").splitlines()
+        rows = table_rows(lines)
+        for row in PACKET_ROWS:
+            if row not in rows:
+                out.append("%s: packet: header row missing: %s" % (path, row))
+        for n, title in enumerate(PACKET_SECTIONS, 1):
+            prefix = "## %d. %s" % (n, title)
+            if not any(l.startswith(prefix) for l in lines):
+                out.append("%s: packet: section missing: %s" % (path, prefix))
+    return out
+
+
+def check_sizes(repo, paths):
+    out = []
+    for path in paths:
+        if match(path, "design/research*.md") or match(path, "design/conventions*.md"):
+            size = len(read(repo, path))
+            if size >= RECORD_CEILING:
+                out.append("%s: size: %d bytes, ceiling %d" % (path, size, RECORD_CEILING))
+    return out
+
+
+def check_links(repo, paths):
+    out = []
+    for path in paths:
+        if not path.endswith(".md"):
+            continue
+        fenced = False
+        text = read(repo, path).decode("utf-8", "replace")
+        for n, line in enumerate(text.splitlines(), 1):
+            if FENCE.match(line):
+                fenced = not fenced
+                continue
+            if fenced:
+                continue
+            for target in LINK.findall(CODE_SPAN.sub("", line)):
+                target = target.strip("<>")
+                if re.match(r"^[a-z][a-z0-9+.-]*:", target, re.I) or target.startswith("#"):
+                    continue
+                target = target.split("#", 1)[0].split("?", 1)[0]
+                base = repo if target.startswith("/") else os.path.join(repo, os.path.dirname(path))
+                if not os.path.exists(os.path.join(base, target.lstrip("/"))):
+                    out.append("%s: link: line %d does not resolve: %s" % (path, n, target))
+    return out
+
+
+def check_next(repo, paths):
+    return ["%s: next: a NEXT file is present" % p for p in paths
+            if os.path.basename(p) == "NEXT"]
+
+
+RULES = (check_charters, check_packets, check_sizes, check_links, check_next)
+
+
+def lint(repo):
+    paths = files(repo)
+    out = []
+    for rule in RULES:
+        out.extend(rule(repo, paths))
+    return out
+
+
+def main(argv):
+    args = argv[1:]
+    repo = "."
+    try:
+        if args[:1] == ["--repo"] and len(args) == 2:
+            repo = args[1]
+        elif args:
+            raise UsageError("unknown arguments: %s" % " ".join(args))
+        refusals = lint(repo)
+    except UsageError as exc:
+        sys.stderr.write("doclint: %s\nusage: doclint [--repo DIR]\n" % exc)
+        return 1
+    for line in refusals:
+        print(line)
+    return 2 if refusals else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

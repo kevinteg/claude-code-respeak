@@ -17,7 +17,7 @@ check() {
   else fail=$((fail + 1)); echo "FAIL - $1 (expected '$2', got '$3')"; fi
 }
 jget() { # $1 = json, $2 = key -> value, or "null"
-  printf '%s' "$1" | python3 -c 'import json,sys; v=json.load(sys.stdin).get(sys.argv[1]); print("null" if v is None else v)' "$2"
+  printf '%s' "$1" | "${PYTHON:-python3}" -c 'import json,sys; v=json.load(sys.stdin).get(sys.argv[1]); print("null" if v is None else v)' "$2"
 }
 
 work="$(mktemp -d)"
@@ -26,8 +26,10 @@ trap 'rm -rf "$work"' EXIT
 # 1. Real plugin: valid JSON, owner_repo from the manifest, version matches.
 out="$(bash "$ENV_SH")"; rc=$?
 check "exits 0 against the real plugin" 0 "$rc"
-check "owner_repo parsed from the https URL" "kevinteg/claude-code-respeak" "$(jget "$out" owner_repo)"
-want_version="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$REPO_ROOT/.claude-plugin/plugin.json")"
+# the manifest's https://github.com/<owner>/<repo>, read here so no owner is written in the suite
+want_repo="$("${PYTHON:-python3}" -c 'import json,sys; print(json.load(open(sys.argv[1]))["repository"].split("github.com/", 1)[1])' "$REPO_ROOT/.claude-plugin/plugin.json")"
+check "owner_repo parsed from the https URL" "$want_repo" "$(jget "$out" owner_repo)"
+want_version="$("${PYTHON:-python3}" -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$REPO_ROOT/.claude-plugin/plugin.json")"
 check "version matches plugin.json" "$want_version" "$(jget "$out" version)"
 check "plugin_root is the repo" "$REPO_ROOT" "$(jget "$out" plugin_root)"
 
@@ -59,14 +61,14 @@ check "missing manifest gives version unknown" "unknown" "$(jget "$out" version)
 # 6. Degraded PATH (no gh, no claude): still valid JSON with unknowns.
 out="$(PATH=/usr/bin:/bin bash "$ENV_SH")"; rc=$?
 check "degraded PATH exits 0" 0 "$rc"
-check "degraded PATH still yields JSON" "kevinteg/claude-code-respeak" "$(jget "$out" owner_repo)"
+check "degraded PATH still yields JSON" "$want_repo" "$(jget "$out" owner_repo)"
 cv="$(jget "$out" claude_version)"; [ -n "$cv" ] && cv=nonempty
 check "claude_version is never empty" nonempty "$cv"
 
 # 7. The footer never carries a home directory: a python under $HOME shows as ~/...
 # A symlinked python under a fake HOME, given a stub `yaml` module on PYTHONPATH so the
 # override is accepted whether or not this machine has PyYAML installed.
-fakehome="$work/home"; mkdir -p "$fakehome/bin" "$fakehome/lib"; ln -s /usr/bin/python3 "$fakehome/bin/python3"; : > "$fakehome/lib/yaml.py"
+fakehome="$work/home"; mkdir -p "$fakehome/bin" "$fakehome/lib"; ln -s "$(command -v "${PYTHON:-python3}")" "$fakehome/bin/python3"; : > "$fakehome/lib/yaml.py"
 footer="$(HOME="$fakehome" PYTHONPATH="$fakehome/lib" RESPEAK_PYTHON="$fakehome/bin/python3" RESPEAK_CACHE_DIR="$work/cache7" bash "$ENV_SH" --footer)"
 check "footer shows a home-directory python as ~/..." 1 "$(printf '%s\n' "$footer" | grep -c -- '- python3: .*(~/bin/python3)')"
 check "footer contains no literal home path" 0 "$(printf '%s\n' "$footer" | grep -c -F -- "$fakehome")"

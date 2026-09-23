@@ -5,8 +5,7 @@
   "version": "0.6.0",
   "license": "MIT",
   "author": {
-    "name": "Kevin Tegtmeier",
-    "email": "kevin@tegtmeier.me"
+    "name": "Kevin Tegtmeier"
   },
   "homepage": "https://github.com/kevinteg/claude-code-respeak",
   "repository": "https://github.com/kevinteg/claude-code-respeak",

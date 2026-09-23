@@ -4,8 +4,9 @@
 Usage:
   respeak-config.py resolve  [--project DIR] [--for PATH] [--format yaml|json|line|statusline]
                              [--mode M] [--profile P] [--context C] [--set key=value]...
-  respeak-config.py explain  [--project DIR] [--for PATH] [--mode ...] [--set ...]
-  respeak-config.py gate     [--project DIR] --for FILE [--write-config PATH]
+                             [--session ID]
+  respeak-config.py explain  [--project DIR] [--for PATH] [--mode ...] [--set ...] [--session ID]
+  respeak-config.py gate     [--project DIR] --for FILE [--write-config PATH] [--session ID]
   respeak-config.py validate FILE... [--kind plugin|user|project|folder]
 
 The contract, with worked examples, is docs/config-layers.md. In one screen:
@@ -22,8 +23,10 @@ The contract, with worked examples, is docs/config-layers.md. In one screen:
                 match the target, applied right after their file
   8 folders     <dir>/.respeak.yaml (+ .respeak.local.yaml) from     tone keys
                 the project root down to the target, nearest last
-  9 env         files listed in $RESPEAK_CONFIG (colon-separated)   everything
- 10 invocation  --mode / --profile / --context / --set               everything
+  9 session     the `respeak` section of claude-code-session's       tone keys
+                resolved file (below), when present and accepted
+ 10 env         files listed in $RESPEAK_CONFIG (colon-separated)   everything
+ 11 invocation  --mode / --profile / --context / --set               everything
 
 Nearest to the target wins. Maps deep-merge and scalars replace; lists
 replace, except gate.allow and gate.exclude, which append. Project-only keys
@@ -31,6 +34,13 @@ replace, except gate.allow and gate.exclude, which append. Project-only keys
 pointers, version, schema) are dropped with a warning when a user, ancestor,
 folder, or scope layer sets them. `narrative.profile: NAME` in a layer expands
 that profile's fields underneath the layer's own explicit keys.
+
+The session layer is optional: claude-code-session, when installed, writes
+${XDG_STATE_HOME:-~/.local/state}/claude-code-session/sessions/<id>/resolved.json;
+<id> is --session, else $CLAUDE_SESSION_ID, else $CLAUDE_CODE_SESSION_ID. The
+file is accepted when provider.version has major SESSION_PROVIDER_MAJOR, and
+never written here. Absent, unreadable, a wrong major or no id: an empty
+layer and at most one warning; respeak behaves as it does alone.
 
 The project root is found the same way for every consumer (hook, skill,
 statusline, CLI): --project if given; else the nearest ancestor of the target
@@ -107,6 +117,14 @@ BLOCK_ON_VALUES = ("introduced", "any")
 # resolver's gate decision agree on exactly this set (docs/config-layers.md).
 MARKDOWN_EXTS = (".md", ".markdown", ".mdx")
 
+# The session provider (conventions section 3): claude-code-session's resolved
+# file for this session, accepted only from the provider major this resolver
+# understands. A change to the file's contract bumps that major.
+SESSION_PROVIDER = "claude-code-session"
+SESSION_PROVIDER_MAJOR = 2
+SESSION_ID_ENV = ("CLAUDE_SESSION_ID", "CLAUDE_CODE_SESSION_ID")
+SESSION_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
 # PyYAML's C loader parses the 230-line plugin config in a few milliseconds;
 # the pure-Python one takes ~100 ms, which the statusline would pay per refresh.
 _Loader = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
@@ -120,7 +138,7 @@ def real(path):
 
 # macOS (APFS/HFS+) and Windows filesystems are case-insensitive and treat
 # NFC/NFD spellings as one name, but os.path.realpath canonicalises neither;
-# comparisons fold both so "/Users/Kevin/Proj" and "/users/kevin/proj" are one
+# comparisons fold both so "/Home/Alice/Proj" and "/home/alice/proj" are one
 # directory there, while Linux keeps exact comparison.
 CASE_INSENSITIVE_FS = sys.platform in ("darwin", "win32")
 
@@ -335,7 +353,7 @@ class Layer:
 
 class Resolution:
     def __init__(self, config, origins, warnings, layers, applied, project, target, plugin_root,
-                 project_how="", launch_dir=None):
+                 project_how="", launch_dir=None, provider=None):
         self.config = config
         self.origins = origins      # dotted leaf key -> label of the layer that set it
         self.warnings = warnings
@@ -346,6 +364,13 @@ class Resolution:
         self.target = target
         self.plugin_root = plugin_root
         self.launch_dir = launch_dir
+        self.provider = provider    # the accepted session provider block, or None
+
+    def provider_line(self):
+        p = self.provider
+        if not p:
+            return "provider: none"
+        return "provider: %s %s profile %s" % (SESSION_PROVIDER, p.get("version"), p.get("profile") or "(none)")
 
     def plugin_label(self):
         return self.layers[0].label if self.layers else ""
@@ -463,7 +488,55 @@ def project_layers(project, warnings, cfgdir):
     ]
 
 
-def build_stack(project, target, plugin_root, env, overrides, walk_from, warnings):
+def session_state_path(session_id, env):
+    state = env.get("XDG_STATE_HOME") or os.path.join(
+        env.get("HOME") or os.path.expanduser("~"), ".local", "state")
+    return os.path.join(state, SESSION_PROVIDER, "sessions", session_id, "resolved.json")
+
+
+def session_layer(session_id, env, warnings):
+    """The session provider's layer and its provider block.
+
+    Returns (Layer or None, provider dict or None). Every failure is an empty
+    layer with at most one warning; the file is read, never written."""
+    if not session_id:
+        for var in SESSION_ID_ENV:
+            if env.get(var):
+                session_id = env[var]
+                break
+    if not session_id:
+        return None, None
+    if not SESSION_ID_RE.match(session_id):
+        warnings.append("session id %r is not a plain name; session layer ignored" % session_id)
+        return None, None
+    path = session_state_path(session_id, env)
+    if not os.path.isfile(path):
+        return None, None
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError) as e:
+        warnings.append("%s: unreadable (%s); ignored" % (path, str(e).splitlines()[0]))
+        return None, None
+    provider = data.get("provider") if isinstance(data, dict) else None
+    if not isinstance(provider, dict):
+        warnings.append("%s: no provider block; ignored" % path)
+        return None, None
+    version = str(provider.get("version") or "")
+    major = version.lstrip("v").split(".", 1)[0]
+    if not major.isdigit() or int(major) != SESSION_PROVIDER_MAJOR:
+        warnings.append("%s: provider.version %r is not major %d; ignored"
+                        % (path, version, SESSION_PROVIDER_MAJOR))
+        return None, None
+    section = data.get("respeak")
+    if section is not None and not isinstance(section, dict):
+        warnings.append("%s: the respeak section is not a mapping; ignored" % path)
+        section = None
+    label = "%s#respeak" % path
+    return Layer("session", label, path=path, data=section or None, base=None), provider
+
+
+def build_stack(project, target, plugin_root, env, overrides, walk_from, warnings, session=None):
     layers = []
 
     # 1. plugin defaults
@@ -515,7 +588,11 @@ def build_stack(project, target, plugin_root, env, overrides, walk_from, warning
         if at_anchor and not in_project:
             layers.extend(project_layers(project, warnings, cfgdir))
 
-    # 9. extra files from the environment (CI, one-off runs)
+    # 9. the session provider's resolved file, when one was accepted
+    if session is not None and session.present:
+        layers.append(session)
+
+    # 10. extra files from the environment (CI, one-off runs)
     for p in (env.get("RESPEAK_CONFIG") or "").split(":"):
         p = p.strip()
         if not p:
@@ -526,7 +603,7 @@ def build_stack(project, target, plugin_root, env, overrides, walk_from, warning
             warnings.append("RESPEAK_CONFIG: %s not found; ignored" % p)
         layers.append(lay)
 
-    # 10. invocation
+    # 11. invocation
     layers.append(Layer("invocation", "invocation (--mode/--profile/--context/--set)",
                         data=overrides if overrides else None))
     return layers
@@ -668,7 +745,7 @@ def apply_layer(cfg, origins, layer, data, target, warnings, applied):
 
 
 def resolve(target=None, project=None, plugin_root=None, env=None, overrides=None, walk_from=None,
-            launch_dir=None):
+            launch_dir=None, session_id=None):
     env = os.environ if env is None else env
     warnings = []
     given = os.path.abspath(os.path.expanduser(target or os.getcwd()))
@@ -680,7 +757,9 @@ def resolve(target=None, project=None, plugin_root=None, env=None, overrides=Non
         # e.g. proj/ext.md -> /elsewhere/ext.md: the file the tool wrote lives
         # in the project, so resolve for the spelling that says so
         target = given
-    layers = build_stack(project, target, plugin_root, env, overrides or {}, walk_from, warnings)
+    session, provider = session_layer(session_id, env, warnings)
+    layers = build_stack(project, target, plugin_root, env, overrides or {}, walk_from, warnings,
+                         session=session)
     if not layers[0].present:
         warnings.append("plugin defaults not found at %s" % layers[0].path)
     config, origins, applied = {}, {}, []
@@ -688,7 +767,7 @@ def resolve(target=None, project=None, plugin_root=None, env=None, overrides=Non
         if layer.present:
             apply_layer(config, origins, layer, layer.data, target, warnings, applied)
     return Resolution(config, origins, warnings, layers, applied, project, target, plugin_root,
-                      project_how=how, launch_dir=launch_dir)
+                      project_how=how, launch_dir=launch_dir, provider=provider)
 
 
 # --------------------------------------------------------------------------
@@ -783,6 +862,7 @@ def fmt_brief(res, gate=None):
     decide, nothing it has to page through."""
     L = ["respeak config for %s" % res.short(res.target)]
     L.append("project: %s (%s)" % (res.short_abs(res.project) if res.project else "(none found)", res.project_how))
+    L.append(res.provider_line())
     present = []
     for lay in res.layers:
         if lay.present:
@@ -818,6 +898,7 @@ def fmt_explain(res, gate=None):
     L = []
     L.append("respeak config for %s" % res.short(res.target))
     L.append("project: %s (%s)" % (res.short_abs(res.project) if res.project else "(none found)", res.project_how))
+    L.append(res.provider_line())
     L.append("")
     L.append("layers, lowest precedence first (* = present and applied):")
     applied_labels = {a.label: a for a in res.applied}
@@ -1010,6 +1091,9 @@ def add_common(p):
     p.add_argument("--profile", default=None)
     p.add_argument("--context", choices=("incident", "routine", "celebration"), default=None)
     p.add_argument("--set", action="append", default=[], metavar="KEY=VALUE")
+    p.add_argument("--session", default=None, metavar="ID",
+                   help="session id for claude-code-session's resolved file "
+                        "(default: $CLAUDE_SESSION_ID, else $CLAUDE_CODE_SESSION_ID)")
 
 
 def main(argv=None):
@@ -1061,7 +1145,7 @@ def main(argv=None):
         return 2
     res = resolve(target=args.target, project=args.project, plugin_root=args.plugin_root,
                   env=env, overrides=overrides, walk_from=args.walk_from,
-                  launch_dir=args.launch_dir or None)
+                  launch_dir=args.launch_dir or None, session_id=args.session or None)
 
     if args.cmd == "resolve":
         if args.format == "yaml":
