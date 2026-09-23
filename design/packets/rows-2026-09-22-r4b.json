@@ -1,0 +1,3 @@
+[
+  {"id": "r4-plugin-and-sync", "repo": "~/code/claude-code-respeak", "prompt": "/Users/kevinteg/code/claude-code-respeak/design/packets/r4-plugin-and-sync.md", "depends_on": ["packets-12"], "worktree": true, "model": "claude-opus-5-5", "max_turns": 80, "why": "scripts/doclint re-synced to the canonical copy with its Makefile pin moved in the same commit (item 26); the plugin/ subtree R3 named for R4 (the shipped files, the contract doc, the marketplace source ./plugin, claude plugin validate plugin/ in check) so an install no longer carries the whole repository; make doctor and, if turns remain, make install, tested with a fake claude; hooks/run recorded as not needed; the README sidecar already in the ruled shape (item 24), checked not changed"}
+]
