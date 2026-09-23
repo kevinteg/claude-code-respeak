@@ -34,4 +34,4 @@ README.md: sibling,person
 design/readme/*: sibling,person
 # The packets and the relay rows name the siblings, the builders' paths and the owner.
 design/packets/*: sibling,home,person
-history/sittings/*.md: sibling,private
+history/sittings/*.md: private

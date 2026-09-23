@@ -13,8 +13,10 @@ Rules, each a function returning `path: rule: detail` lines:
               under 8,192
   plugin      every plugin/commands/*.md under 31 lines with `description` and
               `allowed-tools` in its frontmatter; every plugin/agents/*.md with
-              `name`, `description`, `model` and `tools`; a plugin's verb set is
-              its own
+              `name`, `description`, `model` and `tools`; every
+              plugin/skills/*/SKILL.md with `name`, `description` (under 201
+              chars, a `>` or `|` block joined by spaces) and `allowed-tools`,
+              its body under 501 lines; a plugin's verb set is its own
   link        every relative markdown link in a .md file resolves
   next        no file named NEXT
 
@@ -38,6 +40,9 @@ CHARTER_TITLE = re.compile(r"^# Sitting \d{4}-\d{2}-\d{2}-\d+: .+, .+$")
 COMMAND_CEILING = 31
 COMMAND_KEYS = ("description", "allowed-tools")
 AGENT_KEYS = ("name", "description", "model", "tools")
+SKILL_KEYS = ("name", "description", "allowed-tools")
+SKILL_DESCRIPTION_CEILING = 201
+SKILL_BODY_CEILING = 501
 PACKET_ROWS = ("from", "pin", "wall", "may touch", "acceptance", "budget")
 PACKET_SECTIONS = ("What the source says", "Rulings", "Interfaces",
                    "Findings that name this row", "Forbidden reads", "Report")
@@ -142,18 +147,32 @@ def check_sizes(repo, paths):
     return out
 
 
-def frontmatter(text):
+def split_frontmatter(text):
+    """(frontmatter lines, body lines), or (None, all lines) when unfenced."""
     lines = text.splitlines()
-    if not lines or lines[0] != "---":
-        return set()
-    keys = set()
-    for line in lines[1:]:
-        if line == "---":
-            return keys
-        m = re.match(r"^([A-Za-z][A-Za-z0-9_-]*):", line)
+    if lines and lines[0] == "---":
+        for i, line in enumerate(lines[1:], 1):
+            if line == "---":
+                return lines[1:i], lines[i + 1:]
+    return None, lines
+
+
+def frontmatter(text):
+    """Key to value; a `>` or `|` block's indented lines joined by a space."""
+    head, _ = split_frontmatter(text)
+    fields, block = {}, None
+    for line in head or ():
+        m = re.match(r"^([A-Za-z][A-Za-z0-9_-]*):\s*(.*)$", line)
         if m:
-            keys.add(m.group(1))
-    return set()
+            key, value = m.group(1), m.group(2).strip()
+            block = key if re.match(r"^[>|][-+]?$", value) else None
+            if block or len(value) < 2 or value[0] != value[-1] or value[0] not in "'\"":
+                fields[key] = "" if block else value
+            else:
+                fields[key] = value[1:-1]
+        elif block and line[:1] in (" ", "\t") and line.strip():
+            fields[block] = (fields[block] + " " + line.strip()).lstrip()
+    return fields
 
 
 def check_plugin(repo, paths):
@@ -173,6 +192,20 @@ def check_plugin(repo, paths):
             for key in AGENT_KEYS:
                 if key not in keys:
                     out.append("%s: plugin: frontmatter lacks %s" % (path, key))
+        elif match(path, "plugin/skills/*/SKILL.md"):
+            text = read(repo, path).decode("utf-8", "replace")
+            fields = frontmatter(text)
+            for key in SKILL_KEYS:
+                if key not in fields:
+                    out.append("%s: plugin: frontmatter lacks %s" % (path, key))
+            n = len(fields.get("description", ""))
+            if n >= SKILL_DESCRIPTION_CEILING:
+                out.append("%s: plugin: description %d chars, ceiling %d"
+                           % (path, n, SKILL_DESCRIPTION_CEILING - 1))
+            n = len(split_frontmatter(text)[1])
+            if n >= SKILL_BODY_CEILING:
+                out.append("%s: plugin: %d body lines, ceiling %d"
+                           % (path, n, SKILL_BODY_CEILING - 1))
     return out
 
 
