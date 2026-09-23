@@ -22,7 +22,8 @@ import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, ".."))
-RESOLVER = os.path.join(REPO, "scripts", "respeak-config.py")
+PLUGIN = os.path.join(REPO, "plugin")
+RESOLVER = os.path.join(PLUGIN, "scripts", "respeak-config.py")
 EXAMPLE = os.path.join(REPO, "examples", "layered")
 EXAMPLE_PROJECT = os.path.join(EXAMPLE, "project")
 EXAMPLE_CFGDIR = os.path.join(EXAMPLE, "home", ".claude")
@@ -62,7 +63,7 @@ class Fixture:
 
     def resolve(self, target=None, project=None, overrides=None, env=None, walk_from=None):
         return rc.resolve(target=target or self.project, project=project or self.project,
-                          plugin_root=REPO, env=env or self.env(), overrides=overrides,
+                          plugin_root=PLUGIN, env=env or self.env(), overrides=overrides,
                           walk_from=walk_from or self.root)
 
     def user(self, text):
@@ -440,7 +441,7 @@ class ExampleTree(unittest.TestCase):
     def res(self, rel):
         env = {"CLAUDE_CONFIG_DIR": EXAMPLE_CFGDIR, "HOME": os.path.join(EXAMPLE, "home")}
         return rc.resolve(target=os.path.join(EXAMPLE_PROJECT, rel), project=EXAMPLE_PROJECT,
-                          plugin_root=REPO, env=env, walk_from=EXAMPLE)
+                          plugin_root=PLUGIN, env=env, walk_from=EXAMPLE)
 
     def check(self, rel, mode, tech, profile, formality, applies, fail_on):
         res = self.res(rel)
@@ -466,7 +467,7 @@ class ExampleTree(unittest.TestCase):
         env = {"CLAUDE_CONFIG_DIR": EXAMPLE_CFGDIR, "HOME": os.path.join(EXAMPLE, "home")}
         nowhere = os.path.join(EXAMPLE, "home", "elsewhere")
         res = rc.resolve(target=nowhere, project=os.path.join(EXAMPLE, "no-such-project"),
-                         plugin_root=REPO, env=env, walk_from=EXAMPLE)
+                         plugin_root=PLUGIN, env=env, walk_from=EXAMPLE)
         self.assertEqual(narrative(res, "default_mode"), "bluf")
         self.assertEqual(narrative(res, "tech_level"), 2)
 
@@ -489,7 +490,7 @@ class CLI(unittest.TestCase):
                 del self.env[k]
 
     def run_cli(self, *args):
-        return subprocess.run([sys.executable, RESOLVER] + list(args) + ["--plugin-root", REPO],
+        return subprocess.run([sys.executable, RESOLVER] + list(args) + ["--plugin-root", PLUGIN],
                               capture_output=True, text=True, env=self.env)
 
     def test_resolve_json_and_formats(self):
@@ -567,8 +568,8 @@ class CLI(unittest.TestCase):
         self.assertEqual(r.returncode, 1)
         self.assertIn("[user]", r.stdout)
         self.assertIn("absolute or ~-prefixed", r.stdout)
-        r = self.run_cli("validate", os.path.join(REPO, "config", "respeak.config.yaml"),
-                         os.path.join(REPO, "config", "project-seed.yaml"))
+        r = self.run_cli("validate", os.path.join(PLUGIN, "config", "respeak.config.yaml"),
+                         os.path.join(PLUGIN, "config", "project-seed.yaml"))
         self.assertEqual(r.returncode, 0, r.stdout)
 
     def test_project_discovery_without_flag(self):
@@ -601,7 +602,7 @@ class Discovery(unittest.TestCase):
         os.makedirs(os.path.join(self.fx.project, ".git"))
         doc = self.fx.doc("README.md")
         env = self.fx.env()
-        res = rc.resolve(target=doc, project=None, plugin_root=REPO, env=env, walk_from=self.fx.root)
+        res = rc.resolve(target=doc, project=None, plugin_root=PLUGIN, env=env, walk_from=self.fx.root)
         self.assertEqual(res.project, self.fx.project)          # the .git root, not $HOME
         self.assertIn(".git", res.project_how)
         self.assertEqual(narrative(res, "default_mode"), "bluf")  # tone from the user file applies
@@ -615,12 +616,12 @@ class Discovery(unittest.TestCase):
         self.fx.user("gate: {enabled: true}\n")
         doc = self.fx.doc("a.md")
         for kw in ({"launch_dir": self.fx.home}, {"project": self.fx.home}):
-            res = rc.resolve(target=doc, plugin_root=REPO, env=self.fx.env(), walk_from=self.fx.root, **kw)
+            res = rc.resolve(target=doc, plugin_root=PLUGIN, env=self.fx.env(), walk_from=self.fx.root, **kw)
             self.assertFalse(rc.get_dotted(res.config, "gate.enabled"), kw)
             self.assertEqual([lay.kind for lay in res.applied].count("project"), 0, kw)
             self.assertTrue(any("not re-applied at project grade" in w for w in res.warnings), kw)
         env = self.fx.env(CLAUDE_PROJECT_DIR=self.fx.home)
-        res = rc.resolve(target=doc, plugin_root=REPO, env=env, walk_from=self.fx.root)
+        res = rc.resolve(target=doc, plugin_root=PLUGIN, env=env, walk_from=self.fx.root)
         self.assertFalse(rc.get_dotted(res.config, "gate.enabled"))
 
     def test_nearest_project_config_wins_for_every_consumer(self):
@@ -629,16 +630,16 @@ class Discovery(unittest.TestCase):
         inner = os.path.join(self.fx.project, "pkg")
         write(os.path.join(inner, ".claude", "respeak", "config.yaml"), "narrative: {default_mode: bluf}\n")
         doc = self.fx.doc("pkg/a.md")
-        hook_side = rc.resolve(target=doc, plugin_root=REPO, walk_from=self.fx.root,
+        hook_side = rc.resolve(target=doc, plugin_root=PLUGIN, walk_from=self.fx.root,
                                env=self.fx.env(CLAUDE_PROJECT_DIR=self.fx.project))
-        cli_side = rc.resolve(target=doc, plugin_root=REPO, walk_from=self.fx.root, env=self.fx.env())
+        cli_side = rc.resolve(target=doc, plugin_root=PLUGIN, walk_from=self.fx.root, env=self.fx.env())
         for res in (hook_side, cli_side):
             self.assertEqual(res.project, inner)
             self.assertEqual(narrative(res, "default_mode"), "bluf")
             self.assertFalse(rc.get_dotted(res.config, "gate.enabled"))  # the inner project never opted in
         # a file outside pkg/ still belongs to the outer project
         outer_doc = self.fx.doc("a.md")
-        res = rc.resolve(target=outer_doc, plugin_root=REPO, walk_from=self.fx.root, env=self.fx.env())
+        res = rc.resolve(target=outer_doc, plugin_root=PLUGIN, walk_from=self.fx.root, env=self.fx.env())
         self.assertEqual(res.project, self.fx.project)
         self.assertTrue(rc.gate_decision(res)["applies"])
 
@@ -649,18 +650,18 @@ class Discovery(unittest.TestCase):
         os.makedirs(os.path.join(self.fx.project, ".git"))
         doc = self.fx.doc("docs/x.md")
         for env in (self.fx.env(CLAUDE_PROJECT_DIR=self.fx.project), self.fx.env()):
-            res = rc.resolve(target=doc, plugin_root=REPO, walk_from=self.fx.root, env=env)
+            res = rc.resolve(target=doc, plugin_root=PLUGIN, walk_from=self.fx.root, env=env)
             self.assertEqual(res.project, code)
             self.assertTrue(rc.gate_decision(res)["applies"])
 
     def test_launch_dir_is_the_fallback_when_no_project_config_exists(self):
         doc = self.fx.doc("docs/x.md")
-        res = rc.resolve(target=doc, plugin_root=REPO, walk_from=self.fx.root, env=self.fx.env(),
+        res = rc.resolve(target=doc, plugin_root=PLUGIN, walk_from=self.fx.root, env=self.fx.env(),
                          launch_dir=self.fx.project)
         self.assertEqual(res.project, self.fx.project)
         self.assertIn("launch", res.project_how)
         # launched in a subdirectory of a repo with no config: that subdirectory is the project
-        res = rc.resolve(target=doc, plugin_root=REPO, walk_from=self.fx.root, env=self.fx.env(),
+        res = rc.resolve(target=doc, plugin_root=PLUGIN, walk_from=self.fx.root, env=self.fx.env(),
                          launch_dir=os.path.join(self.fx.project, "docs"))
         self.assertEqual(res.project, os.path.join(self.fx.project, "docs"))
 
@@ -674,7 +675,7 @@ class Discovery(unittest.TestCase):
         combos = [(doc, self.fx.project), (via_link, self.fx.project),
                   (doc, os.path.join(link, "code", "proj")), (via_link, os.path.join(link, "code", "proj"))]
         for target, project in combos:
-            res = rc.resolve(target=target, project=project, plugin_root=REPO, walk_from=self.fx.root,
+            res = rc.resolve(target=target, project=project, plugin_root=PLUGIN, walk_from=self.fx.root,
                              env=self.fx.env())
             d = rc.gate_decision(res)
             self.assertTrue(d["applies"], (target, project, d))
@@ -792,7 +793,7 @@ class CLIv041(unittest.TestCase):
 
     def run_cli(self, *args, **kw):
         env = dict(self.env); env.update(kw.get("env", {}))
-        return subprocess.run([sys.executable, RESOLVER] + list(args) + ["--plugin-root", REPO],
+        return subprocess.run([sys.executable, RESOLVER] + list(args) + ["--plugin-root", PLUGIN],
                               capture_output=True, text=True, env=env)
 
     def test_launch_dir_flag_and_env_agree(self):
@@ -833,13 +834,13 @@ class V043Paths(unittest.TestCase):
         os.symlink(real_dir, link)
         doc = self.fx.doc("docs/a.md")  # repo with no config, no .git
         env = {"CLAUDE_CONFIG_DIR": link, "CLAUDE_PROJECT_DIR": self.fx.project}
-        res = rc.resolve(target=doc, plugin_root=REPO, env=env, walk_from=self.fx.root)
+        res = rc.resolve(target=doc, plugin_root=PLUGIN, env=env, walk_from=self.fx.root)
         self.assertEqual(res.project, self.fx.project)
         self.assertFalse(rc.get_dotted(res.config, "gate.enabled"))
         self.assertEqual(rc.get_dotted(res.config, "shorthand.ratification"), "human")
         self.assertEqual([lay.kind for lay in res.applied].count("project"), 0)
         # and with the link's parent as the candidate project root (a session launched in ~)
-        res = rc.resolve(target=doc, plugin_root=REPO, env={"CLAUDE_CONFIG_DIR": link}, walk_from=self.fx.root,
+        res = rc.resolve(target=doc, plugin_root=PLUGIN, env={"CLAUDE_CONFIG_DIR": link}, walk_from=self.fx.root,
                          launch_dir=self.fx.home)
         self.assertFalse(rc.get_dotted(res.config, "gate.enabled"))
 
@@ -871,7 +872,7 @@ class V043Paths(unittest.TestCase):
         self.fx.folder("docs", "narrative: {profile: exec}\n")
         doc = self.fx.doc("docs/a.md")
         # --project spelled differently from the target
-        res = rc.resolve(target=doc, project=alt_project, plugin_root=REPO, env=self.fx.env(), walk_from=self.fx.root)
+        res = rc.resolve(target=doc, project=alt_project, plugin_root=PLUGIN, env=self.fx.env(), walk_from=self.fx.root)
         d = rc.gate_decision(res)
         self.assertTrue(d["applies"], d)
         self.assertEqual(d["rel_path"], "docs/a.md")
@@ -883,7 +884,7 @@ class V043Paths(unittest.TestCase):
             os.makedirs(os.path.join(self.fx.project, ".git"), exist_ok=True)
             plain = self.fx.doc("b.md")
             alt_doc = os.path.join(alt_home, "code", "proj", "b.md")
-            res = rc.resolve(target=alt_doc, plugin_root=REPO, env=self.fx.env(), walk_from=self.fx.root)
+            res = rc.resolve(target=alt_doc, plugin_root=PLUGIN, env=self.fx.env(), walk_from=self.fx.root)
             self.assertNotEqual(rc.path_key(res.project), rc.path_key(self.fx.home))
             self.assertFalse(rc.get_dotted(res.config, "gate.enabled") and not
                              rc.get_dotted(res.config, "gate.include"))  # only the project could enable it
@@ -892,7 +893,7 @@ class V043Paths(unittest.TestCase):
         self.fx.proj("narrative: {default_mode: technical}\ngate: {enabled: true}\n")
         outside = os.path.join(self.fx.home, "code", "other", "x.md")
         write(outside, "# x\n")
-        res = rc.resolve(target=outside, project=alt_project, plugin_root=REPO, env=self.fx.env(), walk_from=self.fx.root)
+        res = rc.resolve(target=outside, project=alt_project, plugin_root=PLUGIN, env=self.fx.env(), walk_from=self.fx.root)
         self.assertEqual(narrative(res, "default_mode"), "technical")
 
 
@@ -946,7 +947,7 @@ class V043CLI(unittest.TestCase):
             self.env.pop(k, None)
 
     def run_cli(self, *args):
-        return subprocess.run([sys.executable, RESOLVER] + list(args) + ["--plugin-root", REPO],
+        return subprocess.run([sys.executable, RESOLVER] + list(args) + ["--plugin-root", PLUGIN],
                               capture_output=True, text=True, env=self.env)
 
     def test_empty_launch_dir_means_not_given(self):

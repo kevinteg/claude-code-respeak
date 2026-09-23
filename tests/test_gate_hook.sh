@@ -9,7 +9,7 @@ set -u
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$HERE/.." && pwd)"
-GATE="$REPO_ROOT/scripts/respeak-gate.sh"
+GATE="$REPO_ROOT/plugin/scripts/respeak-gate.sh"
 
 pass=0
 fail=0
@@ -33,7 +33,7 @@ hook_json_for() {
 run_gate() {
   # $1 = project dir, $2 = file path, $3 = output file; extra env via caller
   hook_json_for "$2" \
-    | CLAUDE_PROJECT_DIR="$1" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$GATE" > "$3" 2>&1
+    | CLAUDE_PROJECT_DIR="$1" CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugin" "$GATE" > "$3" 2>&1
 }
 
 work="$(mktemp -d)"
@@ -138,7 +138,7 @@ gate:
   enabled: true
 YAML
 hook_json_for "$doc_none" \
-  | CLAUDE_CONFIG_DIR="$user_cfg" CLAUDE_PROJECT_DIR="$proj_none" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$GATE" \
+  | CLAUDE_CONFIG_DIR="$user_cfg" CLAUDE_PROJECT_DIR="$proj_none" CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugin" "$GATE" \
   > "$work/gate-user-enable.out" 2>&1
 check "user-level gate.enabled: true is ignored (exit 0)" 0 "$?"
 
@@ -148,7 +148,7 @@ gate:
   allow: ["load-bearing"]
 YAML
 hook_json_for "$doc_on" \
-  | CLAUDE_CONFIG_DIR="$user_cfg" CLAUDE_PROJECT_DIR="$proj_on" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$GATE" \
+  | CLAUDE_CONFIG_DIR="$user_cfg" CLAUDE_PROJECT_DIR="$proj_on" CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugin" "$GATE" \
   > "$work/gate-user-allow.out" 2>&1
 check "user-level gate.allow silences the rule in an enabled project (exit 0)" 0 "$?"
 
@@ -165,13 +165,13 @@ check_grep() {
 badpath="$work/badpath"; mkdir -p "$badpath"
 printf '#!/bin/sh\necho "pyenv: python3: command not found" >&2\nexit 127\n' > "$badpath/python3"; chmod +x "$badpath/python3"
 hook_json_for "$doc_on" \
-  | PATH="$badpath:$PATH" CLAUDE_PROJECT_DIR="$proj_on" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$GATE" \
+  | PATH="$badpath:$PATH" CLAUDE_PROJECT_DIR="$proj_on" CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugin" "$GATE" \
   > "$work/gate-badshim.out" 2>&1
 check "broken python3 shim on PATH still blocks (exit 2)" 2 "$?"
 
 # --- a measure SETUP error (corrupt corpus) fails OPEN, with a trace line ----
 fakeroot="$work/fakeroot"; mkdir -p "$fakeroot/corpus" "$fakeroot/config"
-cp "$REPO_ROOT/config/respeak.config.yaml" "$fakeroot/config/"
+cp "$REPO_ROOT/plugin/config/respeak.config.yaml" "$fakeroot/config/"
 printf 'entries: [\n' > "$fakeroot/corpus/banned-phrases.yaml"
 hook_json_for "$doc_clean" \
   | RESPEAK_GATE_TRACE=1 CLAUDE_PROJECT_DIR="$proj_on" CLAUDE_PLUGIN_ROOT="$fakeroot" "$GATE" \
@@ -179,19 +179,19 @@ hook_json_for "$doc_clean" \
 check "corrupt corpus is a setup error: fails open (exit 0)" 0 "$?"
 check_grep "...and the trace names it as a setup error, not a verdict" "setup error" "$work/gate-corrupt-corpus.out"
 hook_json_for "$proj_on/ghost.md" \
-  | RESPEAK_GATE_TRACE=1 CLAUDE_PROJECT_DIR="$proj_on" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$GATE" \
+  | RESPEAK_GATE_TRACE=1 CLAUDE_PROJECT_DIR="$proj_on" CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugin" "$GATE" \
   > "$work/gate-ghost.out" 2>&1
 check "unreadable target fails open (exit 0)" 0 "$?"
 
 # --- v0.4.2: setup errors that used to escape as tracebacks (exit 1) --------
 doc_latin1="$proj_on/latin1.md"; printf 'The plan uses the cache. Caf\xe9 is not UTF-8.\n' > "$doc_latin1"
-hook_json_for "$doc_latin1" | RESPEAK_GATE_TRACE=1 CLAUDE_PROJECT_DIR="$proj_on" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$GATE" > "$work/gate-latin1.out" 2>&1
+hook_json_for "$doc_latin1" | RESPEAK_GATE_TRACE=1 CLAUDE_PROJECT_DIR="$proj_on" CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugin" "$GATE" > "$work/gate-latin1.out" 2>&1
 check "non-UTF-8 doc is unreadable: fails open (exit 0)" 0 "$?"
 check_grep "...as a setup error" "setup error" "$work/gate-latin1.out"
 proj_badallow="$work/proj-badallow"; mkdir -p "$proj_badallow/.claude/respeak"
 printf 'gate: {enabled: true, include: ["**/*.md"], fail_on: error, allow: ["("]}\n' > "$proj_badallow/.claude/respeak/config.yaml"
 doc_badallow="$proj_badallow/clean.md"; echo "$CLEAN_TEXT" > "$doc_badallow"
-hook_json_for "$doc_badallow" | RESPEAK_GATE_TRACE=1 CLAUDE_PROJECT_DIR="$proj_badallow" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$GATE" > "$work/gate-badallow.out" 2>&1
+hook_json_for "$doc_badallow" | RESPEAK_GATE_TRACE=1 CLAUDE_PROJECT_DIR="$proj_badallow" CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugin" "$GATE" > "$work/gate-badallow.out" 2>&1
 check "invalid gate.allow regex is a config error: fails open (exit 0)" 0 "$?"
 for shape in 'foo: bar' '- a' 'categories: {x: {entries: [{pattern: "(", severity: error}]}}'; do
   printf '%s\n' "$shape" > "$fakeroot/corpus/banned-phrases.yaml"
@@ -204,28 +204,28 @@ check "empty corpus file fails open (exit 0)" 0 "$?"
 
 # --- a pass is a real pass: the trace line proves measure ran ----------------
 hook_json_for "$doc_clean" \
-  | RESPEAK_GATE_TRACE=1 CLAUDE_PROJECT_DIR="$proj_on" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$GATE" \
+  | RESPEAK_GATE_TRACE=1 CLAUDE_PROJECT_DIR="$proj_on" CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugin" "$GATE" \
   > "$work/gate-clean-trace.out" 2>&1
 check "clean doc passes (exit 0)" 0 "$?"
 check_grep "...with a 'checked ... pass' trace (not failed-open)" "checked .*clean.md (fail-on: error): pass" "$work/gate-clean-trace.out"
 
 # --- CLI mode gates one file exactly like the hook ---------------------------
-CLAUDE_PROJECT_DIR="$proj_on" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$GATE" --file "$doc_on" > "$work/gate-cli.out" 2>&1
+CLAUDE_PROJECT_DIR="$proj_on" CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugin" "$GATE" --file "$doc_on" > "$work/gate-cli.out" 2>&1
 check "--file <banned doc> blocks (exit 2)" 2 "$?"
-CLAUDE_PROJECT_DIR="$proj_on" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$GATE" --file "$doc_clean" > "$work/gate-cli-clean.out" 2>&1
+CLAUDE_PROJECT_DIR="$proj_on" CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugin" "$GATE" --file "$doc_clean" > "$work/gate-cli-clean.out" 2>&1
 check "--file <clean doc> passes (exit 0)" 0 "$?"
 
 # --- the Markdown contract: include may widen to .markdown/.mdx, never past --
 proj_md="$work/proj-md"; mkdir -p "$proj_md/.claude/respeak"
 printf 'gate:\n  enabled: true\n  include: ["**/*.md", "**/*.mdx", "**/*.txt"]\n' > "$proj_md/.claude/respeak/config.yaml"
 doc_mdx="$proj_md/page.mdx"; echo "$BANNED_TEXT" > "$doc_mdx"
-hook_json_for "$doc_mdx" | CLAUDE_PROJECT_DIR="$proj_md" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$GATE" > "$work/gate-mdx.out" 2>&1
+hook_json_for "$doc_mdx" | CLAUDE_PROJECT_DIR="$proj_md" CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugin" "$GATE" > "$work/gate-mdx.out" 2>&1
 check ".mdx listed in gate.include is gated (exit 2)" 2 "$?"
 doc_mdx_narrow="$proj_on/page.mdx"; echo "$BANNED_TEXT" > "$doc_mdx_narrow"   # proj_on includes **/*.md only
-hook_json_for "$doc_mdx_narrow" | CLAUDE_PROJECT_DIR="$proj_on" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$GATE" > "$work/gate-mdx-narrow.out" 2>&1
+hook_json_for "$doc_mdx_narrow" | CLAUDE_PROJECT_DIR="$proj_on" CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugin" "$GATE" > "$work/gate-mdx-narrow.out" 2>&1
 check ".mdx NOT listed in gate.include is skipped (exit 0)" 0 "$?"
 doc_txt2="$proj_md/notes.txt"; echo "$BANNED_TEXT" > "$doc_txt2"
-hook_json_for "$doc_txt2" | CLAUDE_PROJECT_DIR="$proj_md" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$GATE" > "$work/gate-txt2.out" 2>&1
+hook_json_for "$doc_txt2" | CLAUDE_PROJECT_DIR="$proj_md" CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugin" "$GATE" > "$work/gate-txt2.out" 2>&1
 check ".txt in gate.include is still skipped: the gate covers Markdown only (exit 0)" 0 "$?"
 
 # --- v0.4.3: extension case parity between hook and resolver ----------------
@@ -233,31 +233,31 @@ proj_up="$work/proj-up"; mkdir -p "$proj_up/.claude/respeak"
 printf 'gate: {enabled: true, include: ["**/*"], fail_on: error}\n' > "$proj_up/.claude/respeak/config.yaml"
 for name in README.MDX Page.Markdown NOTES.MD; do
   echo "$BANNED_TEXT" > "$proj_up/$name"
-  hook_json_for "$proj_up/$name" | CLAUDE_PROJECT_DIR="$proj_up" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$GATE" > "$work/gate-up.out" 2>&1
+  hook_json_for "$proj_up/$name" | CLAUDE_PROJECT_DIR="$proj_up" CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugin" "$GATE" > "$work/gate-up.out" 2>&1
   check "$name is gated like its lowercase twin (exit 2)" 2 "$?"
 done
 echo "$BANNED_TEXT" > "$proj_up/notes.TXT"
-hook_json_for "$proj_up/notes.TXT" | CLAUDE_PROJECT_DIR="$proj_up" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$GATE" > "$work/gate-up-txt.out" 2>&1
+hook_json_for "$proj_up/notes.TXT" | CLAUDE_PROJECT_DIR="$proj_up" CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugin" "$GATE" > "$work/gate-up-txt.out" 2>&1
 check "notes.TXT is still not Markdown (exit 0)" 0 "$?"
 
 # --- v0.4.3: a symlink inside the project pointing outside is still gated -----
 mkdir -p "$work/outside"; echo "$BANNED_TEXT" > "$work/outside/ext.md"; ln -s "$work/outside/ext.md" "$proj_on/ext.md"
-hook_json_for "$proj_on/ext.md" | CLAUDE_PROJECT_DIR="$proj_on" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$GATE" > "$work/gate-inlink.out" 2>&1
+hook_json_for "$proj_on/ext.md" | CLAUDE_PROJECT_DIR="$proj_on" CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugin" "$GATE" > "$work/gate-inlink.out" 2>&1
 check "in-project symlink to an outside file is gated (exit 2)" 2 "$?"
 
 # --- discovery: no CLAUDE_PROJECT_DIR at all (CI), the config is found -------
-hook_json_for "$doc_on" | env -u CLAUDE_PROJECT_DIR CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$GATE" > "$work/gate-nocpd.out" 2>&1
+hook_json_for "$doc_on" | env -u CLAUDE_PROJECT_DIR CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugin" "$GATE" > "$work/gate-nocpd.out" 2>&1
 check "no CLAUDE_PROJECT_DIR: discovery finds the project config (exit 2)" 2 "$?"
 
 # --- launched in a subdirectory: the repo's config still governs -------------
 mkdir -p "$proj_on/docs"; doc_sub="$proj_on/docs/page.md"; echo "$BANNED_TEXT" > "$doc_sub"
-hook_json_for "$doc_sub" | CLAUDE_PROJECT_DIR="$proj_on/docs" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$GATE" > "$work/gate-subdir.out" 2>&1
+hook_json_for "$doc_sub" | CLAUDE_PROJECT_DIR="$proj_on/docs" CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugin" "$GATE" > "$work/gate-subdir.out" 2>&1
 check "session launched in <repo>/docs still enforces the repo config (exit 2)" 2 "$?"
 
 # --- monorepo: a nested project config is the nearest, and it never opted in -
 mkdir -p "$proj_on/pkg/.claude/respeak"; printf 'narrative: {default_mode: bluf}\n' > "$proj_on/pkg/.claude/respeak/config.yaml"
 doc_pkg="$proj_on/pkg/a.md"; echo "$BANNED_TEXT" > "$doc_pkg"
-hook_json_for "$doc_pkg" | RESPEAK_GATE_TRACE=1 CLAUDE_PROJECT_DIR="$proj_on" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$GATE" > "$work/gate-nested.out" 2>&1
+hook_json_for "$doc_pkg" | RESPEAK_GATE_TRACE=1 CLAUDE_PROJECT_DIR="$proj_on" CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugin" "$GATE" > "$work/gate-nested.out" 2>&1
 check "nested project config governs its subtree (exit 0: it did not opt in)" 0 "$?"
 check_grep "...and the trace says why" "not applicable" "$work/gate-nested.out"
 
@@ -265,7 +265,7 @@ check_grep "...and the trace says why" "not applicable" "$work/gate-nested.out"
 ln -s "$work" "$work/../$(basename "$work")-link" 2>/dev/null || true
 linkroot="$work/../$(basename "$work")-link"
 if [ -d "$linkroot" ]; then
-  hook_json_for "$linkroot/proj-on/notes.md" | CLAUDE_PROJECT_DIR="$proj_on" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$GATE" > "$work/gate-symlink.out" 2>&1
+  hook_json_for "$linkroot/proj-on/notes.md" | CLAUDE_PROJECT_DIR="$proj_on" CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugin" "$GATE" > "$work/gate-symlink.out" 2>&1
   check "file path through a symlink is still inside the project (exit 2)" 2 "$?"
   rm -f "$linkroot"
 fi
@@ -274,7 +274,7 @@ fi
 user2="$work/user2/.claude"; mkdir -p "$user2/respeak" "$work/user2/code/repo/.git"
 printf 'gate: {enabled: true}\n' > "$user2/respeak/config.yaml"
 doc_home="$work/user2/code/repo/notes.md"; echo "$BANNED_TEXT" > "$doc_home"
-hook_json_for "$doc_home" | env -u CLAUDE_PROJECT_DIR CLAUDE_CONFIG_DIR="$user2" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$GATE" > "$work/gate-user-discovery.out" 2>&1
+hook_json_for "$doc_home" | env -u CLAUDE_PROJECT_DIR CLAUDE_CONFIG_DIR="$user2" CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugin" "$GATE" > "$work/gate-user-discovery.out" 2>&1
 check "user file under \$HOME is never discovered as a project file (exit 0)" 0 "$?"
 
 # ===== v0.6: gate.block_on — a verdict is about what the write INTRODUCED ====
@@ -291,7 +291,7 @@ run_gate_event() {
   # $1 = project dir, $2 = hook JSON, $3 = stdout file; the trace and the
   # measure report land in $3.err, because these cases read both channels
   printf '%s' "$2" \
-    | RESPEAK_GATE_TRACE=1 CLAUDE_PROJECT_DIR="$1" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$GATE" > "$3" 2>"$3.err"
+    | RESPEAK_GATE_TRACE=1 CLAUDE_PROJECT_DIR="$1" CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugin" "$GATE" > "$3" 2>"$3.err"
 }
 
 git_in() { git -C "$proj_git" -c commit.gpgsign=false "$@"; }
@@ -346,9 +346,9 @@ check "untracked file, an edit that removes the only hit passes (exit 0)" 0 "$?"
 check_grep "...measured against the text rebuilt from the edit" "baseline .*: the pre-edit text" "$work/gate-removed.out.err"
 
 # --- --file is the CI surface: whole file, unless --baseline-ref says otherwise
-RESPEAK_GATE_TRACE=1 CLAUDE_PROJECT_DIR="$proj_git" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$GATE" --file "$proj_git/tracked.md" > "$work/gate-cli-whole.out" 2>&1
+RESPEAK_GATE_TRACE=1 CLAUDE_PROJECT_DIR="$proj_git" CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugin" "$GATE" --file "$proj_git/tracked.md" > "$work/gate-cli-whole.out" 2>&1
 check "--file gates the whole file whatever block_on says (exit 2)" 2 "$?"
-RESPEAK_GATE_TRACE=1 CLAUDE_PROJECT_DIR="$proj_git" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$GATE" --file "$proj_git/tracked.md" --baseline-ref HEAD > "$work/gate-cli-ref.out" 2>&1
+RESPEAK_GATE_TRACE=1 CLAUDE_PROJECT_DIR="$proj_git" CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugin" "$GATE" --file "$proj_git/tracked.md" --baseline-ref HEAD > "$work/gate-cli-ref.out" 2>&1
 check "--file --baseline-ref HEAD measures against the commit (exit 0)" 0 "$?"
 check_grep "...and says what remains" "pre-existing style hit(s) remain" "$work/gate-cli-ref.out"
 

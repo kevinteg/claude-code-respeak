@@ -1,28 +1,28 @@
-# respeak project layer (git-tracked). Layers: docs/config-layers.md
+# respeak project layer (git-tracked). Layers: plugin/docs/config-layers.md
 version: 3
 
 # This repository writes its human-facing documentation with the plugin it
 # ships. The default register for anything written here is technical mode for
 # a peer engineer; the scope below names the human lane exactly, so the
 # translator, the gate, the statusline, and `respeak-config.sh explain` agree
-# on what a person reads versus what a model reads (skills/, agents/).
+# on what a person reads versus what a model reads (plugin/skills/, plugin/agents/).
 narrative: { default_mode: technical, tech_level: 4, profile: peer-engineer }
 editorial_pass: { restructure: advise }
 
 # Every Markdown write outside the research notes, the runnable examples, and
-# the corpus is gated by this plugin's own scanner. `scripts/respeak-check.sh`
+# the corpus is gated by this plugin's own scanner. `plugin/scripts/respeak-check.sh`
 # runs the same verdict over the tracked files from the command line or CI.
 gate:
   enabled: true
   include: ["**/*.md"]
-  exclude: ["research/**", "examples/**", "corpus/**"]
+  exclude: ["research/**", "examples/**", "plugin/corpus/**"]
   fail_on: error
 
 scopes:
   # The human lane: the files a person reads. Edits to them go through the
   # translator's editorial pass (structure advised, never applied) and are
-  # verified meaning-invariant with scripts/respeak-verify-edit.py before
+  # verified meaning-invariant with plugin/scripts/respeak-verify-edit.py before
   # they are committed. CLAUDE.md spells out the procedure.
-  - paths: ["README.md", "CHANGELOG.md", "CLAUDE.md", "docs/**", "design/readme/**"]
+  - paths: ["README.md", "CHANGELOG.md", "CLAUDE.md", "docs/**", "plugin/docs/**", "design/readme/**"]
     narrative: { profile: peer-engineer, default_mode: technical, tech_level: 4 }
     editorial_pass: { restructure: advise }

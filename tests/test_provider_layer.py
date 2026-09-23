@@ -18,7 +18,8 @@ import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, ".."))
-RESOLVER = os.path.join(REPO, "scripts", "respeak-config.py")
+PLUGIN = os.path.join(REPO, "plugin")
+RESOLVER = os.path.join(PLUGIN, "scripts", "respeak-config.py")
 
 _spec = importlib.util.spec_from_file_location("respeak_config_provider", RESOLVER)
 rc = importlib.util.module_from_spec(_spec)
@@ -62,7 +63,7 @@ class ProviderLayer(unittest.TestCase):
                 else {"narrative": {"default_mode": "bluf", "tech_level": 2}}}
 
     def resolve(self, env=None, **kw):
-        return rc.resolve(target=self.doc, plugin_root=REPO, env=env or self.env(),
+        return rc.resolve(target=self.doc, plugin_root=PLUGIN, env=env or self.env(),
                           walk_from=self.root, **kw)
 
     def test_accepted_file_is_a_layer(self):
@@ -177,7 +178,7 @@ class ProviderLayer(unittest.TestCase):
 
         def explain(*args):
             out = subprocess.run([sys.executable, RESOLVER, "explain", "--for", self.doc,
-                                  "--plugin-root", REPO, "--walk-from", self.root] + list(args),
+                                  "--plugin-root", PLUGIN, "--walk-from", self.root] + list(args),
                                  capture_output=True, text=True, env=env)
             self.assertEqual(out.returncode, 0, out.stderr)
             return [l for l in out.stdout.splitlines() if l.startswith("provider: ")]

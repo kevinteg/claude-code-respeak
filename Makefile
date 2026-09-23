@@ -3,7 +3,7 @@
 PYTHON ?= $(shell python3 -c 'import sys; print(sys.executable)')
 export PYTHON
 
-.PHONY: check test lint doclint hygiene readme readme-fresh validate
+.PHONY: check test lint doclint hygiene readme readme-fresh validate doctor install
 
 check: test lint doclint hygiene readme-fresh validate
 
@@ -13,17 +13,17 @@ test:
 	@set -e; for t in tests/*.sh; do echo "== $$t"; PATH="$(dir $(PYTHON)):$$PATH" bash "$$t"; done
 
 lint:
-	$(PYTHON) -m compileall -q scripts tests
+	$(PYTHON) -m compileall -q scripts plugin/scripts tests
 	$(PYTHON) -c 'import sys; assert sys.version_info >= (3, 12)'
 
 doclint:
 	$(PYTHON) scripts/doclint
-	bash scripts/respeak-check.sh
+	bash plugin/scripts/respeak-check.sh
 
 # scripts/hygiene and scripts/doclint are byte-identical to claude-code-session's (conventions
 # section 6); a re-sync moves the files and these pins together.
 HYGIENE_SHA = fb05f6203ac904a0839345e257d4cf39855bcfbb8ebc25f307684c275f111d4d
-DOCLINT_SHA = f5a9ae84fd112c48818799dd6f96c3fbbaae7dc0ad6df62886c93953ea70bdd4
+DOCLINT_SHA = b46db3dfed41b9d3cf9298dbfdb2d83781e9ee041c1d9b5a94c032e0c4b7aa21
 
 hygiene:
 	@printf '%s  %s\n' $(HYGIENE_SHA) scripts/hygiene $(DOCLINT_SHA) scripts/doclint | shasum -a 256 -c --status || { echo "hygiene: scripts/hygiene or scripts/doclint differ from the canonical copies (conventions section 6)"; exit 2; }
@@ -39,14 +39,35 @@ The output is checked with respeak-verify-edit.py against the source and rejecte
 
 readme:
 	@c="$$(mktemp)"; printf '%s\n' '$(README_CONTRACT)' > "$$c"; \
-	bash scripts/respeak-render.sh --mode technical --source design/readme/source.md --out README.md --contract "$$c"; \
+	bash plugin/scripts/respeak-render.sh --mode technical --source design/readme/source.md --out README.md --contract "$$c"; \
 	rc=$$?; rm -f "$$c"; exit $$rc
-	@$(PYTHON) scripts/respeak-verify-edit.py design/readme/source.md README.md || { git checkout -- README.md; exit 2; }
+	@$(PYTHON) plugin/scripts/respeak-verify-edit.py design/readme/source.md README.md || { git checkout -- README.md; exit 2; }
 	bash scripts/readme-fresh.sh --stamp
 
 readme-fresh:
 	bash scripts/readme-fresh.sh
 
 validate:
-	@if command -v claude >/dev/null 2>&1; then claude plugin validate .; \
+	@if command -v claude >/dev/null 2>&1; then claude plugin validate plugin/ && claude plugin validate .; \
 	else echo "validate: skipped, no claude on PATH"; fi
+
+# One line per check: python, claude, marketplace, plugin, provider, config (conventions section 3).
+doctor:
+	bash plugin/scripts/respeak-doctor.sh
+
+# Install the plugin from THIS checkout (conventions section 2). Adds the marketplace when absent,
+# updates it when it already points here, and never removes a registration: any other source is
+# printed with the two commands the owner would run, and the target exits 2.
+install:
+	@src="$$(claude plugin marketplace list --json | $(PYTHON) -c 'import json,sys; m=[m for m in json.load(sys.stdin) if m.get("name")=="claude-code-respeak"]; print(m[0].get("path") or m[0].get("repo") or m[0].get("url") or m[0].get("source") if m else "")')" || exit 2; \
+	if [ -z "$$src" ]; then \
+	  claude plugin marketplace add "$(CURDIR)" && claude plugin install respeak@claude-code-respeak; \
+	elif [ "$$src" = "$(CURDIR)" ]; then \
+	  claude plugin marketplace update claude-code-respeak && claude plugin update respeak@claude-code-respeak; \
+	else \
+	  echo "install: marketplace claude-code-respeak comes from $$src, not $(CURDIR)"; \
+	  echo "install: to install from this checkout, run:"; \
+	  echo "  claude plugin marketplace remove claude-code-respeak"; \
+	  echo "  make install"; \
+	  exit 2; \
+	fi

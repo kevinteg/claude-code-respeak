@@ -31,7 +31,7 @@ swarm to write prose, paying the tax everywhere) or loses the loop.
                                   │ observed terms
                                   ▼
                       ┌──────────────────────────┐     proposals
-                      │  respeak translator      │────▶ corpus/proposals/
+                      │  respeak translator      │────▶ plugin/corpus/proposals/
                       │  (subagent, read-only    │      (human ratifies)
                       │   toward swarm state)    │
                       └───────────┬──────────────┘
@@ -46,7 +46,7 @@ swarm to write prose, paying the tax everywhere) or loses the loop.
 
 ### The machine lane
 
-The swarm may use any shorthand that is **ratified** in `corpus/lexicon.yaml`.
+The swarm may use any shorthand that is **ratified** in `plugin/corpus/lexicon.yaml`.
 The lexicon is the single source of truth, modeled on codified expert
 shorthands (brevity codes, Q-codes, ATC phraseology) and on the
 long-running-harness finding that structured registries resist agent drift
@@ -68,7 +68,7 @@ rather than imposed by post-hoc rewriting.
 
 ### The translator
 
-A subagent (`agents/respeak.md`) that is deliberately **non-impactful to the
+A subagent (`plugin/agents/respeak.md`) that is deliberately **non-impactful to the
 swarm**: it reads swarm output, transcripts, and the lexicon; its only writes
 are rendered narratives and lexicon proposals. It runs in its own context
 window (sub-agent architecture per the context-engineering post), so the
@@ -94,8 +94,8 @@ Every hook honors the session overrides (resolved question 7): a marker from
 
 ### The human lane
 
-Three modes with distinct contracts (see `config/respeak.config.yaml` and
-`corpus/style/tone-mapping.md`):
+Three modes with distinct contracts (see `plugin/config/respeak.config.yaml` and
+`plugin/corpus/style/tone-mapping.md`):
 
 - **eli5** — no assumed background, one analogy max, repaid immediately.
 - **bluf** — first sentence is the result/decision/ask; forwardable unedited.
@@ -107,7 +107,7 @@ reader always knows which voice is speaking. The headless renderer strips
 it from files.
 
 All modes pass the same gates: replacements first, banned-phrase scan second,
-tone-axis behaviors throughout. The gates are data (`corpus/*.yaml`), not
+tone-axis behaviors throughout. The gates are data (`plugin/corpus/*.yaml`), not
 prompt prose, so they are versionable, lintable (Vale-compilable), and
 auditable.
 
@@ -123,7 +123,7 @@ optimization:
 2. **Shorthand governance** (`shorthand.*`): ratification mode, legibility
    floor, and the never-compress list bound how far the machine lane may
    drift. The human changes a number; the swarm's dialect follows.
-3. **Corpus** (`corpus/*.yaml`): banned phrases and replacements are the
+3. **Corpus** (`plugin/corpus/*.yaml`): banned phrases and replacements are the
    editorial voice, maintained as data with severities.
 
 Invariant: **the translator proposes, config disposes, the human ratifies.**
@@ -162,10 +162,10 @@ No agent both proposes and ratifies a convention.
    monthly fresh-decoder audit sample.
 
 6. **Where configuration lives → layered, nearest to the target wins**
-   (v0.4; contract in `docs/config-layers.md`). The influence surface above
+   (v0.4; contract in `plugin/docs/config-layers.md`). The influence surface above
    was one file per project, which made "different tones for different
    folders" and "my default across every repo" both impossible. The
-   resolver (`scripts/respeak-config.py`) now merges, lowest first: plugin
+   resolver (`plugin/scripts/respeak-config.py`) now merges, lowest first: plugin
    defaults, the plugin's install-time userConfig, `~/.claude/respeak/
    config.yaml`, ancestor `.respeak.yaml` files above the project, the
    project's `.claude/respeak/config.yaml` and gitignored `config.local.yaml`,
@@ -182,12 +182,12 @@ No agent both proposes and ratifies a convention.
    the truth each of them saw. `narrative.profile` is expanded by the resolver, which wires
    the audience profiles into the skill surface for the first time.
 7. **Session-scoped control → overrides above the layers, never a layer**
-   (v0.5; contract in `docs/config-layers.md`, "Session overrides"). The
+   (v0.5; contract in `plugin/docs/config-layers.md`, "Session overrides"). The
    manifest registers every hook for every installer; a session that does
    not want one declines it with a marker (`/respeak:off [gate]`,
-   `/respeak:on [gate]`, written by `scripts/respeak-session.sh`) or with
+   `/respeak:on [gate]`, written by `plugin/scripts/respeak-session.sh`) or with
    the environment (`RESPEAK_HOOKS=off`, `RESPEAK_GATE=off|on`), and each
-   hook reads `scripts/respeak-override.sh` before doing anything else.
+   hook reads `plugin/scripts/respeak-override.sh` before doing anything else.
    Precedence is marker, then environment, then the layers. The layers stay
    about place and the overrides about time, so a personal preference never
    has to be expressed by editing the manifest (which reaches every

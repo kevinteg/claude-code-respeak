@@ -8,7 +8,7 @@ governed shorthand, and every human gets a narrative worth reading.
 ## The problem
 
 In Clark and Wilkes-Gibbs' experiment, two people describing the same
-abstract picture start at about forty words and finish, six rounds later, at
+abstract picture start near forty words and finish, six rounds later, at
 two: "the skater." Garrod's studies measured the cost: outsiders cannot read
 the evolved signs, because the meaning lives in the pair's shared history.
 
@@ -16,16 +16,16 @@ Agent swarms do the same. Every token of inter-agent traffic spends context
 window, and attention cost grows quadratically with sequence length, so the
 pressure to compress is structural. The person supervising the swarm becomes
 the outsider. Forcing prose pays the attention tax on every message; letting
-the dialect drift gives up auditing your own automation. Facebook's 2017
-negotiation bots were pulled back into English by rewarding English, which
-gave up the compression.
+the dialect drift gives up auditing your own automation. Facebook pulled its
+2017 negotiation bots back into English by rewarding English, which gave up
+the compression.
 
 ## What respeak does
 
 Respeak splits the traffic into two lanes and joins them with a feedback
-loop. The research found tools that compress (Caveman, LLMLingua) and tools
-that narrate (PagerDuty Advance, LangSmith Insights). One protocol has the
-right economics (Oxford's Agora), but none close the loop:
+loop. The research found compression tools (Caveman, LLMLingua), narration
+tools (PagerDuty Advance, LangSmith Insights), and one protocol with the
+right economics (Oxford's Agora), but none that close the loop:
 [`research/synthesis/solutions-and-media.md`](/research/synthesis/solutions-and-media.md).
 
 The **machine lane**: agents may use shorthand *ratified* in a lexicon file
@@ -45,12 +45,11 @@ modes:
 | `bluf` | Sentence one is the result, decision, or ask, with owner and deadline. A manager can forward it unedited. |
 | `technical` | Conclusion first, then evidence as `file:line`, then open questions. Technical readers get no fluff; they resent it most. |
 
-Every mode passes the same style gates. The corpus bans 234 phrases across
-22 categories (AI tells, from `delve` to `load-bearing`), each with a
-severity. 60 replacement rules also apply. Sentence and paragraph budgets
-come from Simplified Technical English and plain-language standards. Tone
-axes map to behavior tables. A config field with no observable behavior is
-deleted.
+Every mode passes the same style gates: 234 banned phrases across 22
+categories (AI tells, from `delve` to `load-bearing`), each with a severity.
+It also carries 60 replacement rules, sentence and paragraph budgets from
+Simplified Technical English and plain-language standards, and tone axes as
+behavior tables. A config field with no observable behavior is deleted.
 
 The **loop**: while translating, the agent files proposals for unratified
 shorthand it had to decode, preferring the variant closest to plain English.
@@ -78,7 +77,7 @@ not `genuine`.
 A style edit must be provably meaning-preserving:
 
 ```sh
-python3 scripts/respeak-verify-edit.py <before> <after>   # exit 0 = safe
+python3 plugin/scripts/respeak-verify-edit.py <before> <after>   # exit 0 = safe
 make check                                                # unittest, the bash suites, lint, doclint, hygiene, README freshness
 ```
 
@@ -97,18 +96,18 @@ literals for a page generator. `--prose-keys k1,k2` names front-matter or
 scanner is local and free:
 
 ```sh
-python3 scripts/respeak-measure.py path/to/doc.md
+python3 plugin/scripts/respeak-measure.py path/to/doc.md
 ```
 
 ## Enforcement
 
-**The gate hook** (`scripts/respeak-gate.sh`) is a `PostToolUse` hook on
-`Write|Edit` (`hooks/hooks.json`). It measures each Markdown file a tool
-call wrote and blocks a failing report with exit code 2. Claude Code
-returns that code to the model as a correctable error. Setup problems never
-block. It is **opt-in per project**: only the project layer sets
-`gate.enabled: true`. `gate.block_on: introduced` blocks only on hits the
-write added; `block_on: any` judges the whole file.
+**The gate hook** (`plugin/scripts/respeak-gate.sh`) is a `PostToolUse` hook on
+`Write|Edit` (`plugin/hooks/hooks.json`). It measures each Markdown file a
+tool call wrote and blocks a failing report with exit code 2. Claude Code
+returns that exit code to the model as a correctable error. Setup problems
+never block. It is **opt-in per project**: only the project layer sets
+`gate.enabled: true`. `gate.block_on: introduced` blocks only on hits the write added;
+`block_on: any` judges the whole file.
 
 ```yaml
 gate:
@@ -120,31 +119,31 @@ gate:
   allow: []                 # regexes — see "Exceptions and allow" below
 ```
 
-**The scanner** counts prose only: code, blockquotes, front matter, HTML
-comments, and URLs are dropped. Each list item or table row is its own
-unit. `--fail-on {none,error,warn}` sets the exit; `--baseline BASE` reports
-`[new N, pre-existing M]` per rule; `--config` carries the project's
+**The scanner** counts prose only. It drops code, blockquotes, front
+matter, HTML comments, and URLs, and treats each list item or table row as
+its own unit. `--fail-on {none,error,warn}` sets the exit; `--baseline BASE`
+reports `[new N, pre-existing M]` per rule; `--config` carries the project's
 `style.budgets` and `gate.allow`.
 
-**Exceptions and allow.** A corpus entry's `exceptions:` regexes ship with
-the corpus (the `the spine` rule exempts `spine switch`). `gate.allow`
+**Exceptions and allow.** A corpus entry's `exceptions:` regexes ship
+with the corpus (the `the spine` rule exempts `spine switch`). `gate.allow`
 skips a rule for one project, as a stopgap.
 
 **Verify-then-relay.** The `respeak:respeak` skill gates the agent's output
-and sends failures back for up to 2 rewrites. `scripts/respeak-render.sh`
+and sends failures back for up to 2 rewrites. `plugin/scripts/respeak-render.sh`
 runs the same loop headless over `claude -p`:
 
 ```sh
-scripts/respeak-render.sh --mode technical \
+plugin/scripts/respeak-render.sh --mode technical \
   --source notes/draft.md --out docs/guide/03-lesson.md --max-rounds 2
 ```
 
-**CI.** `scripts/respeak-check.sh` runs the hook over every Markdown file
-git knows about; `--verify <ref>` also proves each edit since the ref
-meaning-invariant.
+**CI.** `plugin/scripts/respeak-check.sh` runs the hook over every
+Markdown file git knows about. `--verify <ref>` also proves that each edit
+since the ref is meaning-invariant.
 
 ```sh
-bash scripts/respeak-check.sh --verify origin/main   # exit 1 on a block or a changed invariant
+bash plugin/scripts/respeak-check.sh --verify origin/main   # exit 1 on a block or a changed invariant
 ```
 
 **Upgrading**: the installed copy under `~/.claude/plugins/cache` is a
@@ -153,7 +152,7 @@ snapshot; run `claude plugin update respeak` after pulling a change.
 ## Install
 
 Prerequisites: Claude Code ≥ 2.1.196, a plugin path without spaces, bash
-3.2 or newer, and a python3 (3.9 or newer) with PyYAML; `/respeak:report`
+3.2 or newer, and a python3 (3.9 or newer) with PyYAML. `/respeak:report`
 also needs `gh`. The scripts pick the first interpreter that imports PyYAML
 (override with `RESPEAK_PYTHON`). The translator runs as a Sonnet subagent
 in its own context window, so the swarm's context never pays for it.
@@ -179,7 +178,7 @@ To try it for one session from a checkout, changing nothing persistent:
 
 ```sh
 git clone https://github.com/kevinteg/claude-code-respeak "$RESPEAK_SRC"
-claude --plugin-dir "$RESPEAK_SRC"
+claude --plugin-dir "$RESPEAK_SRC/plugin"
 ```
 
 Translation works at once. The lexicon, the gate, and a project baseline
@@ -209,7 +208,7 @@ opens with a `📣 respeak · <mode>` line.
 digest:
 
 ```sh
-bash scripts/render-lexicon-digest.sh
+bash plugin/scripts/render-lexicon-digest.sh
 ```
 
 **Turning respeak off for a session.** Nothing edits a project file.
@@ -231,16 +230,15 @@ Disabling the plugin is `claude plugin disable respeak@claude-code-respeak`.
 /respeak:report bug "gate blocks .mdx"  # kind and title preset
 ```
 
-It files a GitHub issue with `gh`, including an environment footer and a
-privacy pass you confirm; project files attach only with
-`--include-content`.
+It files a GitHub issue with `gh`, plus an environment footer and a
+privacy pass you confirm; project files attach only with `--include-content`.
 
 ## The knobs
 
 Everything a human can turn lives in
-[`config/respeak.config.yaml`](/config/respeak.config.yaml); tone axes and
-tech levels map to the behavior tables in
-[`corpus/style/tone-mapping.md`](/corpus/style/tone-mapping.md).
+[`plugin/config/respeak.config.yaml`](/plugin/config/respeak.config.yaml).
+Tone axes and tech levels map to the behavior tables in
+[`plugin/corpus/style/tone-mapping.md`](/plugin/corpus/style/tone-mapping.md).
 
 - Tone axes: formality, directness, confidence.
 - `tech_level` 1–5, plus audience profiles (`exec`, `peer-engineer`,
@@ -285,7 +283,7 @@ the provider, and which layer decided each key:
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/respeak-config.sh" explain --for docs/exec/q3.md
 ```
 
-The contract and worked examples: [`docs/config-layers.md`](/docs/config-layers.md);
+The contract and worked examples: [`plugin/docs/config-layers.md`](/plugin/docs/config-layers.md);
 a runnable tree: [`examples/layered/`](/examples/layered/).
 
 ## What can go wrong
@@ -326,23 +324,27 @@ See CHANGELOG.md for what each version changed and why.
 ## Layout
 
 ```
-.claude-plugin/            manifest + marketplace + userConfig
+.claude-plugin/            the marketplace: its one plugin is ./plugin
 .claude/respeak/           this repo's respeak layer: the human-lane scope, the lexicon digest
 .hygiene-allow             the names scripts/hygiene permits, per path
 .python-version            the pyenv virtualenv the checks run under (3.12, PyYAML)
 CLAUDE.md                  how a session in this repo writes and checks the docs
-Makefile                   make check, make readme
-agents/respeak.md          the translator
-skills/                    respeak, init, off, on, report
-hooks/hooks.json           lexicon status, milestone narrative, style gate
-scripts/                   resolver, measure, verify-edit, gate, render, check, readme-fresh
+Makefile                   make check, make readme, make doctor
+plugin/                    the plugin, self-contained: what an install copies
+plugin/.claude-plugin/     manifest + userConfig
+plugin/agents/respeak.md   the translator
+plugin/skills/             respeak, init, off, on, report
+plugin/hooks/hooks.json    lexicon status, milestone narrative, style gate
+plugin/scripts/            resolver, measure, verify-edit, gate, render, check, doctor
+plugin/config/             plugin defaults and the /respeak:init seed
+plugin/corpus/             banned phrases, replacements, lexicon, style maps
+plugin/docs/               the configuration contract
+scripts/readme-fresh.sh    the README freshness check
 scripts/hygiene            the name and path lint
 scripts/doclint            charters, packets, and relative links
 tests/                     unittest and bash suites
-config/                    plugin defaults and the /respeak:init seed
-corpus/                    banned phrases, replacements, lexicon, style maps
 design/                    the README's source and the build packets
-docs/                      architecture and the configuration contract
+docs/                      architecture
 examples/layered/          a runnable tree the config tests pin
 history/sittings/          one charter per working session
 research/                  11 source studies, 4 synthesis passes
@@ -468,7 +470,7 @@ their own terms, with links. The catalog of AI-writing tells condensed in
 [`research/sources/deai-language-landscape.md`](/research/sources/deai-language-landscape.md)
 §1 derives from Wikipedia's
 ["Signs of AI writing"](https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing)
-by Wikipedia contributors (CC BY-SA 4.0); that section is available under
-the same license. Some banned-phrase categories were informed by the
-[antislop-sampler](https://github.com/sam-paech/antislop-sampler) project
-(Apache-2.0); no code or text from it is included.
+by Wikipedia contributors (CC BY-SA 4.0). That section is available under
+the same license. The [antislop-sampler](https://github.com/sam-paech/antislop-sampler)
+project (Apache-2.0) informed some banned-phrase categories; no code or
+text from it is included.

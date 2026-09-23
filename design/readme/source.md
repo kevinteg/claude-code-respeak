@@ -77,7 +77,7 @@ not `genuine`.
 A style edit must be provably meaning-preserving:
 
 ```sh
-python3 scripts/respeak-verify-edit.py <before> <after>   # exit 0 = safe
+python3 plugin/scripts/respeak-verify-edit.py <before> <after>   # exit 0 = safe
 make check                                                # unittest, the bash suites, lint, doclint, hygiene, README freshness
 ```
 
@@ -96,13 +96,13 @@ literals for a page generator. `--prose-keys k1,k2` names front-matter or
 scanner is local and free:
 
 ```sh
-python3 scripts/respeak-measure.py path/to/doc.md
+python3 plugin/scripts/respeak-measure.py path/to/doc.md
 ```
 
 ## Enforcement
 
-**The gate hook** (`scripts/respeak-gate.sh`) is a `PostToolUse` hook on
-`Write|Edit` (`hooks/hooks.json`). It measures each Markdown file a tool
+**The gate hook** (`plugin/scripts/respeak-gate.sh`) is a `PostToolUse` hook on
+`Write|Edit` (`plugin/hooks/hooks.json`). It measures each Markdown file a tool
 call wrote and blocks a failing report with exit code 2, which Claude Code
 returns to the model as a correctable error. Setup problems never block.
 It is **opt-in per project**: only the project layer sets `gate.enabled: true`.
@@ -130,20 +130,20 @@ the corpus (the `the spine` rule exempts `spine switch`); `gate.allow` skips
 a rule for one project, as a stopgap.
 
 **Verify-then-relay.** The `respeak:respeak` skill gates the agent's output
-and sends failures back for up to 2 rewrites. `scripts/respeak-render.sh`
+and sends failures back for up to 2 rewrites. `plugin/scripts/respeak-render.sh`
 runs the same loop headless over `claude -p`:
 
 ```sh
-scripts/respeak-render.sh --mode technical \
+plugin/scripts/respeak-render.sh --mode technical \
   --source notes/draft.md --out docs/guide/03-lesson.md --max-rounds 2
 ```
 
-**CI.** `scripts/respeak-check.sh` runs the hook over every Markdown file
+**CI.** `plugin/scripts/respeak-check.sh` runs the hook over every Markdown file
 git knows about; `--verify <ref>` also proves each edit since the ref
 meaning-invariant.
 
 ```sh
-bash scripts/respeak-check.sh --verify origin/main   # exit 1 on a block or a changed invariant
+bash plugin/scripts/respeak-check.sh --verify origin/main   # exit 1 on a block or a changed invariant
 ```
 
 **Upgrading**: the installed copy under `~/.claude/plugins/cache` is a
@@ -178,7 +178,7 @@ To try it for one session from a checkout, changing nothing persistent:
 
 ```sh
 git clone https://github.com/kevinteg/claude-code-respeak "$RESPEAK_SRC"
-claude --plugin-dir "$RESPEAK_SRC"
+claude --plugin-dir "$RESPEAK_SRC/plugin"
 ```
 
 Translation works at once. The lexicon, the gate, and a project baseline
@@ -208,7 +208,7 @@ opens with a `📣 respeak · <mode>` line.
 digest:
 
 ```sh
-bash scripts/render-lexicon-digest.sh
+bash plugin/scripts/render-lexicon-digest.sh
 ```
 
 **Turning respeak off for a session.** Nothing edits a project file.
@@ -236,9 +236,9 @@ pass you confirm; project files attach only with `--include-content`.
 ## The knobs
 
 Everything a human can turn lives in
-[`config/respeak.config.yaml`](/config/respeak.config.yaml); tone axes and
+[`plugin/config/respeak.config.yaml`](/plugin/config/respeak.config.yaml); tone axes and
 tech levels map to the behavior tables in
-[`corpus/style/tone-mapping.md`](/corpus/style/tone-mapping.md).
+[`plugin/corpus/style/tone-mapping.md`](/plugin/corpus/style/tone-mapping.md).
 
 - Tone axes: formality, directness, confidence.
 - `tech_level` 1–5, plus audience profiles (`exec`, `peer-engineer`,
@@ -283,7 +283,7 @@ the provider, and which layer decided each key:
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/respeak-config.sh" explain --for docs/exec/q3.md
 ```
 
-The contract and worked examples: [`docs/config-layers.md`](/docs/config-layers.md);
+The contract and worked examples: [`plugin/docs/config-layers.md`](/plugin/docs/config-layers.md);
 a runnable tree: [`examples/layered/`](/examples/layered/).
 
 ## What can go wrong
@@ -324,23 +324,27 @@ See CHANGELOG.md for what each version changed and why.
 ## Layout
 
 ```
-.claude-plugin/            manifest + marketplace + userConfig
+.claude-plugin/            the marketplace: its one plugin is ./plugin
 .claude/respeak/           this repo's respeak layer: the human-lane scope, the lexicon digest
 .hygiene-allow             the names scripts/hygiene permits, per path
 .python-version            the pyenv virtualenv the checks run under (3.12, PyYAML)
 CLAUDE.md                  how a session in this repo writes and checks the docs
-Makefile                   make check, make readme
-agents/respeak.md          the translator
-skills/                    respeak, init, off, on, report
-hooks/hooks.json           lexicon status, milestone narrative, style gate
-scripts/                   resolver, measure, verify-edit, gate, render, check, readme-fresh
+Makefile                   make check, make readme, make doctor
+plugin/                    the plugin, self-contained: what an install copies
+plugin/.claude-plugin/     manifest + userConfig
+plugin/agents/respeak.md   the translator
+plugin/skills/             respeak, init, off, on, report
+plugin/hooks/hooks.json    lexicon status, milestone narrative, style gate
+plugin/scripts/            resolver, measure, verify-edit, gate, render, check, doctor
+plugin/config/             plugin defaults and the /respeak:init seed
+plugin/corpus/             banned phrases, replacements, lexicon, style maps
+plugin/docs/               the configuration contract
+scripts/readme-fresh.sh    the README freshness check
 scripts/hygiene            the name and path lint
 scripts/doclint            charters, packets, and relative links
 tests/                     unittest and bash suites
-config/                    plugin defaults and the /respeak:init seed
-corpus/                    banned phrases, replacements, lexicon, style maps
 design/                    the README's source and the build packets
-docs/                      architecture and the configuration contract
+docs/                      architecture
 examples/layered/          a runnable tree the config tests pin
 history/sittings/          one charter per working session
 research/                  11 source studies, 4 synthesis passes

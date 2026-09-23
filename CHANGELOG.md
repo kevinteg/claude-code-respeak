@@ -42,6 +42,30 @@ names the failure behind it.
   canonical copies in `claude-code-session` again. Before this, both had
   drifted from them in their first line, and nothing noticed: `make hygiene`
   now checks their sha256 pins before it scans.
+- `scripts/doclint` carries the canonical copy's own ceiling for
+  `design/conventions*.md`, 8,192 bytes, and its pin moves with it. Before
+  this, the copy here checked those files against the 6,144-byte record
+  ceiling and differed from the canonical copy by that one rule.
+- The plugin is the `plugin/` subtree, and the marketplace's source is
+  `./plugin`: the manifest, `agents/`, `config/`, `corpus/`, `hooks/`,
+  `skills/`, the sixteen shipped scripts, and `docs/config-layers.md`, which
+  the skills and the agent name as the contract. Before this, the source was
+  the repository root, so an install copied all 100 tracked files into the
+  plugin cache, research, tests and history included. A checkout now loads
+  with `claude --plugin-dir "$RESPEAK_SRC/plugin"`; paths under
+  `${CLAUDE_PLUGIN_ROOT}` do not change.
+- `make doctor` runs `plugin/scripts/respeak-doctor.sh`: one line each for
+  the python and PyYAML, `claude`, the marketplace and its source, the
+  installed and manifest versions, the session provider, and unknown config
+  keys. It exits 2 only when no python3 imports PyYAML. Before this, a hook
+  with no PyYAML python exited 0 without a word, and nothing showed which
+  source or version a session had loaded.
+- `make install` installs the plugin from this checkout: it adds the
+  marketplace when none is named `claude-code-respeak`, updates both when
+  that marketplace is this checkout, and for any other source prints the
+  source and the commands to switch, then exits 2. It never removes a
+  registration. Before this, a local install was four hand-typed commands,
+  and the marketplace on this Mac still came from GitHub.
 
 ## 0.6.0 (2026-09-21)
 
