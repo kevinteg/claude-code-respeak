@@ -5,7 +5,8 @@ Scans the tracked files of a repo (`git ls-files -z`) for six pattern groups
 and prints counts only, never a matched line. A file is skipped when its first
 8 KB hold a NUL (binary). `.hygiene-allow` lists exceptions, one per line:
 `<path-glob>: <group>[,<group>]`, `#` comments; a glob's `*` stays inside one
-path segment.
+path segment. Under `history/sittings/` (charters are records) the `person`
+group is not evaluated; the other five groups still scan there.
 
 Usage: hygiene [--json] [--allow FILE] [--repo DIR]
 Exit 0 when no hit lies outside the allowlist, 2 when one does, 1 on usage or
@@ -33,6 +34,7 @@ GROUPS = (
 COMPILED = [(name, re.compile("|".join(pats), re.IGNORECASE)) for name, pats in GROUPS]
 GROUP_NAMES = [name for name, _ in GROUPS]
 BINARY_PROBE = 8192
+RECORDS = ("history/sittings/",)
 
 
 class UsageError(Exception):
@@ -119,6 +121,8 @@ def scan(repo, entries):
         counts = dict.fromkeys(GROUP_NAMES, 0)
         for line in text.splitlines():
             for name, rx in COMPILED:
+                if name == "person" and path.startswith(RECORDS):
+                    continue
                 if rx.search(line):
                     counts[name] += 1
         for name in GROUP_NAMES:

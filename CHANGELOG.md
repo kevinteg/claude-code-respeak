@@ -2,6 +2,16 @@
 
 Versions follow `.claude-plugin/plugin.json`. Dates are commit dates.
 
+## Unreleased
+
+- `scripts/hygiene` and `scripts/doclint` are re-synced to the canonical
+  copies (conventions section 6), and the Makefile pins move in the same
+  commit. Hygiene no longer checks charters under `history/sittings/` for
+  a person's name, so that allow row drops `person`. Doclint now checks
+  the plugin's agents and commands. The failure: the pins lagged the
+  canonical copies, so `make hygiene` read red between the copy and the
+  pin.
+
 ## 0.6.1 (2026-09-22)
 
 What the first conventions pass on this repository found. Each bullet
