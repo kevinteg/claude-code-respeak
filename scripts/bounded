@@ -1,0 +1,231 @@
+#!/usr/bin/env python3
+"""bounded: run a command under a wall, a per-tree lock and a load breaker (R6 C1).
+
+Usage: bounded [--lock DIR] [--wall S] [--load N] -- cmd...
+
+  --lock DIR  `mkdir DIR` holding `owner` (pid and start, epoch seconds). While the
+              holder's pid lives and the lock is under 900 s old: exit 2. A dead pid or
+              a stale lock is taken over. Released on exit and on SIGTERM, SIGINT, SIGHUP.
+  --wall S    the command runs in its own process group (a new session); at S seconds
+              the whole group gets SIGTERM, then SIGKILL after a grace: exit 124.
+  --load N    while the 1-minute load average is above N x cores, poll every 30 s up to
+              600 s, then exit 2. Taken after the lock, so a waiting gate holds its tree.
+
+Exits: the command's own (128+signal when a signal ended it), 124 at the wall, 2 lock or
+load, 1 usage, 127 when cmd cannot start. Test overrides: BOUNDED_GRACE (s, default 5), BOUNDED_LOAD_POLL (30),
+BOUNDED_LOAD_MAX (600), BOUNDED_LOADAVG (a fake 1-minute reading).
+"""
+import os
+import shutil
+import signal
+import subprocess
+import sys
+import time
+
+STALE = 900
+USAGE = "usage: bounded [--lock DIR] [--wall S] [--load N] -- cmd..."
+
+
+class Usage(Exception):
+    pass
+
+
+class Refused(Exception):
+    pass
+
+
+def parse(args):
+    opts = {"lock": None, "wall": None, "load": None}
+    if "--" not in args:
+        raise Usage("missing --")
+    i = args.index("--")
+    head, cmd = args[:i], args[i + 1:]
+    if not cmd:
+        raise Usage("no command")
+    if len(head) % 2:
+        raise Usage("an option lacks its value")
+    for flag, value in zip(head[::2], head[1::2]):
+        key = flag[2:] if flag.startswith("--") else None
+        if key not in opts:
+            raise Usage("unknown option %s" % flag)
+        if key == "lock":
+            opts[key] = value
+        else:
+            try:
+                opts[key] = float(value)
+            except ValueError:
+                raise Usage("%s wants a number, got %s" % (flag, value))
+            if opts[key] <= 0:
+                raise Usage("%s wants a positive number" % flag)
+    return opts, cmd
+
+
+def env_float(name, default):
+    try:
+        return float(os.environ.get(name, default))
+    except ValueError:
+        return float(default)
+
+
+def pid_alive(pid):
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+class Lock:
+    def __init__(self, path):
+        self.path = path
+        self.owner = os.path.join(path, "owner")
+        self.mine = "%d %d\n" % (os.getpid(), int(time.time()))
+        self.held = False
+
+    def holder(self):
+        """(pid, start) of the current holder; an ownerless dir dates from its mtime."""
+        try:
+            with open(self.owner) as fh:
+                pid, start = fh.read().split()[:2]
+            return int(pid), float(start)
+        except (OSError, ValueError):
+            try:
+                # an ownerless dir: live for 5 s (its creator is writing), then stale
+                return (-1 if time.time() - os.stat(self.path).st_mtime >= 5 else os.getpid(),
+                        os.stat(self.path).st_mtime)
+            except OSError:
+                return -1, 0.0
+
+    def take(self):
+        for _ in range(2):
+            try:
+                os.mkdir(self.path)
+            except FileExistsError:
+                pid, start = self.holder()
+                age = time.time() - start
+                if pid_alive(pid) and age < STALE:
+                    raise Refused("bounded: %s held by pid %d for %d s (stale at %d s)"
+                                  % (self.path, pid, age, STALE))
+                sys.stderr.write("bounded: taking over %s from pid %d (%s)\n" % (
+                    self.path, pid, "stale" if pid_alive(pid) else "dead"))
+                aside = "%s.stale.%d" % (self.path, os.getpid())
+                try:
+                    os.rename(self.path, aside)
+                    shutil.rmtree(aside, ignore_errors=True)
+                except OSError:
+                    pass
+                continue
+            with open(self.owner, "w") as fh:
+                fh.write(self.mine)
+            self.held = True
+            return
+        raise Refused("bounded: %s contended, not taken" % self.path)
+
+    def release(self):
+        if not self.held:
+            return
+        self.held = False
+        try:
+            with open(self.owner) as fh:
+                if fh.read() != self.mine:
+                    return  # taken over; not ours to remove
+        except OSError:
+            return
+        shutil.rmtree(self.path, ignore_errors=True)
+
+
+def wait_for_load(ceiling):
+    poll = env_float("BOUNDED_LOAD_POLL", 30)
+    limit = env_float("BOUNDED_LOAD_MAX", 600)
+    limit_load = ceiling * (os.cpu_count() or 1)
+    waited = 0.0
+    while True:
+        fake = os.environ.get("BOUNDED_LOADAVG")
+        load = float(fake) if fake else os.getloadavg()[0]
+        if load <= limit_load:
+            return
+        if waited >= limit:
+            raise Refused("bounded: load %.2f above %.2f (%g x %d cores) for %d s"
+                          % (load, limit_load, ceiling, os.cpu_count() or 1, waited))
+        if not waited:
+            sys.stderr.write("bounded: load %.2f above %.2f; waiting up to %d s\n"
+                             % (load, limit_load, limit))
+        time.sleep(poll)
+        waited += poll
+
+
+def kill_group(pgid, child):
+    """SIGTERM the group, then SIGKILL whatever is left after the grace."""
+    grace = env_float("BOUNDED_GRACE", 5)
+    try:
+        os.killpg(pgid, signal.SIGTERM)
+    except OSError:
+        return
+    deadline = time.monotonic() + grace
+    while time.monotonic() < deadline:
+        child.poll()
+        try:
+            os.killpg(pgid, 0)
+        except OSError:
+            return
+        time.sleep(0.05)
+    try:
+        os.killpg(pgid, signal.SIGKILL)
+    except OSError:
+        pass
+    child.poll()
+
+
+def main(argv):
+    try:
+        opts, cmd = parse(argv[1:])
+    except Usage as exc:
+        sys.stderr.write("bounded: %s\n%s\n" % (exc, USAGE))
+        return 1
+    lock = Lock(opts["lock"]) if opts["lock"] else None
+    state = {"child": None}
+
+    def on_signal(signum, _frame):
+        child = state["child"]
+        if child is not None:
+            kill_group(child.pid, child)
+        if lock:
+            lock.release()
+        os._exit(128 + signum)
+
+    for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+        signal.signal(sig, on_signal)
+    try:
+        if lock:
+            lock.take()
+        if opts["load"] is not None:
+            wait_for_load(opts["load"])
+        try:
+            child = subprocess.Popen(cmd, start_new_session=True)
+        except OSError as exc:
+            sys.stderr.write("bounded: cannot run %s: %s\n" % (cmd[0], exc))
+            return 127
+        state["child"] = child
+        try:
+            code = child.wait(timeout=opts["wall"])
+        except subprocess.TimeoutExpired:
+            sys.stderr.write("bounded: wall of %g s reached; killing group %d\n"
+                             % (opts["wall"], child.pid))
+            kill_group(child.pid, child)
+            child.wait()
+            return 124
+        return 128 - code if code < 0 else code
+    except Refused as exc:
+        sys.stderr.write("%s\n" % exc)
+        return 2
+    finally:
+        if lock:
+            lock.release()
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

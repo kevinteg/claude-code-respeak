@@ -14,9 +14,15 @@ export PATH := $(patsubst %/,%,$(dir $(PYTHON))):$(PATH)
 # The claude CLI `install` and `validate` run; the install suite passes a fake here.
 CLAUDE ?= claude
 
-.PHONY: check test lint doclint hygiene readme readme-fresh validate doctor install
+.PHONY: check check-unlocked test lint doclint hygiene readme readme-fresh validate doctor install
 
-check: test lint doclint hygiene readme-fresh validate
+# check runs under scripts/bounded, a verbatim copy of claude-code-session's (conventions section 5,
+# unpinned): one per tree by the lock .check.lock, a 900 s wall, held off above load 4 x cores.
+# Exits: the gate's own, 124 at the wall, 2 lock held or load too high, 127 cannot start.
+check:
+	$(PYTHON) scripts/bounded --lock .check.lock --wall 900 --load 4 -- $(MAKE) check-unlocked
+
+check-unlocked: test lint doclint hygiene readme-fresh validate
 
 # Every spawn here is bounded: respeak-deadline.sh runs it in its own process group and kills
 # the group at the wall clock (exit 124), so a hung suite or a slow claude fails the target.
