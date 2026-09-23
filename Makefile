@@ -20,7 +20,13 @@ doclint:
 	$(PYTHON) scripts/doclint
 	bash scripts/respeak-check.sh
 
+# scripts/hygiene and scripts/doclint are byte-identical to claude-code-session's (conventions
+# section 6); a re-sync moves the files and these pins together.
+HYGIENE_SHA = fb05f6203ac904a0839345e257d4cf39855bcfbb8ebc25f307684c275f111d4d
+DOCLINT_SHA = f5a9ae84fd112c48818799dd6f96c3fbbaae7dc0ad6df62886c93953ea70bdd4
+
 hygiene:
+	@printf '%s  %s\n' $(HYGIENE_SHA) scripts/hygiene $(DOCLINT_SHA) scripts/doclint | shasum -a 256 -c --status || { echo "hygiene: scripts/hygiene or scripts/doclint differ from the canonical copies (conventions section 6)"; exit 2; }
 	$(PYTHON) scripts/hygiene
 
 # README.md is rendered from design/readme/source.md (conventions section 6); edit the source.
