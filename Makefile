@@ -22,8 +22,8 @@ doclint:
 
 # scripts/hygiene and scripts/doclint are byte-identical to claude-code-session's (conventions
 # section 6); a re-sync moves the files and these pins together.
-HYGIENE_SHA = fb05f6203ac904a0839345e257d4cf39855bcfbb8ebc25f307684c275f111d4d
-DOCLINT_SHA = b46db3dfed41b9d3cf9298dbfdb2d83781e9ee041c1d9b5a94c032e0c4b7aa21
+HYGIENE_SHA = 5c7408dd5dbfdb66e9470188ce5d2e587f2d7c794f4164efe3269f4a3aa2c1db
+DOCLINT_SHA = ca28e426d956ecbc14424b3ceea606cd0ee5d7ff03b307af7f681302a9120534
 
 hygiene:
 	@printf '%s  %s\n' $(HYGIENE_SHA) scripts/hygiene $(DOCLINT_SHA) scripts/doclint | shasum -a 256 -c --status || { echo "hygiene: scripts/hygiene or scripts/doclint differ from the canonical copies (conventions section 6)"; exit 2; }

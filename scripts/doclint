@@ -9,7 +9,12 @@ Rules, each a function returning `path: rule: detail` lines:
   packet      design/packets/*.md under 9,216 bytes, the header table's six
               rows (from, pin, wall, may touch, acceptance, budget) and the six
               sections `## 1.` to `## 6.`
-  size        design/research*.md and design/conventions*.md under 6,144 bytes
+  size        design/research*.md under 6,144 bytes, design/conventions*.md
+              under 8,192
+  plugin      every plugin/commands/*.md under 31 lines with `description` and
+              `allowed-tools` in its frontmatter; every plugin/agents/*.md with
+              `name`, `description`, `model` and `tools`; a plugin's verb set is
+              its own
   link        every relative markdown link in a .md file resolves
   next        no file named NEXT
 
@@ -30,6 +35,9 @@ CONVENTIONS_CEILING = 8192
 CHARTER_ROWS = ("goal", "budget", "pin", "window", "agents")
 CHARTER_PARTS = ("## Done-ness", "## Handover", "## Next act")
 CHARTER_TITLE = re.compile(r"^# Sitting \d{4}-\d{2}-\d{2}-\d+: .+, .+$")
+COMMAND_CEILING = 31
+COMMAND_KEYS = ("description", "allowed-tools")
+AGENT_KEYS = ("name", "description", "model", "tools")
 PACKET_ROWS = ("from", "pin", "wall", "may touch", "acceptance", "budget")
 PACKET_SECTIONS = ("What the source says", "Rulings", "Interfaces",
                    "Findings that name this row", "Forbidden reads", "Report")
@@ -134,6 +142,40 @@ def check_sizes(repo, paths):
     return out
 
 
+def frontmatter(text):
+    lines = text.splitlines()
+    if not lines or lines[0] != "---":
+        return set()
+    keys = set()
+    for line in lines[1:]:
+        if line == "---":
+            return keys
+        m = re.match(r"^([A-Za-z][A-Za-z0-9_-]*):", line)
+        if m:
+            keys.add(m.group(1))
+    return set()
+
+
+def check_plugin(repo, paths):
+    out = []
+    for path in paths:
+        if match(path, "plugin/commands/*.md"):
+            text = read(repo, path).decode("utf-8", "replace")
+            n = len(text.splitlines())
+            if n >= COMMAND_CEILING:
+                out.append("%s: plugin: %d lines, ceiling %d" % (path, n, COMMAND_CEILING))
+            keys = frontmatter(text)
+            for key in COMMAND_KEYS:
+                if key not in keys:
+                    out.append("%s: plugin: frontmatter lacks %s" % (path, key))
+        elif match(path, "plugin/agents/*.md"):
+            keys = frontmatter(read(repo, path).decode("utf-8", "replace"))
+            for key in AGENT_KEYS:
+                if key not in keys:
+                    out.append("%s: plugin: frontmatter lacks %s" % (path, key))
+    return out
+
+
 def check_links(repo, paths):
     out = []
     for path in paths:
@@ -163,7 +205,8 @@ def check_next(repo, paths):
             if os.path.basename(p) == "NEXT"]
 
 
-RULES = (check_charters, check_packets, check_sizes, check_links, check_next)
+RULES = (check_charters, check_packets, check_sizes, check_plugin, check_links,
+         check_next)
 
 
 def lint(repo):
