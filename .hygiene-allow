@@ -1,6 +1,7 @@
 # .hygiene-allow: <path-glob>: <group>[,<group>]; `*` stays inside one path segment.
 # sibling: every hit below is the plugin's own name (`respeak`); no other sibling
-# appears outside design/ and history/. One glob per directory.
+# appears outside design/ and history/. One glob per directory; a directory that mixes
+# records and rows carries one glob per kind (design/packets/).
 .claude-plugin/*: sibling,person
 plugin/.claude-plugin/*: sibling,person
 .claude/respeak/*: sibling
@@ -38,7 +39,11 @@ LICENSE: person
 README.md: sibling,person
 # design/readme/: the README's source; the plugin's name and the repo URL in the install lines.
 design/readme/*: sibling,person
-# The packets and the relay rows name the siblings, the builders' paths and the owner.
-design/packets/*: sibling,home,person
+# The packets and the relay rows name the siblings and the owner. `home` is scoped by kind:
+# a rows file's `repo` is a `~` path (the stand-in's contract), and r5-resync.md, a merged
+# record, names the session checkout by a home path.
+design/packets/*.md: sibling,person
+design/packets/rows-*.json: sibling,person,home
+design/packets/r5-resync.md: home
 history/sittings/*.md: private
 design/review-r6.md: sibling
