@@ -1,11 +1,9 @@
 ---
 name: report
 description: >
-  File a bug report, feature request, documentation note, or question
-  against the respeak repository on GitHub. Privacy by default: the issue
-  body is your text plus an environment footer. Nothing from your project,
-  config, lexicon, proposals, or transcript is attached unless you opt in
-  and confirm. User-invoked only.
+  File a bug report, feature request, documentation note, or question on
+  GitHub. Privacy by default: your text plus an environment footer; project
+  content only if you opt in. User-invoked only.
 disable-model-invocation: true
 argument-hint: "[bug|enhancement|documentation|question] [\"title\"] [--include-content]"
 allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/scripts/report-env.sh *) Bash(gh auth status*) Bash(gh issue create *)

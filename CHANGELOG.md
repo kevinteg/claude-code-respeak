@@ -11,6 +11,13 @@ Versions follow `.claude-plugin/plugin.json`. Dates are commit dates.
   the plugin's agents and commands. The failure: the pins lagged the
   canonical copies, so `make hygiene` read red between the copy and the
   pin.
+- The five skill descriptions are 200 characters or fewer, the ceiling
+  the re-synced doclint enforces (conventions section 1). The four
+  user-invoked skills keep their menu line short, and `respeak` keeps
+  three of its quoted asks as its trigger; the agent keeps the full list.
+  Hygiene no longer checks charters for sibling repository names, so that
+  allow row drops `sibling`. The failure: the five descriptions ran from
+  206 to 333 characters, so doclint refused all five.
 
 ## 0.6.1 (2026-09-22)
 

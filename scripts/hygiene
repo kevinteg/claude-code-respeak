@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """hygiene: the public-hygiene scan (conventions section 6, overhaul-r1 section 5).
 
-Scans the tracked files of a repo (`git ls-files -z`) for six pattern groups
-and prints counts only, never a matched line. A file is skipped when its first
+Scans the working tree of a repo (`git ls-files -co --exclude-standard`: the
+tracked and untracked-not-ignored regular files) for six pattern groups and
+prints counts only, never a matched line: an uncommitted file is scanned before
+its commit, an ignored one never. A file is skipped when its first
 8 KB hold a NUL (binary). `.hygiene-allow` lists exceptions, one per line:
 `<path-glob>: <group>[,<group>]`, `#` comments; a glob's `*` stays inside one
 path segment. Under `history/sittings/` (charters are records) the `person`
-group is not evaluated; the other five groups still scan there.
+and `sibling` groups are not evaluated; `home`, `lan`, `domain` and `private`
+still scan there.
 
 Usage: hygiene [--json] [--allow FILE] [--repo DIR]
 Exit 0 when no hit lies outside the allowlist, 2 when one does, 1 on usage or
@@ -35,6 +38,7 @@ COMPILED = [(name, re.compile("|".join(pats), re.IGNORECASE)) for name, pats in 
 GROUP_NAMES = [name for name, _ in GROUPS]
 BINARY_PROBE = 8192
 RECORDS = ("history/sittings/",)
+RECORDS_SKIP = ("person", "sibling")
 
 
 class UsageError(Exception):
@@ -91,13 +95,15 @@ def allowed(path, group, entries):
     return any(group in groups and glob_match(path, glob) for glob, groups in entries)
 
 
-def tracked(repo):
+def files(repo):
     try:
-        out = subprocess.run(["git", "-C", repo, "ls-files", "-z"],
-                             capture_output=True, check=True).stdout
+        out = subprocess.run(
+            ["git", "-C", repo, "ls-files", "-z", "--cached", "--others",
+             "--exclude-standard"], capture_output=True, check=True).stdout
     except (OSError, subprocess.CalledProcessError) as exc:
         raise UsageError("git ls-files failed in %s: %s" % (repo, exc))
-    return [p for p in out.decode("utf-8", "surrogateescape").split("\0") if p]
+    paths = {p for p in out.decode("utf-8", "surrogateescape").split("\0") if p}
+    return sorted(p for p in paths if os.path.isfile(os.path.join(repo, p)))
 
 
 def read_text(full):
@@ -114,14 +120,14 @@ def read_text(full):
 def scan(repo, entries):
     groups = {name: {"lines": 0, "files": 0} for name in GROUP_NAMES}
     outside = []
-    for path in tracked(repo):
+    for path in files(repo):
         text = read_text(os.path.join(repo, path))
         if text is None:
             continue
         counts = dict.fromkeys(GROUP_NAMES, 0)
         for line in text.splitlines():
             for name, rx in COMPILED:
-                if name == "person" and path.startswith(RECORDS):
+                if name in RECORDS_SKIP and path.startswith(RECORDS):
                     continue
                 if rx.search(line):
                     counts[name] += 1
