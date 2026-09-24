@@ -5,6 +5,13 @@ Versions follow `.claude-plugin/plugin.json`. Dates are commit dates.
 ## Unreleased
 
 - `scripts/hygiene`, `scripts/doclint` and `scripts/bounded` are re-synced
+  to claude-code-session `35b5870`. Hygiene now scans binary files: a secret
+  or a home path inside a binary is a hit, a UTF-16 file is read as text, and
+  a file over 4 MiB is scanned by its path only. `bounded` cuts the command
+  once: after the first TERM, INT or HUP it ignores the other two, so it exits
+  128 plus the first signal's number. `tests/test_bounded.sh` covers TERM,
+  INT and HUP in turn; the old copy exited 129.
+- `scripts/hygiene`, `scripts/doclint` and `scripts/bounded` are re-synced
   to claude-code-session `330bded`. `make check` runs under an 840 s wall. A
   refusal or the wall ends stderr with `bounded: stop: lock|load|wall`, which
   means the suite did not run, not that it failed. Every packet has a `verify`
