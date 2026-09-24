@@ -4,6 +4,12 @@ Versions follow `.claude-plugin/plugin.json`. Dates are commit dates.
 
 ## Unreleased
 
+- `gate --committed` reads the project file only when git tracks it, and
+  reads it from the index. An untracked or ignored project file is skipped
+  and named in `dropped`; outside a git work tree the resolver exits 2 and
+  `respeak-gate.sh --committed` exits 3. The failure: an ignored nested
+  `.claude/respeak/config.yaml` at `fail_on: none` let `respeak-check`
+  pass a blocked file (review ADV10-1).
 - The README source is rewritten as the public document: why respeak
   exists, install with `make install` and `make doctor`, every command and
   skill, the tests by file, and the conventions shared with the sibling

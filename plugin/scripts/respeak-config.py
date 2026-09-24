@@ -57,6 +57,7 @@ import copy
 import json
 import os
 import re
+import subprocess
 import sys
 import unicodedata
 
@@ -93,6 +94,14 @@ CANONICAL_KINDS = ("plugin", "userconfig", "user", "project", "project-local", "
 # included. A folder file, an ignored local file, the user file, the session
 # provider, RESPEAK_CONFIG and --set cannot move it (review ADV6-1, ADV6-2).
 COMMITTED_GATE_KINDS = ("plugin", "project")
+# ...and "committed" means git tracks it: under --committed the project file
+# is the nearest one in the index, read from the index; an untracked or
+# ignored one is skipped and named in `dropped` (review ADV10-1).
+UNTRACKED_PROJECT = "untracked project file"
+
+
+class SetupError(Exception):
+    """A request the resolver cannot answer (exit 2), never a verdict."""
 
 # Lists that accumulate across layers instead of replacing.
 APPEND_LISTS = ("gate.allow", "gate.exclude")
@@ -411,12 +420,16 @@ class Resolution:
         return path
 
 
-def load_yaml_file(path, warnings):
+def load_yaml_file(path, warnings, text=None):
     """A mapping, {} for an empty file, or None (absent / unreadable / not a
-    mapping, the last two with a warning)."""
+    mapping, the last two with a warning). `text`, when given, is parsed in
+    place of the file's contents (the index copy under --committed)."""
     try:
-        with open(path) as f:
-            data = yaml.load(f, Loader=_Loader)
+        if text is not None:
+            data = yaml.load(text, Loader=_Loader)
+        else:
+            with open(path) as f:
+                data = yaml.load(f, Loader=_Loader)
     except FileNotFoundError:
         return None
     except Exception as e:  # noqa: BLE001 — any parse/IO failure means "skip this layer"
@@ -435,6 +448,43 @@ def file_layer(kind, path, base, warnings):
     return Layer(kind, path, path=path, data=data, base=base)
 
 
+def git_out(cwd, *args):
+    """stdout of `git -C cwd ARGS`, or None when git is missing or fails."""
+    try:
+        r = subprocess.run(["git", "-C", cwd] + list(args), capture_output=True,
+                           timeout=10, stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return r.stdout.decode("utf-8", "replace") if r.returncode == 0 else None
+
+
+def git_toplevel(path):
+    """The work tree holding path (or its nearest existing ancestor), or None."""
+    d = path
+    while d and not os.path.isdir(d):
+        parent = os.path.dirname(d)
+        if parent == d:
+            break
+        d = parent
+    out = git_out(d, "rev-parse", "--show-toplevel")
+    return real(out.strip()) if out and out.strip() else None
+
+
+def tracked_name(d, rel):
+    """rel's repository path when git tracks d/rel (in the index), else None."""
+    out = git_out(d, "ls-files", "--full-name", "--error-unmatch", "--", rel)
+    return out.strip() if out and out.strip() else None
+
+
+def index_file_layer(kind, path, base, warnings):
+    """file_layer for the index copy: absent unless git tracks the file."""
+    d, rel = os.path.dirname(path), os.path.basename(path)
+    name = tracked_name(d, rel)
+    text = git_out(d, "show", ":" + name) if name else None
+    data = load_yaml_file(path, warnings, text=text) if text is not None else None
+    return Layer(kind, path, path=path, data=data, base=base)
+
+
 def user_config_dir(env):
     return real(env.get("CLAUDE_CONFIG_DIR") or os.path.join(os.path.expanduser("~"), ".claude"))
 
@@ -450,14 +500,16 @@ def is_user_root(d, cfgdir):
             or path_key(os.path.join(d, ".claude")) == path_key(cfgdir))
 
 
-def find_project(explicit, env, target, launch_dir=None):
+def find_project(explicit, env, target, launch_dir=None, untracked=None):
     """(project root or None, how). One rule for every consumer:
     1. --project, verbatim;
     2. the nearest ancestor of the target holding .claude/respeak/config.yaml
        (a nested one wins in a monorepo; a parent one governs every repo
        below it, like a parent CLAUDE.md), never the user config directory;
     3. --launch-dir / $CLAUDE_PROJECT_DIR, where Claude Code was started;
-    4. the nearest ancestor holding .git or .claude/ (again never $HOME)."""
+    4. the nearest ancestor holding .git or .claude/ (again never $HOME).
+    With `untracked` (a list, under --committed) step 2 skips a project file
+    git does not track and appends its directory to the list."""
     cfgdir = user_config_dir(env)
     if explicit:
         return real(explicit), "--project"
@@ -465,6 +517,9 @@ def find_project(explicit, env, target, launch_dir=None):
     chain = list(reversed(ancestors(d)))          # nearest first
     for a in chain:
         if not is_user_root(a, cfgdir) and os.path.isfile(os.path.join(a, PROJECT_REL)):
+            if untracked is not None and tracked_name(a, PROJECT_REL) is None:
+                untracked.append(a)
+                continue
             return real(a), "nearest " + PROJECT_REL
     launch = launch_dir or env.get("CLAUDE_PROJECT_DIR")
     if launch:
@@ -485,13 +540,14 @@ def tdir_anchor(tdir, project):
     return project
 
 
-def project_layers(project, warnings, cfgdir):
+def project_layers(project, warnings, cfgdir, committed=False):
     if is_user_root(project, cfgdir):
         warnings.append("project root %s is the user config directory; the user file is not "
                         "re-applied at project grade" % project)
         return []
+    project_file = index_file_layer if committed else file_layer
     return [
-        file_layer("project", os.path.join(project, PROJECT_REL), project, warnings),
+        project_file("project", os.path.join(project, PROJECT_REL), project, warnings),
         file_layer("project-local", os.path.join(project, PROJECT_LOCAL_REL), project, warnings),
     ]
 
@@ -544,7 +600,8 @@ def session_layer(session_id, env, warnings):
     return Layer("session", label, path=path, data=section or None, base=None), provider
 
 
-def build_stack(project, target, plugin_root, env, overrides, walk_from, warnings, session=None):
+def build_stack(project, target, plugin_root, env, overrides, walk_from, warnings, session=None,
+                committed=False):
     layers = []
 
     # 1. plugin defaults
@@ -582,19 +639,19 @@ def build_stack(project, target, plugin_root, env, overrides, walk_from, warning
     if project:
         anchor = tdir_anchor(tdir, project) if in_project else common_ancestor(tdir, project)
         if anchor == os.sep and not same_dir(anchor, project) and os.sep not in (tdir[:1],):
-            layers.extend(project_layers(project, warnings, cfgdir))  # nothing in common
+            layers.extend(project_layers(project, warnings, cfgdir, committed))  # nothing in common
             anchor = None
     walk_root = real(walk_from) if walk_from else None
     for d in ancestors(tdir):
         at_anchor = anchor is not None and same_dir(d, anchor)
         if at_anchor and in_project:
-            layers.extend(project_layers(project, warnings, cfgdir))
+            layers.extend(project_layers(project, warnings, cfgdir, committed))
         if not (walk_root and not is_under(d, walk_root)):
             kind = "folder" if (project and in_project and is_under(d, project)) else "ancestor"
             layers.append(file_layer(kind, os.path.join(d, FOLDER_FILE), d, warnings))
             layers.append(file_layer(kind + "-local", os.path.join(d, FOLDER_LOCAL), d, warnings))
         if at_anchor and not in_project:
-            layers.extend(project_layers(project, warnings, cfgdir))
+            layers.extend(project_layers(project, warnings, cfgdir, committed))
 
     # 9. the session provider's resolved file, when one was accepted
     if session is not None and session.present:
@@ -766,18 +823,27 @@ def resolve(target=None, project=None, plugin_root=None, env=None, overrides=Non
     target = real(given)
     plugin_root = real(plugin_root or env.get("CLAUDE_PLUGIN_ROOT") or DEFAULT_PLUGIN_ROOT)
     launch_dir = real(launch_dir) if launch_dir else None
-    project, how = find_project(project, env, given, launch_dir)
+    untracked = None
+    if committed:
+        toplevel = git_toplevel(given)
+        if toplevel is None:
+            raise SetupError("--committed needs a git work tree")
+        untracked = []
+    project, how = find_project(project, env, given, launch_dir, untracked)
     if project and under_how(target, project) is None and under_how(given, project) == "logical":
         # e.g. proj/ext.md -> /elsewhere/ext.md: the file the tool wrote lives
         # in the project, so resolve for the spelling that says so
         target = given
     session, provider = session_layer(session_id, env, warnings)
     layers = build_stack(project, target, plugin_root, env, overrides or {}, walk_from, warnings,
-                         session=session)
+                         session=session, committed=committed)
     if not layers[0].present:
         warnings.append("plugin defaults not found at %s" % layers[0].path)
     config, origins, applied = {}, {}, []
-    dropped = [] if committed else None
+    dropped = None
+    if committed:
+        dropped = ["%s: %s" % (os.path.relpath(os.path.join(real(a), PROJECT_REL), toplevel),
+                               UNTRACKED_PROJECT) for a in untracked]
     for layer in layers:
         if layer.present:
             apply_layer(config, origins, layer, layer.data, target, warnings, applied, dropped)
@@ -1132,7 +1198,9 @@ def main(argv=None):
     p.add_argument("--write-config", default=None, help="also write the resolved config (YAML) here")
     p.add_argument("--committed", action="store_true",
                    help="the CI verdict: gate.* keys from the plugin defaults and the project file "
-                        "with its scopes only; every other layer's are dropped and listed in `dropped`")
+                        "with its scopes only; every other layer's are dropped and listed in `dropped`. "
+                        "The project file is the nearest one git tracks, read from the index; "
+                        "outside a git work tree this exits 2")
 
     p = sub.add_parser("validate", help="check config files for shape and policy")
     p.add_argument("files", nargs="+")
@@ -1163,10 +1231,14 @@ def main(argv=None):
     except ValueError as e:
         sys.stderr.write("respeak-config: %s\n" % e)
         return 2
-    res = resolve(target=args.target, project=args.project, plugin_root=args.plugin_root,
-                  env=env, overrides=overrides, walk_from=args.walk_from,
-                  launch_dir=args.launch_dir or None, session_id=args.session or None,
-                  committed=getattr(args, "committed", False))
+    try:
+        res = resolve(target=args.target, project=args.project, plugin_root=args.plugin_root,
+                      env=env, overrides=overrides, walk_from=args.walk_from,
+                      launch_dir=args.launch_dir or None, session_id=args.session or None,
+                      committed=getattr(args, "committed", False))
+    except SetupError as e:
+        sys.stderr.write("respeak-config: %s\n" % e)
+        return 2
 
     if args.cmd == "resolve":
         if args.format == "yaml":

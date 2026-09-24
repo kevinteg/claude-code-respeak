@@ -64,6 +64,26 @@ printf '{"provider": {"name": "claude-code-session", "version": "2.0"}, "respeak
 out="$(cd "$proj" && XDG_STATE_HOME="$work/state" CLAUDE_CODE_SESSION_ID=s1 bash "$CHECK" docs/bad.md 2>&1)"; rc=$?
 check "committed: a session provider at fail_on none still blocks" 1 "$rc"
 
+# ADV10-1: a nested project file counts only when git tracks it, and then
+# as the index has it, never the working copy.
+printf '.respeak.local.yaml\ndocs/.claude/\n' > "$proj/.gitignore"
+mkdir -p "$proj/docs/.claude/respeak"
+printf 'version: 3\ngate: {fail_on: none}\n' > "$proj/docs/.claude/respeak/config.yaml"
+out="$(cd "$proj" && bash "$CHECK" docs/bad.md 2>&1)"; rc=$?
+check "committed: an ignored nested project file at fail_on none still blocks" 1 "$rc"
+check_out "...and stays BLOCKED" 'BLOCKED  docs/bad.md' "$out"
+check_out "...and the drop is named" 'docs/.claude/respeak/config.yaml untracked project file (committed)' "$out"
+printf 'version: 3\ngate: {enabled: false}\n' > "$proj/docs/.claude/respeak/config.yaml"
+out="$(cd "$proj" && bash "$CHECK" docs/bad.md 2>&1)"; rc=$?
+check "committed: an ignored nested project file at enabled false still blocks" 1 "$rc"
+printf 'version: 3\ngate: {enabled: true, include: ["**/*.md"], fail_on: error}\n' > "$proj/docs/.claude/respeak/config.yaml"
+( cd "$proj" && git add -f docs/.claude/respeak/config.yaml )
+printf 'version: 3\ngate: {enabled: true, include: ["**/*.md"], fail_on: none}\n' > "$proj/docs/.claude/respeak/config.yaml"
+out="$(cd "$proj" && bash "$CHECK" docs/bad.md 2>&1)"; rc=$?
+check "committed: a tracked nested file is read from the index, not the working copy" 1 "$rc"
+( cd "$proj" && git rm -q -f --cached docs/.claude/respeak/config.yaml ); rm -rf "$proj/docs/.claude"
+printf '.respeak.local.yaml\n' > "$proj/.gitignore"
+
 # A file the gate cannot judge is an error, never a pass.
 cp "$proj/docs/guide.md" "$proj/docs/locked.md"; chmod 000 "$proj/docs/locked.md"
 out="$(cd "$proj" && bash "$CHECK" docs/locked.md 2>&1)"; rc=$?

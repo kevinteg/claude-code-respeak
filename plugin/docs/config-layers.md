@@ -542,6 +542,10 @@ in `config.local.yaml`.
   applies to every repo below it. `explain` names the file next to
   `project:`; `/respeak:init` reports when the root it found is not the
   current directory.
+- **The CI verdict reads only a project file git tracks.** Under
+  `gate --committed`, an untracked or ignored project file is skipped and
+  named in `dropped`, the nearest tracked one is read from the index, and
+  outside a git work tree the resolver exits 2.
 - **Hooks fail open.** No PyYAML-capable python, a missing resolver, a
   resolver error, or a measure setup error means the gate allows; only a
   real style-gate verdict blocks. Setup errors include an unreadable or
