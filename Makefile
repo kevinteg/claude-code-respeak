@@ -18,7 +18,9 @@ CLAUDE ?= claude
 
 # check runs under scripts/bounded, a verbatim copy of claude-code-session's (conventions section 5,
 # unpinned): one per tree by the lock .check.lock, an 840 s wall, held off above load 4 x cores.
-# Exits: the gate's own, 124 at the wall, 2 lock held or load too high, 127 cannot start.
+# make check exits 0, or 2 for any failure: make reads every failure as 2, so the exit alone does
+# not tell a refusal from a red suite. A last stderr line `bounded: stop: lock|load|wall` means the
+# suite did not run to its end: unrun, never red (section 5). The relay's gate reads that line.
 check:
 	$(PYTHON) scripts/bounded --lock .check.lock --wall 840 --load 4 -- $(MAKE) check-unlocked
 
