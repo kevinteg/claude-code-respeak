@@ -12,15 +12,21 @@ Usage: bounded [--lock FILE] [--wall S] [--load N] -- cmd...
   --load N    while the 1-minute load average is above N x cores, poll every 30 s, up to
               600 s or the wall, whichever is first, then exit 2. Taken after the lock.
 
-The lifeline (ADV10-1): bounded spawns a guardian (`bounded --guard FD -- cmd`) in a new
-session, holding the read end of a pipe and the lock. The guardian runs cmd in cmd's own
-group and watches the pipe and cmd. On EOF (bounded died, SIGKILL included, or reached
+The lifeline (ADV10-1): bounded spawns a guardian (`bounded --guard FD RFD -- cmd`) in a
+new session, holding the read end of a pipe and the lock. The guardian runs cmd in cmd's
+own group, reports that pgid (`<pgid>\n`) on RFD (ADV11-1), and watches the pipe and cmd. On EOF (bounded died, SIGKILL included, or reached
 its wall) it kills cmd's group (TERM, the grace, KILL) and exits; when cmd exits it kills
 the rest of cmd's group and exits with cmd's code. So no member of the group outlives
 bounded by more than the grace plus 1 s, and the lock lives exactly as long as the group.
+When the guardian itself does not finish (stopped, starved), bounded SIGKILLs the reported
+group, then the guardian's, and waits up to 2 s for the group to be gone: once the pgid is
+reported, bounded never exits while that group lives, so the lock is never free beside it.
 
 On a refusal or the wall the last stderr line is `bounded: stop: lock|load|wall`: the
 command did not run to its end, so the gate reads it as unrun, never red (conventions §5).
+bounded puts BOUNDED_DEPTH (its own plus one) in the command's environment; a bounded that
+starts above depth 0 writes `bounded: nested stop: <why>` instead, so an inner wall under
+the gate is a plain red and only the outermost stop reads unrun (ADV11-2).
 
 Exits: the command's own (128+signal when a signal ended it), 124 at the wall, 2 lock or
 load, 1 usage, 127 when cmd cannot start; 128+signum, no traceback, when bounded itself
@@ -28,6 +34,7 @@ gets TERM, INT or HUP (the group is cut first, with or without --wall). Test ove
 BOUNDED_LOAD_POLL (30), BOUNDED_LOAD_MAX (600), BOUNDED_LOADAVG (a fake 1-minute reading).
 """
 import fcntl
+import math
 import os
 import select
 import shutil
@@ -71,6 +78,8 @@ def parse(args):
                 opts[key] = float(value)
             except ValueError:
                 raise Usage("%s wants a number, got %s" % (flag, value))
+            if not math.isfinite(opts[key]):
+                raise Usage("%s wants a finite number, got %s" % (flag, value))
             if opts[key] <= 0:
                 raise Usage("%s wants a positive number" % flag)
     return opts, cmd
@@ -198,17 +207,44 @@ def reap(pid, seconds):
         time.sleep(TICK)
 
 
+def read_pgid(fd, deadline):
+    """The command's pgid from the guardian's report, or None (it could not start, or the
+    wall came first). Closes fd."""
+    data = b""
+    try:
+        while not data.endswith(b"\n"):
+            wait = None if deadline is None else max(deadline - time.monotonic(), 0)
+            if not select.select([fd], [], [], wait)[0]:
+                return None
+            chunk = os.read(fd, 32)
+            if not chunk:
+                break
+            data += chunk
+        return int(data) if data.strip() else None
+    except (OSError, ValueError):
+        return None
+    finally:
+        os.close(fd)
+
+
 def exit_code(code):
     return 128 - code if code < 0 else code
 
 
-def guard(fd, cmd):
-    """The guardian: cmd in its own group; the pipe's EOF or cmd's exit ends the group."""
+def guard(fd, report, cmd):
+    """The guardian: cmd in its own group, reported on `report`; the pipe's EOF or cmd's
+    exit ends the group."""
     try:
         child = subprocess.Popen(cmd, process_group=0)
     except OSError as exc:
+        os.close(report)
         sys.stderr.write("bounded: cannot run %s: %s\n" % (cmd[0], exc))
         return 127
+    try:
+        os.write(report, b"%d\n" % child.pid)
+    except OSError:
+        pass
+    os.close(report)
     for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
         signal.signal(sig, signal.SIG_IGN)  # only the pipe ends a guardian
     while True:
@@ -224,15 +260,19 @@ def guard(fd, cmd):
 
 def main(argv):
     t0 = time.monotonic()
-    if argv[1:2] == ["--guard"] and len(argv) > 4 and argv[3] == "--":
-        return guard(int(argv[2]), argv[4:])
+    if argv[1:2] == ["--guard"] and len(argv) > 5 and argv[4] == "--":
+        return guard(int(argv[2]), int(argv[3]), argv[5:])
     try:
         opts, cmd = parse(argv[1:])
     except Usage as exc:
         sys.stderr.write("bounded: %s\n%s\n" % (exc, USAGE))
         return 1
     deadline = t0 + opts["wall"] if opts["wall"] else None
-    state = {"guardian": None, "pipe": None}
+    try:
+        depth = max(int(os.environ.get("BOUNDED_DEPTH", "0")), 0)
+    except ValueError:
+        depth = 0
+    state = {"guardian": None, "pipe": None, "pgid": None}
 
     def cut(guardian):
         """Close the lifeline and wait out the guardian (grace plus 1 s at most).
@@ -245,11 +285,23 @@ def main(argv):
         if guardian is None:
             return
         if not reap(guardian.pid, env_float("BOUNDED_GRACE", 5) + 1):
-            try:
-                os.killpg(guardian.pid, signal.SIGKILL)
-            except (ProcessLookupError, PermissionError):
-                pass
+            # the command's group first: the guardian's group is the guardian alone (ADV11-1)
+            for pgid in (state["pgid"], guardian.pid):
+                if pgid is None:
+                    continue
+                try:
+                    os.killpg(pgid, signal.SIGKILL)
+                except (ProcessLookupError, PermissionError):
+                    pass
             reap(guardian.pid, 1)
+            if state["pgid"] is not None:
+                gone_by = time.monotonic() + 2
+                while time.monotonic() < gone_by:
+                    try:
+                        os.killpg(state["pgid"], 0)
+                    except (ProcessLookupError, PermissionError):
+                        break
+                    time.sleep(TICK)
 
     def on_signal(signum, _frame):
         for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
@@ -270,14 +322,18 @@ def main(argv):
                           "wall")
         r, w = os.pipe()
         state["pipe"] = w
-        keep = (r,) if lockfd is None else (r, lockfd)
+        rr, rw = os.pipe()
+        keep = (r, rw) if lockfd is None else (r, rw, lockfd)
         try:
             guardian = subprocess.Popen(
-                [sys.executable, os.path.abspath(__file__), "--guard", str(r), "--", *cmd],
-                pass_fds=keep, start_new_session=True)
+                [sys.executable, os.path.abspath(__file__), "--guard", str(r), str(rw), "--",
+                 *cmd], pass_fds=keep, start_new_session=True,
+                env=dict(os.environ, BOUNDED_DEPTH=str(depth + 1)))
         finally:
             os.close(r)
+            os.close(rw)
         state["guardian"] = guardian
+        state["pgid"] = read_pgid(rr, deadline)
         if lockfd is not None:
             write_owner(lockfd, guardian.pid)
             os.close(lockfd)  # the guardian holds it now, exactly while the group lives
@@ -295,7 +351,7 @@ def main(argv):
     except Refused as exc:
         if exc.args[0]:
             sys.stderr.write("%s\n" % exc.args[0])
-        sys.stderr.write("bounded: stop: %s\n" % exc.reason)
+        sys.stderr.write("bounded: %sstop: %s\n" % ("nested " if depth else "", exc.reason))
         return 124 if exc.reason == "wall" else 2
     finally:
         if lockfd is not None:

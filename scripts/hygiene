@@ -6,8 +6,10 @@ tracked and untracked-not-ignored regular files and symlinks) for eight pattern
 groups and prints counts only, never a matched line: an uncommitted file is
 scanned before its commit, an ignored one never. Each file's path is a scanned
 line of that file, for every group; a symlink is its path and its target
-(`readlink`), never the target's content. A file over 4 MiB is scanned by its
-path only and counted as `oversize` (never read). A file starting with a UTF-16
+(`readlink`), never the target's content. A file over 4 MiB is streamed in 1 MiB
+chunks, cut at a line boundary (a longer line carried at most 64 KiB, then kept
+by a 4 KiB overlap), with the first chunk's codec, and counted as `oversize`
+(ADV11-3): every byte is scanned, memory stays bounded. A file starting with a UTF-16
 BOM, or whose first 8 KB have NULs on 90% or more of the odd or the even bytes
 (not both), is decoded as UTF-16 and scanned as text. Else a file whose first
 8 KB hold a NUL is binary: it is scanned for the `home`, `secret` and `email`
@@ -25,7 +27,9 @@ when git fails. Stdlib only; one file, copied byte-identical into each repo.
 
 The patterns below are written so that this file does not match itself.
 """
+import codecs
 import fnmatch
+import itertools
 import json
 import os
 import re
@@ -55,6 +59,10 @@ GROUP_NAMES = [name for name, _ in GROUPS]
 BINARY_PROBE = 8192
 UTF16_NUL = 0.9
 READ_CAP = 4 * 1024 * 1024
+CHUNK = 1024 * 1024
+LINE_CARRY = 64 * 1024
+OVERLAP = 4 * 1024
+LAST_BREAK = re.compile(rb"[^\x20-\x7e\t][\x20-\x7e\t]*\Z")
 RECORDS = ("history/sittings/",)
 RECORDS_SKIP = ("person", "sibling")
 BINARY_GROUPS = ("home", "secret", "email")
@@ -150,29 +158,59 @@ def utf16(data):
     return None
 
 
+def pieces(buf, binary):
+    """The scanned lines of a whole buffer: a text's lines, or a binary's printable runs."""
+    if binary:
+        return [(m.group().decode("ascii"), BINARY_GROUPS) for m in PRINTABLE_RUN.finditer(buf)]
+    return [(line, GROUP_NAMES) for line in buf.splitlines()]
+
+
+def stream(full):
+    """An oversize file's lines, CHUNK at a time: each buffer is cut after its last line
+    break (a text's newline, a binary's non-printable byte), so no line or run is split;
+    a carry past LINE_CARRY is scanned and only its last OVERLAP kept."""
+    with open(full, "rb") as fh:
+        chunk = fh.read(CHUNK)
+        codec = utf16(chunk)
+        binary = not codec and b"\0" in chunk[:BINARY_PROBE]
+        decoder = None if binary else codecs.getincrementaldecoder(codec or "utf-8")("replace")
+        carry = b"" if binary else ""
+        while chunk:
+            buf = carry + (chunk if binary else decoder.decode(chunk))
+            if binary:
+                m = LAST_BREAK.search(buf)
+                cut = m.start() + 1 if m else 0
+            else:
+                cut = buf.rfind("\n") + 1
+            yield from pieces(buf[:cut], binary)
+            carry = buf[cut:]
+            if len(carry) > LINE_CARRY:
+                yield from pieces(carry, binary)
+                carry = carry[-OVERLAP:]
+            chunk = fh.read(CHUNK)
+        if not binary:
+            carry += decoder.decode(b"", final=True)
+        yield from pieces(carry, binary)
+
+
 def read_lines(path, full):
     """([(line, groups)], oversize) for one entry: its path, then a symlink's
     target, a text file's lines (UTF-16 decoded), or a binary's printable runs
-    (for BINARY_GROUPS only); a file over READ_CAP is its path only."""
+    (for BINARY_GROUPS only); a file over READ_CAP is streamed."""
     rows = [(path, GROUP_NAMES)]
     if os.path.islink(full):
         target = os.readlink(full)
         return rows + [(target, GROUP_NAMES)], False
     with open(full, "rb") as fh:
-        if os.fstat(fh.fileno()).st_size > READ_CAP:
-            return rows, True
         data = fh.read(READ_CAP + 1)
     if len(data) > READ_CAP:
-        return rows, True
+        return itertools.chain(rows, stream(full)), True
     codec = utf16(data)
     if codec:
-        text = data.decode(codec, "replace")
-    elif b"\0" in data[:BINARY_PROBE]:
-        return rows + [(m.group().decode("ascii"), BINARY_GROUPS)
-                       for m in PRINTABLE_RUN.finditer(data)], False
-    else:
-        text = data.decode("utf-8", "replace")
-    return rows + [(line, GROUP_NAMES) for line in text.splitlines()], False
+        return rows + pieces(data.decode(codec, "replace"), False), False
+    if b"\0" in data[:BINARY_PROBE]:
+        return rows + pieces(data, True), False
+    return rows + pieces(data.decode("utf-8", "replace"), False), False
 
 
 def scan(repo, entries):
@@ -213,7 +251,7 @@ def render(result):
         for f in result["files"]:
             rows.append("%s  %s  %d" % (f["path"], f["group"], f["lines"]))
     if result["oversize"]:
-        rows.append("oversize (scanned by path only): %d" % result["oversize"])
+        rows.append("oversize (streamed): %d" % result["oversize"])
     rows.append("hits outside allowlist: %d" % result["hits_outside_allowlist"])
     return "\n".join(rows)
 
