@@ -27,6 +27,11 @@ Versions follow `.claude-plugin/plugin.json`. Dates are commit dates.
   run's pid and is matched whole with `pgrep -fx`, so a sibling worktree
   running the same suite no longer turns a pass into a fail. Decoys that an
   unanchored pattern would count stay alive through every survivor case.
+- The Makefile comment on `make check` now says the gate reads the last
+  `bounded: stop:` line anywhere in stderr (review ADV11-3). make prints its
+  own `Error 2` line after that line, so the last stderr line was never
+  bounded's. `make readme`'s account failure is likewise its
+  `respeak-render: account failure` line, not the exit.
 - `scripts/hygiene`, `scripts/doclint` and `scripts/bounded` are re-synced
   to claude-code-session `35b5870`. Hygiene now scans binary files: a secret
   or a home path inside a binary is a hit, a UTF-16 file is read as text, and
