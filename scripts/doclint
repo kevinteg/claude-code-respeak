@@ -8,14 +8,18 @@ Rules, each a function returning `path: rule: detail` lines:
               `## Next act`
   packet      design/packets/*.md under 9,216 bytes, the header table's six
               rows (from, pin, wall, may touch, acceptance, budget) and the six
-              sections `## 1.` to `## 6.`; with a `verify` row (the gate's line),
-              no acceptance line runs a whole suite: a command `make check|test`,
-              `go test ./...`, `pytest` with no path argument, or `relay
-              plan|run|gate` without `--rows` (quoted text is not a command; the
-              cell's code spans are its lines, else the cell is one line; rowless
-              packets are grandfathered)
+              sections `## 1.` to `## 6.`; a `verify` row (the gate's line) on
+              every packet outside GRANDFATHERED (`verify row missing`); no
+              acceptance line runs a whole suite: with wrappers stripped to a
+              fixed point (assignments, env, nice, nohup, time, command, exec,
+              timeout N, uv run, bounded ... --, and a `sh|bash|zsh -c` body
+              tested before quotes blank), a command `make check|test`, `go
+              test` of a `...` package with no `-run`, `pytest` whose paths are
+              none, `.` or the tests root with no `-k`, `-m` or `::`, or `relay
+              plan|run|gate` without `--rows` (quoted text is not a command;
+              the cell's code spans are its lines, else the cell is one line)
   size        design/research*.md under 6,144 bytes, design/conventions*.md
-              under 8,192, design/review-*.md under 9,216
+              under 9,216, design/review-*.md under 9,216
   plugin      every plugin/commands/*.md under 31 lines with `description` and
               `allowed-tools` in its frontmatter; every plugin/agents/*.md with
               `name`, `description`, `model` and `tools`; every
@@ -39,7 +43,7 @@ import sys
 CHARTER_CEILING = 4096
 PACKET_CEILING = 9216
 RECORD_CEILING = 6144
-CONVENTIONS_CEILING = 8192
+CONVENTIONS_CEILING = 9216
 CHARTER_ROWS = ("goal", "budget", "pin", "window", "agents")
 CHARTER_PARTS = ("## Done-ness", "## Handover", "## Next act")
 CHARTER_TITLE = re.compile(r"^# Sitting \d{4}-\d{2}-\d{2}-\d+: .+, .+$")
@@ -50,6 +54,11 @@ SKILL_KEYS = ("name", "description", "allowed-tools")
 SKILL_DESCRIPTION_CEILING = 201
 SKILL_BODY_CEILING = 501
 PACKET_ROWS = ("from", "pin", "wall", "may touch", "acceptance", "budget")
+# the packets at ac529ab with no `verify` row; every later packet carries one
+GRANDFATHERED = ("a1-relay-birth.md", "ar1-relay-hooks.md", "s1-hygiene.md",
+                 "s2-retire-chain.md", "s3-plugin-skeleton.md", "s4-meter.md",
+                 "s5-commands.md", "s6-readme.md", "s7-conventions-and-doctor.md",
+                 "s8-conventions-plugins.md", "s9-hygiene-and-charters.md")
 PACKET_SECTIONS = ("What the source says", "Rulings", "Interfaces",
                    "Findings that name this row", "Forbidden reads", "Report")
 LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
@@ -63,6 +72,13 @@ ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 PYTEST_VALUED = {"-k", "-m", "-p", "-c", "-o", "-W", "--rootdir", "--confcutdir",
                  "--deselect", "--ignore", "--ignore-glob", "--basetemp", "--maxfail",
                  "--tb", "-r", "--durations", "--junitxml", "--log-level"}
+# wrapper word to its options that take a value
+WRAPPERS = {"env": {"-u", "-C", "-S"}, "nice": {"-n"}, "nohup": set(), "time": set(),
+            "command": set(), "exec": {"-a"}, "timeout": {"-s", "-k"}}
+UV_VALUED = {"--with", "--python", "-p", "--project", "--directory", "--extra",
+             "--group", "--package", "--env-file", "--with-requirements"}
+SHELL_BODY = re.compile(r"\b(?:sh|bash|zsh)\s+-c\s+(?:'([^']*)'|\"((?:[^\"\\]|\\.)*)\")")
+SUITE_ROOTS = ("", "tests", "test")
 SUITE = "acceptance runs a whole suite"
 NEXT_EXEMPT = "history/sessions/NEXT"
 
@@ -119,18 +135,43 @@ def table_cells(lines):
     return cells
 
 
+def strip_wrappers(words):
+    """Drop wrapper words (assignments, env, nice, nohup, time, command, exec,
+    timeout, uv run, bounded ... --) from the head until none is left."""
+    while True:
+        before = list(words)
+        while words and ASSIGNMENT.match(words[0]):
+            words = words[1:]
+        head = os.path.basename(words[0]) if words else ""
+        if head in WRAPPERS:
+            words, valued = words[1:], WRAPPERS[head]
+            while words and (words[0].startswith("-") or ASSIGNMENT.match(words[0])):
+                words = words[2:] if words[0] in valued else words[1:]
+            if head == "timeout" and words:
+                words = words[1:]  # the duration
+        elif head == "uv" and words[1:2] == ["run"]:
+            words = words[2:]
+            while words and words[0].startswith("-"):
+                words = words[2:] if words[0] in UV_VALUED else words[1:]
+        elif head == "bounded" and "--" in words:
+            words = words[words.index("--") + 1:]
+        if words == before:
+            return words
+
+
 def runs_suite(command):
     """True when one shell command (quotes already blanked) runs a whole suite."""
-    words = command.split()
-    while words and ASSIGNMENT.match(words[0]):
-        words = words[1:]
+    words = strip_wrappers(command.split())
     if not words:
         return False
     head = os.path.basename(words[0])
+    if head in ("sh", "bash", "zsh") and words[1:2] == ["-c"]:
+        return runs_suite(" ".join(words[2:3]))  # a quoted body was tested before blanking
     if head == "make":
         return any(re.match(r"^(check|test)\b", w) for w in words[1:])
     if head == "go":
-        return words[1:2] == ["test"] and "./..." in words[2:]
+        return (words[1:2] == ["test"] and any("..." in w for w in words[2:])
+                and not any(w == "-run" or w.startswith("-run=") for w in words))
     if head == "relay":
         return (words[1:2] in (["plan"], ["run"], ["gate"])
                 and not any(w.startswith("--rows") for w in words))
@@ -144,10 +185,13 @@ def runs_suite(command):
     for w in rest:
         if skip:
             skip = False
+        elif w in ("-k", "-m") or w.startswith(("-k=", "-m=")) or "::" in w:
+            return False  # a selection: targeted
         elif w in PYTEST_VALUED:
             skip = True
         elif not w.startswith("-") and w != "Q" and not re.match(r"^[0-9]*[<>]", w):
-            return False  # a path argument: targeted
+            if w.strip("/").lstrip("./") not in SUITE_ROOTS:
+                return False  # a path argument below the root: targeted
     return True
 
 
@@ -156,7 +200,11 @@ def suite_lines(cell):
     spans = re.findall(r"`([^`]*)`", cell) or [cell]
     out = []
     for span in spans:
-        span = QUOTED.sub(" Q ", span.replace("\\|", "|"))
+        span = span.replace("\\|", "|")
+        for m in SHELL_BODY.finditer(span):
+            body = m.group(1) if m.group(1) is not None else m.group(2).replace('\\"', '"')
+            out.extend(suite_lines("`%s`" % body.replace("`", "")))
+        span = QUOTED.sub(" Q ", span)
         for command in COMMAND_SPLIT.split(span):
             command = command.strip()
             if runs_suite(command):
@@ -200,6 +248,8 @@ def check_packets(repo, paths):
             if row not in rows:
                 out.append("%s: packet: header row missing: %s" % (path, row))
         cells = table_cells(lines)
+        if "verify" not in cells and os.path.basename(path) not in GRANDFATHERED:
+            out.append("%s: packet: verify row missing" % path)
         if "verify" in cells:
             for command in suite_lines(cells.get("acceptance", "")):
                 out.append("%s: packet: %s: %s" % (path, SUITE, command))

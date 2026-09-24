@@ -7,6 +7,7 @@
 | wall | this repo. No other repo; no push; no `--amend`; no rebase; no device. `claude -p` is the renderer's runner |
 | may touch | new: `design/readme/source.md`, `design/readme/rendered.sha256`, `scripts/readme-fresh.sh`, `tests/test_readme_fresh.sh`. Edit: `Makefile`, `README.md` (written by `make readme` only, never by hand), `CHANGELOG.md`, `CLAUDE.md`, `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `.claude/respeak/config.yaml`, `.hygiene-allow`, `tests/test_overrides.sh`, `tests/test_gate_hook.sh`. Nothing else; anything else is a report line |
 | acceptance | the lines of §6 with their baselines; the gate reruns them on the branch |
+| verify | `make check` |
 | budget | 60 turns (plan row 14 says 40; raised: a 40 KB README read once, up to three render rounds), 60k context; commit per item; checkpoint at 80%; never push, amend or rebase |
 
 ## 1. What the source says (quoted)

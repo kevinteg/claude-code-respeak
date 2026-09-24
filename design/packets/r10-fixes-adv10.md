@@ -6,7 +6,8 @@
 | pin | claude-code-respeak `main` at `e661812` or later. Branch and worktree named by the row id, off it |
 | wall | this repo; no push, `--amend`, rebase, device, tag, version bump; no real `claude` beyond `plugin validate` inside `make check` and the one `make readme` of act 5; no test opens a path under the real checkout except the scripts it tests |
 | may touch | `CHANGELOG.md` (a bullet per act under `## Unreleased`), `plugin/docs/config-layers.md`, `plugin/scripts/respeak-config.py`, `plugin/scripts/respeak-deadline.sh`, `plugin/scripts/respeak-render.sh`, `scripts/readme-render.sh`, `tests/test_check.sh`, `tests/test_config_layers.py`, `tests/test_render.sh`; in act 5 only, `README.md`, `design/readme/source.md`, `design/readme/rendered.sha256`; the charter. Nothing else |
-| acceptance | the lines of §6 with their baselines, targeted, under a minute each; the verify line is `make check`, the relay's gate, never a line here |
+| acceptance | the lines of §6 with their baselines, targeted, under a minute each |
+| verify | `make check` |
 | budget | two rows: `r10a-fixes-adv10` builds acts 1 and 2 (60 turns), `r10b-fixes-adv10` acts 3 to 5 (70 turns) after r10a lands; 144k context; one commit per act; the charter's open names doclint's five rows; checkpoint at 80% |
 
 ## 1. What the source says (quoted)

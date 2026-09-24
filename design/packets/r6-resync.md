@@ -6,7 +6,8 @@
 | pin | claude-code-respeak `main` at `d9f4802` (after tag `v0.6.1`) or later. Branch `r6-resync`, worktree `.claude/worktrees/r6-resync` off it. The copy source is claude-code-session `main` `c7dbdee`, the checkout beside this repo's (§3 names it), two blobs by `git show`, nothing else there |
 | wall | this repo. No other repo beyond the two blobs; no push; no `--amend`; no rebase; no device; no `make readme`; no tag; no version bump; no real `claude` beyond the `plugin validate` inside `make check` |
 | may touch | edit: `scripts/hygiene`, `scripts/doclint`, `Makefile` (lines 25 and 26 only), `.hygiene-allow` (line 37 only), `plugin/skills/init/SKILL.md`, `plugin/skills/off/SKILL.md`, `plugin/skills/on/SKILL.md`, `plugin/skills/report/SKILL.md`, `plugin/skills/respeak/SKILL.md` (each: the `description` value only), `CHANGELOG.md` (one bullet under `## Unreleased`); new: the charter `history/sittings/<run day>-<n>.md`; `history/sessions/NEXT` (removed, never left). Nothing else |
-| acceptance | the lines of §6 with their baselines; the gate reruns them on the branch |
+| acceptance | the lines of §6 with their baselines |
+| verify | `make check` |
 | budget | 40 turns, 30k context; one commit per act, one for the charter, whose open names doclint's five rows (goal, budget, pin, window, agents); checkpoint at 80%; never push, amend or rebase |
 
 ## 1. What the source says (quoted)

@@ -4,6 +4,14 @@ Versions follow `.claude-plugin/plugin.json`. Dates are commit dates.
 
 ## Unreleased
 
+- `scripts/hygiene`, `scripts/doclint` and `scripts/bounded` are re-synced
+  to claude-code-session `330bded`. `make check` runs under an 840 s wall. A
+  refusal or the wall ends stderr with `bounded: stop: lock|load|wall`, which
+  means the suite did not run, not that it failed. Every packet has a `verify`
+  row. `tests/test_bounded.sh` covers review ADV10-2, 4 and 5: the stop lines,
+  one runner per lock at any lock age, and no process left behind when the
+  runner's group is killed.
+
 - `README.md` is rendered again by `make readme` and now ends in a
   newline, as its source does (ruling 11).
 - `readme-render.sh` writes the status line into a copy of

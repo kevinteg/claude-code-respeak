@@ -6,9 +6,12 @@ tracked and untracked-not-ignored regular files and symlinks) for eight pattern
 groups and prints counts only, never a matched line: an uncommitted file is
 scanned before its commit, an ignored one never. Each file's path is a scanned
 line of that file, for every group; a symlink is its path and its target
-(`readlink`), never the target's content. A file whose first 8 KB hold a NUL is
-binary: it is scanned for the `home` group only, over its printable runs of 8 or
-more bytes (as `strings` would), one line per run. `.hygiene-allow` lists
+(`readlink`), never the target's content. A file over 4 MiB is scanned by its
+path only and counted as `oversize` (never read). A file starting with a UTF-16
+BOM, or whose first 8 KB have NULs on 90% or more of the odd or the even bytes
+(not both), is decoded as UTF-16 and scanned as text. Else a file whose first
+8 KB hold a NUL is binary: it is scanned for the `home` group only, over its
+printable runs of 8 or more bytes (as `strings` would), one line per run. `.hygiene-allow` lists
 exceptions, one per line: `<path-glob>: <group>[,<group>]`, `#` comments; a
 glob's `*` stays inside one path segment; a `secret` exception outside
 `tests/fixtures/` is a usage error. Under `history/sittings/` (charters are
@@ -49,6 +52,8 @@ COMPILED = [(name, re.compile("|".join(pats), 0 if name in CASE_SENSITIVE else r
             for name, pats in GROUPS]
 GROUP_NAMES = [name for name, _ in GROUPS]
 BINARY_PROBE = 8192
+UTF16_NUL = 0.9
+READ_CAP = 4 * 1024 * 1024
 RECORDS = ("history/sittings/",)
 RECORDS_SKIP = ("person", "sibling")
 BINARY_GROUPS = ("home",)
@@ -127,28 +132,56 @@ def files(repo):
                   or os.path.isfile(os.path.join(repo, p)))
 
 
+def utf16(data):
+    """The codec a UTF-16 file decodes with, or None: a BOM, or NULs on at
+    least 90% of the odd or the even bytes of the probe (not both: all NUL is
+    binary)."""
+    if data[:2] in (b"\xff\xfe", b"\xfe\xff"):
+        return "utf-16"
+    probe = data[:BINARY_PROBE]
+    even, odd = probe[0::2], probe[1::2]
+    if len(odd) < 2:
+        return None
+    even_nul = even.count(0) >= UTF16_NUL * len(even)
+    odd_nul = odd.count(0) >= UTF16_NUL * len(odd)
+    if odd_nul != even_nul:
+        return "utf-16-le" if odd_nul else "utf-16-be"
+    return None
+
+
 def read_lines(path, full):
-    """[(line, groups)] for one entry: its path, then a symlink's target, a text
-    file's lines, or a binary's printable runs (for BINARY_GROUPS only)."""
+    """([(line, groups)], oversize) for one entry: its path, then a symlink's
+    target, a text file's lines (UTF-16 decoded), or a binary's printable runs
+    (for BINARY_GROUPS only); a file over READ_CAP is its path only."""
     rows = [(path, GROUP_NAMES)]
     if os.path.islink(full):
         target = os.readlink(full)
-        return rows + [(target, GROUP_NAMES)]
+        return rows + [(target, GROUP_NAMES)], False
     with open(full, "rb") as fh:
-        data = fh.read()
-    if b"\0" in data[:BINARY_PROBE]:
+        if os.fstat(fh.fileno()).st_size > READ_CAP:
+            return rows, True
+        data = fh.read(READ_CAP + 1)
+    if len(data) > READ_CAP:
+        return rows, True
+    codec = utf16(data)
+    if codec:
+        text = data.decode(codec, "replace")
+    elif b"\0" in data[:BINARY_PROBE]:
         return rows + [(m.group().decode("ascii"), BINARY_GROUPS)
-                       for m in PRINTABLE_RUN.finditer(data)]
-    return rows + [(line, GROUP_NAMES)
-                   for line in data.decode("utf-8", "replace").splitlines()]
+                       for m in PRINTABLE_RUN.finditer(data)], False
+    else:
+        text = data.decode("utf-8", "replace")
+    return rows + [(line, GROUP_NAMES) for line in text.splitlines()], False
 
 
 def scan(repo, entries):
     groups = {name: {"lines": 0, "files": 0} for name in GROUP_NAMES}
-    outside = []
+    outside, oversize = [], 0
     for path in files(repo):
         counts = dict.fromkeys(GROUP_NAMES, 0)
-        for line, names in read_lines(path, os.path.join(repo, path)):
+        lines, big = read_lines(path, os.path.join(repo, path))
+        oversize += big
+        for line, names in lines:
             for name, rx in COMPILED:
                 if name not in names:
                     continue
@@ -165,7 +198,7 @@ def scan(repo, entries):
                 outside.append({"path": path, "group": name, "lines": counts[name]})
     return {"groups": groups,
             "hits_outside_allowlist": sum(f["lines"] for f in outside),
-            "files": outside}
+            "files": outside, "oversize": oversize}
 
 
 def render(result):
@@ -178,6 +211,8 @@ def render(result):
         rows.append("outside the allowlist:")
         for f in result["files"]:
             rows.append("%s  %s  %d" % (f["path"], f["group"], f["lines"]))
+    if result["oversize"]:
+        rows.append("oversize (scanned by path only): %d" % result["oversize"])
     rows.append("hits outside allowlist: %d" % result["hits_outside_allowlist"])
     return "\n".join(rows)
 

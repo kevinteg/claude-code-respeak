@@ -17,10 +17,12 @@ CLAUDE ?= claude
 .PHONY: check check-unlocked test lint doclint hygiene readme readme-fresh validate doctor install
 
 # check runs under scripts/bounded, a verbatim copy of claude-code-session's (conventions section 5,
-# unpinned): one per tree by the lock .check.lock, a 900 s wall, held off above load 4 x cores.
-# Exits: the gate's own, 124 at the wall, 2 lock held or load too high, 127 cannot start.
+# unpinned): one per tree by the lock .check.lock, an 840 s wall, held off above load 4 x cores.
+# make check exits 0, or 2 for any failure: make reads every failure as 2, so the exit alone does
+# not tell a refusal from a red suite. A last stderr line `bounded: stop: lock|load|wall` means the
+# suite did not run to its end: unrun, never red (section 5). The relay's gate reads that line.
 check:
-	$(PYTHON) scripts/bounded --lock .check.lock --wall 900 --load 4 -- $(MAKE) check-unlocked
+	$(PYTHON) scripts/bounded --lock .check.lock --wall 840 --load 4 -- $(MAKE) check-unlocked
 
 check-unlocked: test lint doclint hygiene readme-fresh validate
 
@@ -46,8 +48,8 @@ doclint:
 # section 6); a re-sync moves the files and these pins together. The copy source is the
 # claude-code-session checkout beside this one, found from `git rev-parse --git-common-dir`
 # (the main checkout's .git, whose parent's parent holds both repos), never a home path.
-HYGIENE_SHA = ca0496350e89ee814de71d6c352e6e6be7239a8dbe75391eeb752428f3e36cb1
-DOCLINT_SHA = 3040666c1e9ad08faf1befe9c2efffaff0660f0464554d240f1d07437a03fcda
+HYGIENE_SHA = efc5915222e8b9e36d127ab5974f84e3c3818636c0af185539af3db16c5dbb89
+DOCLINT_SHA = b924a7bca4446e38690c2edb8b35a5db2ad91a5b9b679bbbb178388a8dfbab4c
 
 hygiene:
 	@printf '%s  %s\n' $(HYGIENE_SHA) scripts/hygiene $(DOCLINT_SHA) scripts/doclint | shasum -a 256 -c --status || { echo "hygiene: scripts/hygiene or scripts/doclint differ from the canonical copies (conventions section 6)"; exit 2; }

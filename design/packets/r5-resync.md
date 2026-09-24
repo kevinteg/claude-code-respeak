@@ -7,6 +7,7 @@
 | wall | this repo. No other repo beyond the two blobs; no push; no `--amend`; no rebase; no device; no `make readme`; no tag; no version bump; no real `claude` beyond the `plugin validate` inside `make check` |
 | may touch | edit: `scripts/hygiene`, `scripts/doclint`, `Makefile` (lines 25 and 26 only), `.hygiene-allow` (line 37 only), `CHANGELOG.md` (one heading, one bullet); new: the charter `history/sittings/<run day>-<n>.md`; `history/sessions/NEXT` (removed, never left). Nothing else |
 | acceptance | the lines of §6 with their baselines; the gate reruns them on the branch |
+| verify | `make check` |
 | budget | 40 turns, 30k context; one commit for act 1, one for the charter; checkpoint at 80%; never push, amend or rebase |
 
 ## 1. What the source says (quoted)
