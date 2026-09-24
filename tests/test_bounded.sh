@@ -19,9 +19,11 @@ decoys=""
 for m in "$m353" "$m32"; do perl -e 'sleep 900' -- ${m}7 & decoys="$decoys $!"; disown $!; done
 work="$(mktemp -d)"; trap 'kill $decoys 2>/dev/null; pkill -fx "$m353" 2>/dev/null; pkill -fx "$m32" 2>/dev/null; rm -rf "$work"' EXIT
 
+# The three stop-line cases run bounded at depth 0 (env -u BOUNDED_DEPTH): under make check this
+# suite runs inside bounded, where a stop reads `bounded: nested stop: <why>` (ADV11-2).
 # The wall: the whole group dies, the runner exits 124 well inside the command's own 30 s.
 t0=$(date +%s)
-BOUNDED_GRACE=1 python3 "$BOUNDED" --wall 1 -- sh -c 'echo $$ > "$1"; exec sleep 30' sh "$work/pid" 2>"$work/wall.err"
+BOUNDED_GRACE=1 env -u BOUNDED_DEPTH python3 "$BOUNDED" --wall 1 -- sh -c 'echo $$ > "$1"; exec sleep 30' sh "$work/pid" 2>"$work/wall.err"
 rc=$?; elapsed=$(( $(date +%s) - t0 ))
 check "the wall exits 124" 124 "$rc"
 check "...in under 5 s" yes "$([ "$elapsed" -lt 5 ] && echo yes || echo "no ($elapsed s)")"
@@ -30,7 +32,7 @@ check "...and its last stderr line is the wall stop (ADV10-4)" "bounded: stop: w
 
 # The lock: a live holder (this shell) refuses the second runner with 2, and the command never runs.
 mkdir "$work/lock"; echo "$$ $(date +%s)" > "$work/lock/owner"
-python3 "$BOUNDED" --lock "$work/lock" -- touch "$work/ran" 2>"$work/lock.err"
+env -u BOUNDED_DEPTH python3 "$BOUNDED" --lock "$work/lock" -- touch "$work/ran" 2>"$work/lock.err"
 check "a lock held by a live pid refuses with 2" 2 "$?"
 check "...and the command does not run" absent "$([ -e "$work/ran" ] && echo present || echo absent)"
 check "...and its last stderr line is the lock stop (ADV10-4)" "bounded: stop: lock" "$(last "$work/lock.err")"
@@ -44,7 +46,7 @@ check "a second run after the first takes the lock and runs" 0 "$?"
 
 # ADV10-4: a load refusal exits 2 before the command runs, and says so on its last stderr line.
 BOUNDED_LOADAVG=1000 BOUNDED_LOAD_MAX=1 BOUNDED_LOAD_POLL=1 \
-  python3 "$BOUNDED" --load 4 -- touch "$work/loaded" 2>"$work/load.err"
+  env -u BOUNDED_DEPTH python3 "$BOUNDED" --load 4 -- touch "$work/loaded" 2>"$work/load.err"
 check "a load refusal exits 2" 2 "$?"
 check "...its last stderr line is the load stop" "bounded: stop: load" "$(last "$work/load.err")"
 check "...and the command does not run" absent "$([ -e "$work/loaded" ] && echo present || echo absent)"

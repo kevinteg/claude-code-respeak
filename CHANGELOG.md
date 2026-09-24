@@ -4,6 +4,15 @@ Versions follow `.claude-plugin/plugin.json`. Dates are commit dates.
 
 ## Unreleased
 
+- `scripts/hygiene`, `scripts/doclint` and `scripts/bounded` are re-synced
+  to claude-code-session `db648f3`, and `make hygiene` now pins `bounded` by
+  hash with the other two. Hygiene reads a file over 4 MiB in chunks instead
+  of by its path only. `bounded` kills the command's reported process group
+  when its guardian stalls (ADV11-1), and a nested run prints
+  `bounded: nested stop:` (ADV11-2). doclint fails closed on runner words
+  (ADV11-4), and its spent list mirrors agent-relay's. `make check` runs
+  `tests/test_bounded.sh` inside `bounded`, so its three stop-line cases now
+  run at depth 0.
 - `respeak-check` reads a project file only from the work tree whose index
   holds the target (review ADV11-1). A nested repository could commit a
   project file at `fail_on: none` in its own index, hide it from the outer

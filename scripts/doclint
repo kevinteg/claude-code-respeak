@@ -10,21 +10,23 @@ Rules, each a function returning `path: rule: detail` lines:
               rows (from, pin, wall, may touch, acceptance, budget) and the six
               sections `## 1.` to `## 6.`; a `verify` row (the gate's line) on
               every packet outside GRANDFATHERED (`verify row missing`); outside
-              GRANDFATHERED and SPENT no acceptance line runs a whole suite, read
-              by shape as agent-relay's packet.Unbounded: with wrappers stripped
-              to a fixed point (assignments, env, nice, nohup, time, command,
-              exec, timeout N, uv run, bounded ... --, and a `sh|bash|zsh -c`
-              body tested before quotes blank), a command word that is not a
-              literal word (`$m`, `$(...)`, a glob or brace), a shell fed from
-              stdin (no operand, -s, a lone -c, `<`, a here-string, a pipe's
-              last stage), `claude`, `make|gmake` with no target or a target in
-              check, check-*, test, vet, e2e, tla, `go test` of a `...` package
-              with no `-run`, `pytest` whose paths are none, `.` or the tests
-              root with no `-k`, `-m` or `::`, or `relay plan|run|gate` (`go run
-              <pkg>/relay` too) without `--rows` (quoted text is not a command
-              unless a double quote expands; `$(...)` is read in place and
-              inside; the cell's code spans are its lines, else the cell is one
-              line)
+              GRANDFATHERED and SPENT no acceptance line runs a whole suite. It
+              refuses a command word that is not a literal word (`$m`, `$(...)`,
+              a glob or brace, after wrappers strip: assignments, env, nice,
+              nohup, time, command, exec, timeout N, uv run, bounded ... --) and
+              a shell fed from stdin (no operand, -s, a lone -c, `<`, a
+              here-string, a pipe's last stage); a `sh|bash|zsh -c` body is
+              tested before quotes blank. Then it fails closed (ADV11-4): a
+              command holding a runner word (make, gmake, pytest, py.test, go,
+              tox, nox, claude, relay, or python* with `-m pytest|unittest`
+              after it) is read from that word on and passes only as: pytest
+              with a `-k` that is non-empty and not `not ...`, or every path a
+              `::` node or a `.py` below tests/ (no glob, no `..`); unittest of
+              dotted modules; `go test` of named packages (no `...`, all, `$`)
+              with a `-run` holding a 3+ character identifier; `make -n`, or make whose every goal is in
+              MAKE_TARGETED (quoted text is not a command unless a double quote
+              expands; `$(...)` is read in place and inside; the cell's code
+              spans are its lines, else the cell is one line)
   size        design/research*.md under 6,144 bytes, design/conventions*.md
               under 9,216, design/review-*.md under 9,216
   plugin      every plugin/commands/*.md under 31 lines with `description` and
@@ -35,7 +37,7 @@ Rules, each a function returning `path: rule: detail` lines:
               its body under 501 lines; a plugin's verb set is its own
   link        every relative markdown link in a .md file resolves
   next        no file named NEXT, except history/sessions/NEXT (the relay's safe
-              next phase, tracked or not)
+              next phase, tracked or not), whose every `.md` path exists (ADV11-6)
 
 Files are the repo's tracked and untracked-not-ignored ones.
 Usage: doclint [--repo DIR]. Exit 0 when clean, 2 on a refusal, 1 on usage or
@@ -74,8 +76,14 @@ GRANDFATHERED = ("a1-relay-birth.md", "ar1-relay-hooks.md", "s1-hygiene.md",
                  "ar6-sync-and-readme.md", "ar7-fixes.md", "ar8-resync.md",
                  "ar9-queue-and-resync.md")
 # records cut after AR10 whose acceptance ran a suite target before the rule went by
-# shape (packet.go `spent`): the verify row is required, the suite rule skipped
-SPENT = ("ar11-tla-night.md", "ar12-e2e-night.md")
+# shape (packet.go `spent`, in its order): the verify row is required, the suite rule
+# skipped. ar21 is the session's only: its `grep -rl ... cmd/relay` names a directory
+# with a runner's basename, refused here (S14 ruling 5); the rule stays, the record
+# stands, and a later packet writes such a directory with a trailing slash
+SPENT = ("ar11-tla-night.md", "ar12-e2e-night.md", "ar10-bounded-night.md",
+         "ar13-fixes-r6.md", "ar14-resync.md", "ar15-readme-r7.md", "ar17a-gate-r10.md",
+         "ar17b-guards-r10.md", "ar17c-bounds-r10.md", "ar17d-rulings-r10.md",
+         "ar18-resync.md", "ar19-resync.md", "ar20-fixes-adv11.md", "ar21-fixes-adv12.md")
 PACKET_SECTIONS = ("What the source says", "Rulings", "Interfaces",
                    "Findings that name this row", "Forbidden reads", "Report")
 LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
@@ -98,14 +106,34 @@ UV_VALUED = {"--with", "--python", "-p", "--project", "--directory", "--extra",
 MAKE_VALUED = {"-C", "-f", "-I", "-o", "-W", "--directory", "--file", "--makefile",
                "--include-dir", "--old-file", "--assume-old", "--what-if", "--new-file",
                "--assume-new"}
-SUITE_TARGETS = {"check", "test", "vet", "e2e", "tla"}
+# fail closed (ADV11-4): a simple command holding one of these words (by basename),
+# or a python word with `-m pytest|unittest` after it, is a runner; it is read from
+# that word on, so any wrapper before it is seen through, and passes only targeted
+RUNNERS = {"make", "gmake", "pytest", "py.test", "go", "tox", "nox", "claude", "relay"}
+# the make goals that are not a suite: a make runner passes when every goal is one
+MAKE_TARGETED = ("doclint", "hygiene", "lint", "validate", "build", "tree-note")
+MAKE_DRY = {"-n", "--dry-run", "--just-print", "--recon"}
+# go flags that take the next word as a value (a flag not here reads as a boolean)
+GO_VALUED = {"run", "skip", "count", "timeout", "p", "tags", "cpu", "bench", "benchtime",
+             "coverprofile", "covermode", "coverpkg", "o", "parallel", "shuffle", "exec",
+             "ldflags", "gcflags", "asmflags", "mod", "C", "list", "fuzz", "fuzztime",
+             "blockprofile", "cpuprofile", "memprofile", "mutexprofile", "outputdir",
+             "trace", "vet", "pkgdir", "toolexec", "overlay", "modfile", "buildmode"}
+GO_META = {"all", "std", "cmd"}
+DOTTED = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+")
+REDIRECT = re.compile(r"^[0-9]*[<>]")
+# a blanked quote is `Q` (or `$Q`) plus this mark and its index, so a `-k` or `-run`
+# value reads the quote's text; the mark and index leave the reported line
+QUOTE_MARK = "\x02"
+QUOTE_TOKEN = re.compile(r"(\$?)Q\x02(\d+)")
+QUOTE_INDEX = re.compile(r"\x02\d+")
 SHELLS = {"sh", "bash", "zsh", "dash", "ksh"}
 NOT_LITERAL = set("$`*?[{<>")
 SUBSTITUTION = re.compile(r"\$\([^()]*\)")
 SHELL_BODY = re.compile(r"\b(?:sh|bash|zsh)\s+-c\s+(?:'([^']*)'|\"((?:[^\"\\]|\\.)*)\")")
-SUITE_ROOTS = ("", "tests", "test")
 SUITE = "acceptance runs a whole suite"
 NEXT_EXEMPT = "history/sessions/NEXT"
+NEXT_PROMPT = re.compile(r"[^\s`'\"]+\.md\b")
 
 
 class UsageError(Exception):
@@ -209,29 +237,141 @@ def stdin_shell(words):
     return True
 
 
-def make_suite(args):
-    """True when `make <args>` runs the default goal or a suite target
-    (packet.go `makeSuite`): check, check-*, test, vet, e2e, tla."""
+def make_targeted(args):
+    """True when `make <args>` is a dry run (-n) or names only MAKE_TARGETED goals;
+    no goal (the default one) refuses. An option's value is not a goal."""
     targets, skip = [], False
     for k, a in enumerate(args):
         if skip:
             skip = False
+        elif a in MAKE_DRY:
+            return True
         elif a in MAKE_VALUED or (a in ("-j", "-l") and args[k + 1:k + 2]
                                   and args[k + 1].isdigit()):
             skip = True
+        elif REDIRECT.match(a):
+            skip = not a.lstrip("0123456789<>&")  # `>` alone: its target is the next word
         elif not a.startswith("-") and "=" not in a:
             targets.append(a)
-    return not targets or any(t in SUITE_TARGETS or t.startswith("check-") for t in targets)
+    return bool(targets) and all(t in MAKE_TARGETED for t in targets)
 
 
-def relay_suite(words):
-    return (words[:1] in (["plan"], ["run"], ["gate"])
-            and not any(w.startswith("--rows") for w in words))
+def quote_value(word, quotes):
+    """A word's text before quotes blanked: a blank gives its quote's contents, an
+    expanding double quote (`$Q`) gives None, its value is not known."""
+    m = QUOTE_TOKEN.fullmatch(word)
+    if not m:
+        return word
+    return None if m.group(1) else quotes[int(m.group(2))]
 
 
-def runs_suite(command):
-    """True when one shell command (quotes already blanked) runs a whole suite,
-    by shape as packet.go `Unbounded` reads it."""
+def literal(word):
+    return not (NOT_LITERAL & set(word)) and not QUOTE_TOKEN.search(word)
+
+
+def selects(value):
+    """A `-k` value that selects: non-empty and not a `not ...` (which keeps the rest)."""
+    return bool(value and value.strip()) and not value.strip().startswith("not")
+
+
+def targeted_path(word):
+    """A pytest path argument that names a `::` node, or a `.py` file below tests/,
+    with no glob character and no `..` component."""
+    path = word.split("::", 1)[0]
+    parts = path.split("/")
+    if not literal(word) or ".." in parts:
+        return False
+    if "::" in word:
+        return bool(path)
+    while parts[:1] == ["."]:
+        parts = parts[1:]
+    return len(parts) > 1 and parts[0] == "tests" and path.endswith(".py")
+
+
+def pytest_targeted(args, quotes):
+    """pytest is targeted by a selecting `-k`, else only when it has path arguments
+    and every one is a targeted_path (a stricter reading than "has one": a `.py`
+    beside the bare root would still run the whole root)."""
+    paths, k = [], 0
+    while k < len(args):
+        w = args[k]
+        if w in ("-k", "-k="):
+            return selects(quote_value(args[k + 1], quotes) if k + 1 < len(args) else "")
+        if w.startswith("-k") and not w.startswith("--"):
+            return selects(quote_value(w[2:].lstrip("="), quotes))
+        if w in PYTEST_VALUED or w in ("<", ">", ">>", "2>", "2>>", "1>"):
+            k += 2
+            continue
+        if not w.startswith("-") and not REDIRECT.match(w):
+            paths.append(w)
+        k += 1
+    return bool(paths) and all(targeted_path(p) for p in paths)
+
+
+def unittest_targeted(args):
+    """`python -m unittest` only with dotted module arguments (tests.test_x[.T.t])."""
+    mods, k = [], 0
+    while k < len(args):
+        w = args[k]
+        if w in ("-k", "--durations", "<", ">", ">>", "2>", "2>>", "1>"):
+            k += 2
+            continue
+        if not w.startswith("-") and not REDIRECT.match(w):
+            mods.append(w)
+        k += 1
+    return bool(mods) and all(DOTTED.fullmatch(m) for m in mods)
+
+
+def go_targeted(args, quotes):
+    """`go test` with named packages (no `...`, not all/std/cmd, literal) and a
+    `-run` whose value holds a literal identifier of 3+ characters; every other go
+    verb (build, vet, run, list, ...) refuses, `go run <pkg>/relay --rows` too."""
+    verb, rest = (args[0], args[1:]) if args else ("", [])
+    if verb != "test":
+        return False
+    pkgs, run, k = [], None, 0
+    while k < len(rest):
+        w = rest[k]
+        if w == "-args":
+            break
+        if w.startswith("-"):
+            name, value = w.lstrip("-"), ""
+            if "=" in name:
+                name, value = name.split("=", 1)
+            elif name in GO_VALUED and k + 1 < len(rest):
+                value, k = rest[k + 1], k + 1
+            if name == "run":
+                run = quote_value(value, quotes)
+        elif w in ("<", ">", ">>", "2>", "2>>", "1>"):
+            k += 1  # a redirection's target
+        elif not REDIRECT.match(w):
+            pkgs.append(w)
+        k += 1
+    named = bool(pkgs) and all(literal(p) and "..." not in p and p not in GO_META
+                               for p in pkgs)
+    return named and bool(run) and bool(re.search(r"[A-Za-z_][A-Za-z0-9_]{2,}", run))
+
+
+def runner(words):
+    """The first runner word as (name, the words after it), else None; a `python*`
+    word is a runner only with `-m pytest|unittest` after it (name: the module)."""
+    for i, w in enumerate(words):
+        base = os.path.basename(w)
+        if base in RUNNERS:
+            return base, words[i + 1:]
+        if base.startswith("python"):
+            for j in range(i + 1, len(words)):
+                if words[j] in ("-mpytest", "-munittest"):
+                    return words[j][2:], words[j + 1:]
+                if words[j] == "-m" and words[j + 1:j + 2] in (["pytest"], ["unittest"]):
+                    return words[j + 1], words[j + 2:]
+    return None
+
+
+def runs_suite(command, quotes=()):
+    """True when one shell command (quotes already blanked, `quotes` their text)
+    runs a whole suite. Fail closed: a command holding a runner word is read from
+    that word on, whatever wraps it, and passes only in a targeted shape."""
     words = strip_wrappers(command.split())
     if not words:
         return False
@@ -241,38 +381,20 @@ def runs_suite(command):
         return True
     head = os.path.basename(words[0])
     if head in SHELLS and words[1:2] == ["-c"]:
-        return runs_suite(" ".join(words[2:3]))  # a quoted body was tested before blanking
-    if head == "claude":
-        return True  # a sitting, never a check
-    if head in ("make", "gmake"):
-        return make_suite(words[1:])
-    if head == "go":
-        if words[1:2] == ["run"]:  # `go run <pkg>/relay`
-            pkg = next((k for k, w in enumerate(words[2:], 2) if not w.startswith("-")), None)
-            return (pkg is not None and os.path.basename(words[pkg]) == "relay"
-                    and relay_suite(words[pkg + 1:]))
-        return (words[1:2] == ["test"] and any("..." in w for w in words[2:])
-                and not any(w == "-run" or w.startswith("-run=") for w in words))
-    if head == "relay":
-        return relay_suite(words[1:])
-    if head == "pytest":
-        rest = words[1:]
-    elif head.startswith("python") and words[1:3] == ["-m", "pytest"]:
-        rest = words[3:]
-    else:
+        return runs_suite(" ".join(words[2:3]), quotes)  # a quoted body was tested before blanking
+    found = runner(command.split())
+    if found is None:
         return False
-    skip = False
-    for w in rest:
-        if skip:
-            skip = False
-        elif w in ("-k", "-m") or w.startswith(("-k=", "-m=")) or "::" in w:
-            return False  # a selection: targeted
-        elif w in PYTEST_VALUED:
-            skip = True
-        elif not w.startswith("-") and w not in ("Q", "$Q") and not re.match(r"^[0-9]*[<>]", w):
-            if w.strip("/").lstrip("./") not in SUITE_ROOTS:
-                return False  # a path argument below the root: targeted
-    return True
+    name, args = found
+    if name in ("pytest", "py.test"):
+        return not pytest_targeted(args, quotes)
+    if name == "unittest":
+        return not unittest_targeted(args)
+    if name == "go":
+        return not go_targeted(args, quotes)
+    if name in ("make", "gmake"):
+        return not make_targeted(args)
+    return True  # claude (a sitting), relay, tox, nox: never a targeted check
 
 
 def suite_lines(cell):
@@ -285,8 +407,13 @@ def suite_lines(cell):
             body = m.group(1) if m.group(1) is not None else m.group(2).replace('\\"', '"')
             out.extend(suite_lines("`%s`" % body.replace("`", "")))
         # a quote is not a command, but a double quote that expands keeps its `$`
-        span = QUOTED.sub(lambda m: " $Q " if m.group(0)[0] == '"' and set(m.group(0)) & set("$`")
-                          else " Q ", span)
+        quotes = []
+
+        def blank(m):
+            quotes.append(m.group(0)[1:-1])
+            expands = m.group(0)[0] == '"' and set(m.group(0)) & set("$`")
+            return " %sQ%s%d " % ("$" if expands else "", QUOTE_MARK, len(quotes) - 1)
+        span = QUOTED.sub(blank, span)
         collapsed, before = span, None
         while collapsed != before:  # `$(...)` in place, so its command word shows
             before, collapsed = collapsed, SUBSTITUTION.sub("$S", collapsed)
@@ -294,8 +421,8 @@ def suite_lines(cell):
         commands += [c for c in COMMAND_SPLIT.split(collapsed) if c not in commands]
         for command in commands:
             command = command.strip()
-            if runs_suite(command):
-                out.append(command)
+            if runs_suite(command, quotes):
+                out.append(QUOTE_INDEX.sub("", command))
     return out
 
 
@@ -451,8 +578,17 @@ def check_links(repo, paths):
 
 
 def check_next(repo, paths):
-    return ["%s: next: a NEXT file is present" % p for p in paths
-            if os.path.basename(p) == "NEXT" and p != NEXT_EXEMPT]
+    out = ["%s: next: a NEXT file is present" % p for p in paths
+           if os.path.basename(p) == "NEXT" and p != NEXT_EXEMPT]
+    try:
+        with open(os.path.join(repo, NEXT_EXEMPT), encoding="utf-8", errors="replace") as fh:
+            text = fh.read()
+    except OSError:
+        return out
+    named = [m.strip("`'\"") for line in text.splitlines() for m in NEXT_PROMPT.findall(line)]
+    if any(not os.path.isfile(os.path.join(repo, p)) for p in named):
+        out.append("%s: next: NEXT names a missing prompt" % NEXT_EXEMPT)
+    return out
 
 
 RULES = (check_charters, check_packets, check_sizes, check_plugin, check_links,

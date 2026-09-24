@@ -17,7 +17,7 @@ CLAUDE ?= claude
 .PHONY: check check-unlocked test lint doclint hygiene readme readme-fresh validate doctor install
 
 # check runs under scripts/bounded, a verbatim copy of claude-code-session's (conventions section 5,
-# unpinned): one per tree by the lock .check.lock, an 840 s wall, held off above load 4 x cores.
+# pinned by hash below): one per tree by the lock .check.lock, an 840 s wall, held off above load 4 x cores.
 # make check exits 0, or 2 for any failure: make reads every failure as 2, so the exit alone does
 # not tell a refusal from a red suite. A `bounded: stop: lock|load|wall` line means the suite did
 # not run to its end: unrun, never red (section 5). The relay's gate reads the last such line
@@ -47,15 +47,16 @@ doclint:
 	$(PYTHON) scripts/doclint
 	bash plugin/scripts/respeak-check.sh
 
-# scripts/hygiene and scripts/doclint are byte-identical to claude-code-session's (conventions
-# section 6); a re-sync moves the files and these pins together. The copy source is the
+# scripts/hygiene, scripts/doclint and scripts/bounded are byte-identical to claude-code-session's
+# (conventions section 6), three pinned by hash; a re-sync moves the files and these pins together. The copy source is the
 # claude-code-session checkout beside this one, found from `git rev-parse --git-common-dir`
 # (the main checkout's .git, whose parent's parent holds both repos), never a home path.
-HYGIENE_SHA = d63d0ffb3775b3e4ba5ee8cdde48f6f73b71ab588ea6de824772f0b9e19adb09
-DOCLINT_SHA = d5957c6c282aa14ca57698ebdc82f5cf24b38325b9fa7bb404d1edfec2d65d1e
+HYGIENE_SHA = 157edaffb99d6d2a28f00672d3d324da52c695918eb3fbc14f984cb796c33cd9
+DOCLINT_SHA = 26eaf2c84aadb822f8d63a0257b063afcc0ba6d9bbcf1d2d856abe4c6388341f
+BOUNDED_SHA = b3c5f7fe7731efdbd67335a60be5d13bb73c93bcff768e735a2ff6eac49ec966
 
 hygiene:
-	@printf '%s  %s\n' $(HYGIENE_SHA) scripts/hygiene $(DOCLINT_SHA) scripts/doclint | shasum -a 256 -c --status || { echo "hygiene: scripts/hygiene or scripts/doclint differ from the canonical copies (conventions section 6)"; exit 2; }
+	@printf '%s  %s\n' $(HYGIENE_SHA) scripts/hygiene $(DOCLINT_SHA) scripts/doclint $(BOUNDED_SHA) scripts/bounded | shasum -a 256 -c --status || { echo "hygiene: scripts/hygiene, scripts/doclint or scripts/bounded differ from the canonical copies (conventions section 6)"; exit 2; }
 	$(PYTHON) scripts/hygiene
 
 # README.md is rendered from design/readme/source.md (conventions section 6); edit the source.
