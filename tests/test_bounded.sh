@@ -11,7 +11,7 @@ check() { if [ "$2" = "$3" ]; then pass=$((pass + 1)); echo "ok   - $1"; else fa
 
 last() { tail -1 "$1" 2>/dev/null; }
 
-work="$(mktemp -d)"; trap 'pkill -f "sleep 353" 2>/dev/null; rm -rf "$work"' EXIT
+work="$(mktemp -d)"; trap 'pkill -f "sleep 353" 2>/dev/null; pkill -f "sleep 32" 2>/dev/null; rm -rf "$work"' EXIT
 
 # The wall: the whole group dies, the runner exits 124 well inside the command's own 30 s.
 t0=$(date +%s)
@@ -76,6 +76,21 @@ p.wait()
 ' "$BOUNDED"
 sleep 3
 check "a SIGKILLed group leaves no sleep 353 behind (ADV10-2)" 0 "$(pgrep -f 'sleep 353' | wc -l | tr -d ' ')"
+
+# S13b: TERM, then INT and HUP 0.2 s apart, give one cut: the first signal's 143, no traceback,
+# no survivor 3 s later (the old copy re-entered the cut on the last signal and exited 129).
+rc=$(BOUNDED_GRACE=2 python3 -c '
+import signal, subprocess, sys, time
+p = subprocess.Popen([sys.executable, sys.argv[1], "--wall", "20", "--",
+                      "sh", "-c", "trap \"\" TERM; sleep 32"], stderr=open(sys.argv[2], "w"))
+time.sleep(1)
+for s in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+    p.send_signal(s); time.sleep(0.2)
+print(p.wait())
+' "$BOUNDED" "$work/cut.err")
+sleep 3
+check "TERM, INT, HUP give one cut: 143, no traceback, no survivor (S13b)" "143 0 0" \
+  "$rc $(grep -c Traceback "$work/cut.err") $(pgrep -f 'sleep 32' | wc -l | tr -d ' ')"
 
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

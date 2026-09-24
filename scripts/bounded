@@ -23,7 +23,8 @@ On a refusal or the wall the last stderr line is `bounded: stop: lock|load|wall`
 command did not run to its end, so the gate reads it as unrun, never red (conventions §5).
 
 Exits: the command's own (128+signal when a signal ended it), 124 at the wall, 2 lock or
-load, 1 usage, 127 when cmd cannot start. Test overrides: BOUNDED_GRACE (s, default 5),
+load, 1 usage, 127 when cmd cannot start; 128+signum, no traceback, when bounded itself
+gets TERM, INT or HUP (the group is cut first, with or without --wall). Test overrides: BOUNDED_GRACE (s, default 5),
 BOUNDED_LOAD_POLL (30), BOUNDED_LOAD_MAX (600), BOUNDED_LOADAVG (a fake 1-minute reading).
 """
 import fcntl
@@ -183,6 +184,20 @@ def kill_group(pgid, child):
         pass
 
 
+def reap(pid, seconds):
+    """True once pid is reaped (or was already: ChildProcessError), polling WNOHANG."""
+    deadline = time.monotonic() + seconds
+    while True:
+        try:
+            if os.waitpid(pid, os.WNOHANG)[0] == pid:
+                return True
+        except ChildProcessError:
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(TICK)
+
+
 def exit_code(code):
     return 128 - code if code < 0 else code
 
@@ -220,17 +235,25 @@ def main(argv):
     state = {"guardian": None, "pipe": None}
 
     def cut(guardian):
-        """Close the lifeline and wait out the guardian (grace plus 1 s at most)."""
+        """Close the lifeline and wait out the guardian (grace plus 1 s at most).
+
+        Polls waitpid, never Popen.wait: a signal handler runs on the main thread while
+        its blocking wait holds Popen's lock, so a wait there only times out (d12)."""
         if state["pipe"] is not None:
             os.close(state["pipe"])
             state["pipe"] = None
-        if guardian is not None:
+        if guardian is None:
+            return
+        if not reap(guardian.pid, env_float("BOUNDED_GRACE", 5) + 1):
             try:
-                guardian.wait(timeout=env_float("BOUNDED_GRACE", 5) + 1)
-            except subprocess.TimeoutExpired:
                 os.killpg(guardian.pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
+            reap(guardian.pid, 1)
 
     def on_signal(signum, _frame):
+        for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+            signal.signal(sig, signal.SIG_IGN)  # one cut; a second signal never re-enters
         cut(state["guardian"])
         os._exit(128 + signum)
 
