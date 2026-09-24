@@ -10,8 +10,9 @@ line of that file, for every group; a symlink is its path and its target
 path only and counted as `oversize` (never read). A file starting with a UTF-16
 BOM, or whose first 8 KB have NULs on 90% or more of the odd or the even bytes
 (not both), is decoded as UTF-16 and scanned as text. Else a file whose first
-8 KB hold a NUL is binary: it is scanned for the `home` group only, over its
-printable runs of 8 or more bytes (as `strings` would), one line per run. `.hygiene-allow` lists
+8 KB hold a NUL is binary: it is scanned for the `home`, `secret` and `email`
+groups only (ADV10-17), over its printable runs of 8 or more bytes (as `strings`
+would), one line per run. `.hygiene-allow` lists
 exceptions, one per line: `<path-glob>: <group>[,<group>]`, `#` comments; a
 glob's `*` stays inside one path segment; a `secret` exception outside
 `tests/fixtures/` is a usage error. Under `history/sittings/` (charters are
@@ -56,7 +57,7 @@ UTF16_NUL = 0.9
 READ_CAP = 4 * 1024 * 1024
 RECORDS = ("history/sittings/",)
 RECORDS_SKIP = ("person", "sibling")
-BINARY_GROUPS = ("home",)
+BINARY_GROUPS = ("home", "secret", "email")
 PRINTABLE_RUN = re.compile(rb"[\x20-\x7e\t]{8,}")
 SECRET_ALLOW_ROOT = ["tests", "fixtures"]
 

@@ -48,8 +48,8 @@ doclint:
 # section 6); a re-sync moves the files and these pins together. The copy source is the
 # claude-code-session checkout beside this one, found from `git rev-parse --git-common-dir`
 # (the main checkout's .git, whose parent's parent holds both repos), never a home path.
-HYGIENE_SHA = efc5915222e8b9e36d127ab5974f84e3c3818636c0af185539af3db16c5dbb89
-DOCLINT_SHA = b924a7bca4446e38690c2edb8b35a5db2ad91a5b9b679bbbb178388a8dfbab4c
+HYGIENE_SHA = d63d0ffb3775b3e4ba5ee8cdde48f6f73b71ab588ea6de824772f0b9e19adb09
+DOCLINT_SHA = d5957c6c282aa14ca57698ebdc82f5cf24b38325b9fa7bb404d1edfec2d65d1e
 
 hygiene:
 	@printf '%s  %s\n' $(HYGIENE_SHA) scripts/hygiene $(DOCLINT_SHA) scripts/doclint | shasum -a 256 -c --status || { echo "hygiene: scripts/hygiene or scripts/doclint differ from the canonical copies (conventions section 6)"; exit 2; }
