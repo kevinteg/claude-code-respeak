@@ -1,0 +1,3 @@
+[
+  {"id": "r11-resync", "repo": "~/code/claude-code-respeak", "prompt": "design/packets/r11-resync.md", "depends_on": ["packets-35-respeak"], "worktree": true, "model": "claude-opus-5-5", "max_turns": 50, "why": "packet R11, off main: act 1 copies the session's hygiene, doclint and bounded at 330bded byte-identical, moves both Makefile pins and the check wall to 840 in the same commit, adds the verify row the new doclint needs to eight older packets, and keeps test_bounded.sh green on the flock lock file; act 2 proves with one targeted test each that the copied bounded closes ADV10-4 (the stop line), ADV10-5 (the lock race) and the bounded half of ADV10-2 (the group-kill orphan), rewords the check comment and adds one CHANGELOG bullet; 50 turns for two small acts"}
+]
