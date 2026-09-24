@@ -47,3 +47,4 @@ design/packets/rows-*.json: sibling,person,home
 design/packets/r5-resync.md: home
 history/sittings/*.md: private
 design/review-r6.md: sibling
+design/review-adv10.md: sibling
