@@ -10,6 +10,12 @@ Versions follow `.claude-plugin/plugin.json`. Dates are commit dates.
   repository with `.git/info/exclude`, and turn a block into a pass while the
   outer `git status` stayed clean. That file is now skipped and named in
   `dropped` as an untracked project file.
+- A git failure under `respeak-check` now exits 2 and prints its
+  `respeak-config: git failed` line (review ADV11-2). Before, a git call that
+  failed or timed out read as "untracked", the root project file was dropped,
+  and a blocked doc was reported as skipped with rc 0. The run stops at the
+  first failure. `RESPEAK_GIT_TIMEOUT` sets the per-call limit (10 s by
+  default).
 - `scripts/hygiene`, `scripts/doclint` and `scripts/bounded` are re-synced
   to claude-code-session `35b5870`. Hygiene now scans binary files: a secret
   or a home path inside a binary is a hit, a UTF-16 file is read as text, and

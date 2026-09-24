@@ -548,6 +548,9 @@ in `config.local.yaml`.
   outside a git work tree the resolver exits 2. "Tracked" means tracked by
   the work tree whose index holds the target: a project file outside that
   work tree, or in a nested repository inside it, is skipped the same way.
+  A git call that fails or runs past `RESPEAK_GIT_TIMEOUT` (10 s by
+  default) exits 2 with `respeak-config: git failed`; it never reads as
+  untracked.
 - **Hooks fail open.** No PyYAML-capable python, a missing resolver, a
   resolver error, or a measure setup error means the gate allows; only a
   real style-gate verdict blocks. Setup errors include an unreadable or

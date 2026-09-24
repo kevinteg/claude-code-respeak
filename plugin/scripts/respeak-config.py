@@ -448,14 +448,44 @@ def file_layer(kind, path, base, warnings):
     return Layer(kind, path, path=path, data=data, base=base)
 
 
+def git_timeout():
+    """Seconds one git call may take: RESPEAK_GIT_TIMEOUT, default 10."""
+    try:
+        t = float(os.environ.get("RESPEAK_GIT_TIMEOUT") or 10)
+    except ValueError:
+        return 10.0
+    return t if t > 0 else 10.0
+
+
 def git_out(cwd, *args):
     """stdout of `git -C cwd ARGS`, or None when git is missing or fails."""
     try:
         r = subprocess.run(["git", "-C", cwd] + list(args), capture_output=True,
-                           timeout=10, stdin=subprocess.DEVNULL)
+                           timeout=git_timeout(), stdin=subprocess.DEVNULL)
     except (OSError, subprocess.SubprocessError):
         return None
     return r.stdout.decode("utf-8", "replace") if r.returncode == 0 else None
+
+
+def git_ask(cwd, *args):
+    """stdout of `git -C cwd ARGS` on exit 0, None on exit 1 (git's "no",
+    e.g. `ls-files --error-unmatch` for an untracked path). Any other exit,
+    a timeout, or a missing git raises SetupError: a failure is never read
+    as "untracked", so the CI verdict fails closed (review ADV11-2)."""
+    what = "git " + " ".join(args)
+    try:
+        r = subprocess.run(["git", "-C", cwd] + list(args), capture_output=True,
+                           timeout=git_timeout(), stdin=subprocess.DEVNULL)
+    except subprocess.TimeoutExpired:
+        raise SetupError("git failed: %s: timed out after %gs" % (what, git_timeout()))
+    except (OSError, subprocess.SubprocessError) as e:
+        raise SetupError("git failed: %s: %s" % (what, e))
+    if r.returncode == 0:
+        return r.stdout.decode("utf-8", "replace")
+    if r.returncode == 1:
+        return None
+    err = r.stderr.decode("utf-8", "replace").strip().splitlines()
+    raise SetupError("git failed: %s: %s" % (what, err[-1] if err else "exit %d" % r.returncode))
 
 
 def git_toplevel(path):
@@ -472,7 +502,7 @@ def git_toplevel(path):
 
 def tracked_name(d, rel):
     """rel's repository path when git tracks d/rel (in the index), else None."""
-    out = git_out(d, "ls-files", "--full-name", "--error-unmatch", "--", rel)
+    out = git_ask(d, "ls-files", "--full-name", "--error-unmatch", "--", rel)
     return out.strip() if out and out.strip() else None
 
 
@@ -500,7 +530,7 @@ def committed_name(d, rel, toplevel):
     would come from the nested index (review ADV11-1)."""
     if not _under(segs(path_key(d)), segs(path_key(toplevel))):
         return None
-    top = git_out(d, "rev-parse", "--show-toplevel")
+    top = git_ask(d, "rev-parse", "--show-toplevel")
     if not top or not same_dir(top.strip(), toplevel):
         return None
     return tracked_name(d, rel)
@@ -511,7 +541,7 @@ def index_file_layer(kind, path, base, warnings, toplevel):
     tree tracks the file."""
     d, rel = os.path.dirname(path), os.path.basename(path)
     name = committed_name(d, rel, toplevel)
-    text = git_out(d, "show", ":" + name) if name else None
+    text = git_ask(d, "show", ":" + name) if name else None
     data = load_yaml_file(path, warnings, text=text) if text is not None else None
     return Layer(kind, path, path=path, data=data, base=base)
 
