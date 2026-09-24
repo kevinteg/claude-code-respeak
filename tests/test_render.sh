@@ -18,8 +18,13 @@ bad() { fail=$((fail + 1)); echo "FAIL - $1"; }
 check() { if [ "$2" -eq "$3" ]; then ok "$1"; else bad "$1 (expected exit $2, got $3)"; fi; }
 check_out() { if printf '%s' "$3" | grep -q -- "$2"; then ok "$1"; else bad "$1 (expected '$2' in: $3)"; fi; }
 no_runner() { if [ ! -s "$FAKE_LOG" ]; then ok "$1"; else bad "$1 (the runner ran: $(cat "$FAKE_LOG"))"; fi; }
-survivors() { pgrep -f "$1" >/dev/null 2>&1 && echo yes || echo no; }
-# gone MARKER: waits up to 5 s for every process matching MARKER to exit.
+# survivors CMDLINE: a process whose whole command line is CMDLINE is alive.
+# Every marker carries this run's pid and is matched whole (pgrep -fx), so a
+# sibling worktree running this suite is never counted (review ADV11-4).
+survivors() { pgrep -fx "$1" >/dev/null 2>&1 && echo yes || echo no; }
+m47="sleep 47.$$"; m45="sleep 45.$$"; m44="sleep 44.$$"; m46="sleep 46.$$"
+m43="bash $DEADLINE 43$$ true"    # the watchdog, which owns the deadline's timer
+# gone CMDLINE: waits up to 5 s for every process matching CMDLINE to exit.
 gone() { i=0; while [ "$i" -lt 50 ] && [ "$(survivors "$1")" = yes ]; do sleep 0.1; i=$((i + 1)); done
   [ "$(survivors "$1")" = no ]; }
 # killpg_after CMD [ARGS...]: CMD starts as the leader of a new session (the
@@ -42,7 +47,10 @@ PY
 }
 
 work="$(mktemp -d)"; work="$(cd "$work" && pwd -P)"
-trap 'pkill -f "sleep 4[4-7].25" 2>/dev/null; pkill -f "sleep 43\$" 2>/dev/null; rm -rf "$work"' EXIT
+# Decoys an unanchored pattern would count: each marker with a digit appended.
+decoys=""
+for m in "$m47" "$m45" "$m44" "$m46" "$m43"; do perl -e 'sleep 900' -- ${m}7 & decoys="$decoys $!"; disown $!; done
+trap 'kill $decoys 2>/dev/null; for m in "$m47" "$m45" "$m44" "$m46"; do pkill -fx "$m" 2>/dev/null; done; rm -rf "$work"' EXIT
 export RESPEAK_CACHE_DIR="$work/cache"
 export CLAUDE_CONFIG_DIR="$work/no-user-config"; mkdir -p "$CLAUDE_CONFIG_DIR"
 export CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugin"
@@ -50,6 +58,7 @@ unset RESPEAK_RENDER_DEPTH RESPEAK_RENDER_CMD RESPEAK_RENDER_WALL RESPEAK_RENDER
   CLAUDE_PROJECT_DIR CLAUDE_CODE_SESSION_ID XDG_STATE_HOME 2>/dev/null || true
 export RESPEAK_LOAD_MAX=100000        # only the load test below looks at the real breaker
 export FAKE_LOG="$work/runner.log"
+export FAKE_SLEEP="${m46#sleep }"
 
 # The fake runner: logs its flags and depth, then answers by FAKE_MODE.
 mkdir -p "$work/bin" "$work/loadbin"
@@ -58,7 +67,7 @@ cat > "$work/bin/claude" <<'SH'
 { echo "args: $*"; echo "depth: ${RESPEAK_RENDER_DEPTH:-}"; } >> "$FAKE_LOG"
 prompt="$(cat)"
 case "${FAKE_MODE:-echo}" in
-  sleep) sleep "${FAKE_SLEEP:-46.25}" ;;
+  sleep) sleep "$FAKE_SLEEP" ;;
   banned) printf '%s\n' '{"result": "# Fixture\n\nThis design is load-bearing for the release.\n"}' ;;
   limit) printf '%s\n' '{"type": "result", "subtype": "success", "is_error": true, "result": "Claude AI usage limit reached|1790000000\nsecond line"}' ;;
   iserr) printf '%s\n' '{"type": "result", "subtype": "success", "is_error": true, "result": "# Fixture\n\nSomething broke.\n"}' ;;
@@ -93,28 +102,28 @@ src="$fx/design/readme/source.md"; out="$work/out.md"
 
 # --- the helper alone ------------------------------------------------------
 start=$(date +%s)
-bash "$DEADLINE" 1 sleep 47.25 2>"$work/dl.err"; rc=$?
+bash "$DEADLINE" 1 $m47 2>"$work/dl.err"; rc=$?
 took=$(( $(date +%s) - start ))
 check "deadline: sleep past 1 s exits 124" 124 "$rc"
-if [ "$took" -lt 7 ] && [ "$(survivors 'sleep 47.25')" = no ]; then ok "...inside 7 s, with no survivor"
-else bad "...inside 7 s, with no survivor (took $took s, survivor $(survivors 'sleep 47.25'))"; fi
+if [ "$took" -lt 7 ] && [ "$(survivors "$m47")" = no ]; then ok "...inside 7 s, with no survivor"
+else bad "...inside 7 s, with no survivor (took $took s, survivor $(survivors "$m47"))"; fi
 check_out "...and says so" 'respeak-deadline: sleep killed after 1 s' "$(cat "$work/dl.err")"
 got="$(echo hi | bash "$DEADLINE" 5 cat)"; rc=$?
 if [ "$rc" -eq 0 ] && [ "$got" = hi ]; then ok "deadline: stdin and stdout pass through"; else bad "deadline: stdin and stdout pass through (rc $rc, '$got')"; fi
 bash "$DEADLINE" 5 sh -c 'exit 7'; check "deadline: the command's own exit passes through" 7 "$?"
 
 # --- ADV10-2: a SIGKILL to the caller's group still stops CMD's group -------
-killpg_after bash "$DEADLINE" 30 sleep 45.25
-if gone 'sleep 45.25'; then ok "deadline: a killpg of the caller's group leaves no survivor"
-else bad "deadline: a killpg of the caller's group leaves no survivor (sleep 45.25 is alive)"; fi
+killpg_after bash "$DEADLINE" 30 $m45
+if gone "$m45"; then ok "deadline: a killpg of the caller's group leaves no survivor"
+else bad "deadline: a killpg of the caller's group leaves no survivor ($m45 is alive)"; fi
 : > "$FAKE_LOG"
-FAKE_MODE=sleep FAKE_SLEEP=44.25 RESPEAK_RENDER_WALL=60 killpg_after bash "$RENDER" --mode technical --source "$src" --out "$out"
-if gone 'sleep 44.25'; then ok "render: a killpg of the caller's group leaves no runner"
-else bad "render: a killpg of the caller's group leaves no runner (sleep 44.25 is alive)"; fi
+FAKE_MODE=sleep FAKE_SLEEP="${m44#sleep }" RESPEAK_RENDER_WALL=60 killpg_after bash "$RENDER" --mode technical --source "$src" --out "$out"
+if gone "$m44"; then ok "render: a killpg of the caller's group leaves no runner"
+else bad "render: a killpg of the caller's group leaves no runner ($m44 is alive)"; fi
 # ADV10-7: the watchdog's timer does not outlive a run that ends first.
-for n in 1 2 3; do bash "$DEADLINE" 43 true; done
-if gone 'sleep 43$'; then ok "deadline: three quick runs leave no sleep 43 behind"
-else bad "deadline: three quick runs leave no sleep 43 behind"; fi
+for n in 1 2 3; do bash "$DEADLINE" 43$$ true; done
+if gone "$m43"; then ok "deadline: three quick runs leave no watchdog behind"
+else bad "deadline: three quick runs leave no watchdog behind"; fi
 
 # --- the renderer's breakers: exit 2, no runner started ----------------------
 : > "$FAKE_LOG"
@@ -138,15 +147,15 @@ start=$(date +%s)
 FAKE_MODE=sleep RESPEAK_RENDER_WALL=1 bash "$RENDER" --mode technical --source "$src" --out "$out" 2>"$work/wall.err"; rc=$?
 took=$(( $(date +%s) - start ))
 check "render: a hung runner exits 2 at the wall clock" 2 "$rc"
-if [ "$took" -lt 8 ] && [ "$(survivors 'sleep 46.25')" = no ]; then ok "...inside 8 s, with no survivor in its group"
-else bad "...inside 8 s, with no survivor in its group (took $took s, survivor $(survivors 'sleep 46.25'))"; fi
+if [ "$took" -lt 8 ] && [ "$(survivors "$m46")" = no ]; then ok "...inside 8 s, with no survivor in its group"
+else bad "...inside 8 s, with no survivor in its group (took $took s, survivor $(survivors "$m46"))"; fi
 check_out "...naming the wall clock" 'RESPEAK_RENDER_WALL' "$(cat "$work/wall.err")"
 FAKE_MODE=sleep RESPEAK_RENDER_WALL=60 bash "$RENDER" --mode technical --source "$src" --out "$out" 2>/dev/null &
 rpid=$!
-i=0; while [ "$i" -lt 50 ] && [ "$(survivors 'sleep 46.25')" = no ]; do sleep 0.1; i=$((i + 1)); done
+i=0; while [ "$i" -lt 50 ] && [ "$(survivors "$m46")" = no ]; do sleep 0.1; i=$((i + 1)); done
 kill -TERM "$rpid"; wait "$rpid" 2>/dev/null
-i=0; while [ "$i" -lt 70 ] && [ "$(survivors 'sleep 46.25')" = yes ]; do sleep 0.1; i=$((i + 1)); done
-if [ "$(survivors 'sleep 46.25')" = no ]; then ok "render: a TERM to the renderer leaves no orphan runner"
+i=0; while [ "$i" -lt 70 ] && [ "$(survivors "$m46")" = yes ]; do sleep 0.1; i=$((i + 1)); done
+if [ "$(survivors "$m46")" = no ]; then ok "render: a TERM to the renderer leaves no orphan runner"
 else bad "render: a TERM to the renderer leaves no orphan runner"; fi
 check_out "render: the runner gets --tools and --max-turns" '--tools Read Grep Glob --allowedTools Read Grep Glob --max-turns 8' "$(cat "$FAKE_LOG")"
 check_out "render: the runner sees RESPEAK_RENDER_DEPTH" 'depth: 1' "$(cat "$FAKE_LOG")"
@@ -237,5 +246,8 @@ check_out "...and says so" "readme-render: no status line in design/readme/sourc
 if cmp -s "$fx/README.md" "$work/README.before"; then ok "...and leaves README.md untouched"
 else bad "...and leaves README.md untouched"; fi
 no_runner "...and starts no runner"
+
+alive=0; for d in $decoys; do kill -0 "$d" 2>/dev/null && alive=$((alive + 1)); done
+check "the survivor cases passed with all five decoys alive (ADV11-4)" 5 "$alive"
 
 echo; echo "$pass passed, $fail failed"; [ "$fail" -eq 0 ]

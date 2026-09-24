@@ -22,6 +22,11 @@ Versions follow `.claude-plugin/plugin.json`. Dates are commit dates.
   the runner prints as plain text on stdout is found as well; before, it read
   as a runner failure, rc 2. The relay owns the canonical pattern; a test per
   measured phrasing guards this copy until a re-sync.
+- The survivor tests in `tests/test_bounded.sh` and `tests/test_render.sh`
+  count only this run's processes (review ADV11-4). Each marker carries the
+  run's pid and is matched whole with `pgrep -fx`, so a sibling worktree
+  running the same suite no longer turns a pass into a fail. Decoys that an
+  unanchored pattern would count stay alive through every survivor case.
 - `scripts/hygiene`, `scripts/doclint` and `scripts/bounded` are re-synced
   to claude-code-session `35b5870`. Hygiene now scans binary files: a secret
   or a home path inside a binary is a hit, a UTF-16 file is read as text, and
