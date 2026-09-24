@@ -46,7 +46,7 @@ Every mode passes the same style gates. The corpus holds 234 banned phrases
 across 22 categories (AI tells, from `delve` to `load-bearing`), each with a
 severity, plus 60 replacement rules. Sentence and paragraph budgets come
 from Simplified Technical English and plain-language standards. Tone axes are behavior
-tables, and a configuration field with no observable behavior is deleted.
+tables, and a config field with no observable behavior is deleted.
 
 The **loop**: while translating, the agent files proposals for unratified
 shorthand it had to decode, preferring the variant closest to plain English.
@@ -77,7 +77,7 @@ also needs `gh`. The scripts pick the first interpreter that imports PyYAML
 (override with `RESPEAK_PYTHON`). The translator runs as a Sonnet subagent
 in its own context window, so the swarm's context never pays for it.
 
-Install from GitHub (these commands write to your `~/.claude` configuration):
+Install from GitHub (these write to your `~/.claude` config):
 
 ```sh
 claude plugin marketplace add kevinteg/claude-code-respeak
@@ -129,7 +129,7 @@ installed copy under `~/.claude/plugins/cache` is a snapshot.
 | Command | What it does |
 | --- | --- |
 | `/respeak:respeak` | Translate the session's latest outcome or a file into `eli5`, `bluf`, or `technical`. |
-| `/respeak:init` | Set up the project: state directories, a sparse configuration, the lexicon and its digest. |
+| `/respeak:init` | Set up the project: state dirs, a sparse config, the lexicon and its digest. |
 | `/respeak:off` | Silence the respeak hooks for this session; with `gate`, only the style gate. |
 | `/respeak:on` | Undo `/respeak:off`; with `gate`, run the gate this session even where it is off. |
 | `/respeak:report` | File a bug, feature request, documentation note, or question on GitHub. |
@@ -147,8 +147,8 @@ installed copy under `~/.claude/plugins/cache` is a snapshot.
 Or say it: "explain that last change to my manager." Every translation
 opens with a `📣 respeak · <mode>` line. For one launch,
 `RESPEAK_HOOKS=off claude` or `RESPEAK_GATE=off claude` does what
-`/respeak:off` does. `/respeak:report` files the issue through `gh`, adds an
-environment footer, and runs a privacy pass you confirm; project files attach
+`/respeak:off` does. `/respeak:report` files the issue with `gh`, with an
+environment footer and a privacy pass you confirm; project files attach
 only with `--include-content`.
 
 The scripts a reader runs, all under `plugin/scripts/`:
@@ -163,8 +163,8 @@ bash plugin/scripts/render-lexicon-digest.sh                       # after ratif
 
 `respeak-verify-edit.py` proves a style edit meaning-preserving. In `.md`
 it holds headings, block structure, link and image targets, fenced code,
-inline code, numbers, and front matter byte-identical. In code files only
-comments may change. Proposals land in
+inline code, numbers, and front matter byte-identical. In code files it
+opens comments only. Proposals land in
 `.claude/respeak/proposals/<term>.yaml`. To accept one, move it into
 `.claude/respeak/lexicon.yaml` with `status: ratified` and regenerate the
 digest.
@@ -174,7 +174,7 @@ digest.
 **The gate hook** (`plugin/scripts/respeak-gate.sh`) is a `PostToolUse`
 hook on `Write|Edit` (`plugin/hooks/hooks.json`). It measures each Markdown
 file a tool call wrote and blocks a failing report with exit code 2. Claude
-Code returns that exit to the model as a correctable error. Setup problems
+Code returns the block to the model as a correctable error. Setup problems
 never block. It is **opt-in per project**: only the project layer sets
 `gate.enabled: true`. `gate.block_on: introduced` blocks only on hits the
 write added; `block_on: any` judges the whole file.
@@ -190,8 +190,8 @@ gate:
 ```
 
 **The scanner** counts prose only. It drops code, blockquotes, front matter,
-HTML comments, and URLs, and it treats each list item or table row as its own
-unit. `--fail-on {none,error,warn}` sets the exit code; `--baseline BASE`
+HTML comments, and URLs, and it treats each list item or table row as its
+own unit. `--fail-on {none,error,warn}` sets the exit; `--baseline BASE`
 reports `[new N, pre-existing M]` per rule; `--config` carries the
 project's `style.budgets` and `gate.allow`.
 
@@ -222,8 +222,8 @@ shorthand governance are project-only. The knobs are tone axes
 (formality, directness, confidence), `tech_level` 1–5 with audience
 profiles, per-mode sentence budgets, and shorthand governance. They live in
 [`plugin/config/respeak.config.yaml`](/plugin/config/respeak.config.yaml).
-The contract and worked examples are in [`plugin/docs/config-layers.md`](/plugin/docs/config-layers.md);
-a runnable tree is in [`examples/layered/`](/examples/layered/).
+The contract and worked examples: [`plugin/docs/config-layers.md`](/plugin/docs/config-layers.md);
+a runnable tree: [`examples/layered/`](/examples/layered/).
 
 ## Design of record
 
@@ -269,7 +269,7 @@ make check
 
 `make check` runs `test`, `lint`, `doclint`, `hygiene`, `readme-fresh` and
 `validate` under `scripts/bounded`: one run per tree, a 900 s wall, held
-off when load exceeds 4 x cores.
+off above load 4 x cores.
 
 ## Conventions shared with the sibling plugins
 

@@ -60,6 +60,12 @@ prompt="$(cat)"
 case "${FAKE_MODE:-echo}" in
   sleep) sleep "${FAKE_SLEEP:-46.25}" ;;
   banned) printf '%s\n' '{"result": "# Fixture\n\nThis design is load-bearing for the release.\n"}' ;;
+  limit) printf '%s\n' '{"type": "result", "subtype": "success", "is_error": true, "result": "Claude AI usage limit reached|1790000000\nsecond line"}' ;;
+  iserr) printf '%s\n' '{"type": "result", "subtype": "success", "is_error": true, "result": "# Fixture\n\nSomething broke.\n"}' ;;
+  maxturns) printf '%s\n' '{"type": "result", "subtype": "error_max_turns", "is_error": false, "result": "# Fixture\n\nPartial.\n"}' ;;
+  login) echo "Invalid API key · Please run /login" >&2; exit 1 ;;
+  crash) echo "segfault in the runner" >&2; exit 1 ;;
+  nonl) printf '%s\n' '{"result": "# Fixture\n\nThe cache is warm."}' ;;
   *) printf '%s\n' "$prompt" | python3 -c '
 import json, sys
 t = sys.stdin.read()
@@ -142,6 +148,53 @@ if [ "$(survivors 'sleep 46.25')" = no ]; then ok "render: a TERM to the rendere
 else bad "render: a TERM to the renderer leaves no orphan runner"; fi
 check_out "render: the runner gets --tools and --max-turns" '--tools Read Grep Glob --allowedTools Read Grep Glob --max-turns 8' "$(cat "$FAKE_LOG")"
 check_out "render: the runner sees RESPEAK_RENDER_DEPTH" 'depth: 1' "$(cat "$FAKE_LOG")"
+
+# --- ADV10-3: an account failure is exit 4, and nothing reaches --out -------
+rm -f "$out"
+err="$(FAKE_MODE=limit bash "$RENDER" --mode technical --source "$src" --out "$out" 2>&1 >/dev/null)"; rc=$?
+check "render: is_error with a usage-limit result exits 4" 4 "$rc"
+check_out "...with the account-failure line" 'respeak-render: account failure: Claude AI usage limit reached|1790000000$' "$err"
+if [ ! -e "$out" ]; then ok "...and writes no --out"; else bad "...and writes no --out"; fi
+rm -f "$out"; err="$(FAKE_MODE=iserr bash "$RENDER" --mode technical --source "$src" --out "$out" 2>&1 >/dev/null)"; rc=$?
+check "render: is_error with any other result exits 2" 2 "$rc"
+if [ ! -e "$out" ]; then ok "...and writes no --out"; else bad "...and writes no --out"; fi
+rm -f "$out"; FAKE_MODE=maxturns bash "$RENDER" --mode technical --source "$src" --out "$out" >/dev/null 2>&1; rc=$?
+check "render: a subtype other than success exits 2" 2 "$rc"
+if [ ! -e "$out" ]; then ok "...and writes no --out"; else bad "...and writes no --out"; fi
+err="$(FAKE_MODE=login bash "$RENDER" --mode technical --source "$src" --out "$out" 2>&1 >/dev/null)"; rc=$?
+check "render: a runner exiting 1 with /login on stderr exits 4" 4 "$rc"
+check_out "...with the account-failure line" 'respeak-render: account failure: Invalid API key' "$err"
+FAKE_MODE=crash bash "$RENDER" --mode technical --source "$src" --out "$out" >/dev/null 2>&1; rc=$?
+check "render: any other runner error stays exit 2" 2 "$rc"
+cp "$fx/README.md" "$work/README.before"
+FAKE_MODE=login bash "$README_RENDER" --repo "$fx" >/dev/null 2>&1; rc=$?
+check "readme-render: an account failure passes through as exit 4" 4 "$rc"
+if cmp -s "$fx/README.md" "$work/README.before"; then ok "...and leaves README.md untouched"
+else bad "...and leaves README.md untouched"; fi
+
+# --- ADV10-6: a failed render leaves the source byte-identical --------------
+sed 's/^Status: version .*/Status: version `0.0.0`, rendered `2000-01-01`, `0` unittest cases and `0` bash suites./' "$src" > "$work/source.before"
+cp "$work/source.before" "$src"
+(cd "$fx" && git init -q && git add -A && git -c user.name=t -c user.email=t@t commit -qm fixture)
+FAKE_MODE=crash bash "$README_RENDER" --repo "$fx" >/dev/null 2>&1; rc=$?
+check "readme-render: a runner exiting 1 exits 2" 2 "$rc"
+if cmp -s "$src" "$work/source.before" && [ -z "$(git -C "$fx" status --short)" ]; then
+  ok "...and leaves the source byte-identical, git status empty"
+else bad "...and leaves the source byte-identical, git status empty ($(git -C "$fx" status --short | tr '\n' ' '))"; fi
+rm -rf "$fx/.git"
+
+# --- ruling 10: the renderer keeps the source's final newline ---------------
+rm -f "$out"
+FAKE_MODE=nonl bash "$RENDER" --mode technical --source "$src" --out "$out" >/dev/null 2>&1; rc=$?
+check "render: a result without a final newline, from a source with one (exit 0)" 0 "$rc"
+if [ "$(tail -c 1 "$out" | od -An -c | tr -d ' ')" = '\n' ] && [ "$(tail -c 2 "$out" | od -An -c | tr -d ' ')" != '\n\n' ]; then
+  ok "...writes an output ending in exactly one newline"
+else bad "...writes an output ending in exactly one newline"; fi
+printf '%s' "$(cat "$src")" > "$work/nonl-src.md"
+bash "$RENDER" --mode technical --source "$work/nonl-src.md" --out "$out" >/dev/null 2>&1; rc=$?
+if [ "$rc" -eq 0 ] && [ "$(tail -c 1 "$out" | od -An -c | tr -d ' ')" != '\n' ]; then
+  ok "render: a source without a final newline gives an output without one"
+else bad "render: a source without a final newline gives an output without one (rc $rc)"; fi
 
 # --- ADV6-6: readme-render.sh writes and stamps only a verified render ------
 cp "$fx/README.md" "$work/README.before"
