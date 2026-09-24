@@ -4,6 +4,8 @@ Versions follow `.claude-plugin/plugin.json`. Dates are commit dates.
 
 ## Unreleased
 
+- `README.md` is rendered again by `make readme` and now ends in a
+  newline, as its source does (ruling 11).
 - `readme-render.sh` writes the status line into a copy of
   `design/readme/source.md` in its temp directory, renders and verifies the
   copy, and moves the copy over the source and the render over `README.md`
