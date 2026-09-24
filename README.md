@@ -42,9 +42,9 @@ modes:
 | `bluf` | Sentence one is the result, decision, or ask, with owner and deadline. A manager can forward it unedited. |
 | `technical` | Conclusion first, then evidence as `file:line`, then open questions. Technical readers get no fluff; they resent it most. |
 
-Every mode passes the same style gates. The corpus holds 234 banned phrases
-across 22 categories (AI tells, from `delve` to `load-bearing`), each with a
-severity, plus 60 replacement rules. Sentence and paragraph budgets come
+Every mode passes the same style gates: 234 banned phrases across 22
+categories (AI tells, from `delve` to `load-bearing`), each with a severity,
+plus 60 replacement rules. Sentence and paragraph budgets come
 from Simplified Technical English and plain-language standards. Tone axes are behavior
 tables, and a config field with no observable behavior is deleted.
 
@@ -72,7 +72,7 @@ not `genuine`.
 ## Install
 
 Prerequisites: Claude Code ≥ 2.1.196, a plugin path without spaces, bash
-3.2 or newer, and a python3 (3.9 or newer) with PyYAML. `/respeak:report`
+3.2 or newer, and a python3 (3.9 or newer) with PyYAML; `/respeak:report`
 also needs `gh`. The scripts pick the first interpreter that imports PyYAML
 (override with `RESPEAK_PYTHON`). The translator runs as a Sonnet subagent
 in its own context window, so the swarm's context never pays for it.
@@ -173,8 +173,8 @@ digest.
 
 **The gate hook** (`plugin/scripts/respeak-gate.sh`) is a `PostToolUse`
 hook on `Write|Edit` (`plugin/hooks/hooks.json`). It measures each Markdown
-file a tool call wrote and blocks a failing report with exit code 2. Claude
-Code returns the block to the model as a correctable error. Setup problems
+file a tool call wrote and blocks a failing report with exit code 2, which
+Claude Code returns to the model as a correctable error. Setup problems
 never block. It is **opt-in per project**: only the project layer sets
 `gate.enabled: true`. `gate.block_on: introduced` blocks only on hits the
 write added; `block_on: any` judges the whole file.
@@ -189,7 +189,7 @@ gate:
   allow: []                 # regexes that skip a rule for this project
 ```
 
-**The scanner** counts prose only. It drops code, blockquotes, front matter,
+**The scanner** counts prose only: it drops code, blockquotes, front matter,
 HTML comments, and URLs, and it treats each list item or table row as its
 own unit. `--fail-on {none,error,warn}` sets the exit; `--baseline BASE`
 reports `[new N, pre-existing M]` per rule; `--config` carries the
@@ -268,7 +268,7 @@ make check
 ```
 
 `make check` runs `test`, `lint`, `doclint`, `hygiene`, `readme-fresh` and
-`validate` under `scripts/bounded`: one run per tree, a 900 s wall, held
+`validate` under `scripts/bounded`: one run per tree, an 840 s wall, held
 off above load 4 x cores.
 
 ## Conventions shared with the sibling plugins
@@ -293,7 +293,7 @@ proposal is only a proposal until a human ratifies it.
 
 ## Status
 
-Status: version `0.6.1`, rendered `2026-09-23`, `227` unittest cases and `10` bash suites.
+Status: version `0.6.1`, rendered `2026-09-24`, `227` unittest cases and `10` bash suites.
 
 | Surface | State |
 |---|---|

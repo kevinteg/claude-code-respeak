@@ -268,7 +268,7 @@ make check
 ```
 
 `make check` runs `test`, `lint`, `doclint`, `hygiene`, `readme-fresh` and
-`validate` under `scripts/bounded`: one run per tree, a 900 s wall, held
+`validate` under `scripts/bounded`: one run per tree, an 840 s wall, held
 off above load 4 x cores.
 
 ## Conventions shared with the sibling plugins
@@ -293,7 +293,7 @@ proposal is only a proposal until a human ratifies it.
 
 ## Status
 
-Status: version `0.6.1`, rendered `2026-09-23`, `227` unittest cases and `10` bash suites.
+Status: version `0.6.1`, rendered `2026-09-24`, `227` unittest cases and `10` bash suites.
 
 | Surface | State |
 |---|---|
