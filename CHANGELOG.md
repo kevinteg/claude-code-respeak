@@ -4,6 +4,34 @@ Versions follow `.claude-plugin/plugin.json`. Dates are commit dates.
 
 ## Unreleased
 
+- `respeak-check` reads a project file only from the work tree whose index
+  holds the target (review ADV11-1). A nested repository could commit a
+  project file at `fail_on: none` in its own index, hide it from the outer
+  repository with `.git/info/exclude`, and turn a block into a pass while the
+  outer `git status` stayed clean. That file is now skipped and named in
+  `dropped` as an untracked project file.
+- A git failure under `respeak-check` now exits 2 and prints its
+  `respeak-config: git failed` line (review ADV11-2). Before, a git call that
+  failed or timed out read as "untracked", the root project file was dropped,
+  and a blocked doc was reported as skipped with rc 0. The run stops at the
+  first failure. `RESPEAK_GIT_TIMEOUT` sets the per-call limit (10 s by
+  default).
+- `respeak-render` reports more account failures as exit 4 (review
+  ADV11-5). The pattern now matches `limit reached` and `rate_limit`, so a
+  5-hour limit, a weekly limit and an API 429 stop the run. A limit line that
+  the runner prints as plain text on stdout is found as well; before, it read
+  as a runner failure, rc 2. The relay owns the canonical pattern; a test per
+  measured phrasing guards this copy until a re-sync.
+- The survivor tests in `tests/test_bounded.sh` and `tests/test_render.sh`
+  count only this run's processes (review ADV11-4). Each marker carries the
+  run's pid and is matched whole with `pgrep -fx`, so a sibling worktree
+  running the same suite no longer turns a pass into a fail. Decoys that an
+  unanchored pattern would count stay alive through every survivor case.
+- The Makefile comment on `make check` now says the gate reads the last
+  `bounded: stop:` line anywhere in stderr (review ADV11-3). make prints its
+  own `Error 2` line after that line, so the last stderr line was never
+  bounded's. `make readme`'s account failure is likewise its
+  `respeak-render: account failure` line, not the exit.
 - `scripts/hygiene`, `scripts/doclint` and `scripts/bounded` are re-synced
   to claude-code-session `35b5870`. Hygiene now scans binary files: a secret
   or a home path inside a binary is a hit, a UTF-16 file is read as text, and

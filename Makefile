@@ -19,8 +19,11 @@ CLAUDE ?= claude
 # check runs under scripts/bounded, a verbatim copy of claude-code-session's (conventions section 5,
 # unpinned): one per tree by the lock .check.lock, an 840 s wall, held off above load 4 x cores.
 # make check exits 0, or 2 for any failure: make reads every failure as 2, so the exit alone does
-# not tell a refusal from a red suite. A last stderr line `bounded: stop: lock|load|wall` means the
-# suite did not run to its end: unrun, never red (section 5). The relay's gate reads that line.
+# not tell a refusal from a red suite. A `bounded: stop: lock|load|wall` line means the suite did
+# not run to its end: unrun, never red (section 5). The relay's gate reads the last such line
+# anywhere in stderr, because make prints its own `Error 2` line after it (review ADV11-3). make
+# readme is read the same way: its account failure is the `respeak-render: account failure` line
+# in stderr, never the exit, which make turns from the renderer's 4 into 2.
 check:
 	$(PYTHON) scripts/bounded --lock .check.lock --wall 840 --load 4 -- $(MAKE) check-unlocked
 

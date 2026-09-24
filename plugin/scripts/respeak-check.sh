@@ -35,7 +35,8 @@
 # cannot soften the verdict either; a file the gate cannot judge (exit 3)
 # is an ERROR, never a pass. Exit 0 = every file allowed and verified; 1 =
 # at least one block, error, or verification failure; 2 = usage or setup
-# error, or the per-file counts do not add up to the files named.
+# error, a git failure (the run stops at the first, with its line), or the
+# per-file counts do not add up to the files named.
 # bash 3.2 compatible.
 set -u
 unset RESPEAK_GATE RESPEAK_HOOKS RESPEAK_CONFIG CLAUDE_CODE_SESSION_ID XDG_STATE_HOME 2>/dev/null || true
@@ -54,7 +55,7 @@ while [ $# -gt 0 ]; do
     --allow-strings) cli_strings=1; shift ;;
     --allow-restructure) cli_restructure=1; shift ;;
     --quiet) quiet=1; shift ;;
-    -h|--help) sed -n '2,38p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,39p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     --*) echo "respeak-check: unknown option $1" >&2; exit 2 ;;
     *) files+=("$1"); shift ;;
   esac
@@ -114,6 +115,12 @@ for g in ((d.get("editorial_pass") or {}).get("verify") or {}).get("paths") or [
 fi
 
 say() { [ "$quiet" -eq 1 ] || echo "$*"; }
+# The gate keeps the resolver's stderr to itself, so a gate exit 3 asks the
+# resolver once more for its reason; a `git failed` line is a failure of the
+# whole run, never one file's error (review ADV11-2).
+git_failure() {
+  "$RESPEAK_PY" "$resolver" gate --for "$1" --committed 2>&1 >/dev/null | grep -m1 'respeak-config: git failed'
+}
 tmp="$(mktemp 2>/dev/null)" || { echo "respeak-check: mktemp failed" >&2; exit 2; }; trap 'rm -f "$tmp" "$tmp.before"' EXIT
 passed=0; skipped=0; blocked=0; errors=0; missing=0; verified=0; vfailed=0
 
@@ -137,7 +144,11 @@ verify_one() {
 for f in "${files[@]}"; do
   [ -f "$f" ] || { missing=$((missing + 1)); say "missing  $f"; continue; }
   RESPEAK_GATE_TRACE=1 "$script_dir/respeak-gate.sh" --file "$f" --committed >"$tmp" 2>&1; rc=$?
-  if [ "$rc" -eq 2 ]; then
+  if [ "$rc" -eq 3 ] && gitfail="$(git_failure "$f")"; then
+    echo "$gitfail" >&2
+    echo "respeak-check: stopped at $f; a git failure spoils every file, not one" >&2
+    exit 2
+  elif [ "$rc" -eq 2 ]; then
     blocked=$((blocked + 1)); echo "BLOCKED  $f"; sed 's/^/         /' "$tmp"
   elif [ "$rc" -ne 0 ]; then
     errors=$((errors + 1)); echo "ERROR    $f"; sed 's/^/         /' "$tmp"

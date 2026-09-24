@@ -448,14 +448,44 @@ def file_layer(kind, path, base, warnings):
     return Layer(kind, path, path=path, data=data, base=base)
 
 
+def git_timeout():
+    """Seconds one git call may take: RESPEAK_GIT_TIMEOUT, default 10."""
+    try:
+        t = float(os.environ.get("RESPEAK_GIT_TIMEOUT") or 10)
+    except ValueError:
+        return 10.0
+    return t if t > 0 else 10.0
+
+
 def git_out(cwd, *args):
     """stdout of `git -C cwd ARGS`, or None when git is missing or fails."""
     try:
         r = subprocess.run(["git", "-C", cwd] + list(args), capture_output=True,
-                           timeout=10, stdin=subprocess.DEVNULL)
+                           timeout=git_timeout(), stdin=subprocess.DEVNULL)
     except (OSError, subprocess.SubprocessError):
         return None
     return r.stdout.decode("utf-8", "replace") if r.returncode == 0 else None
+
+
+def git_ask(cwd, *args):
+    """stdout of `git -C cwd ARGS` on exit 0, None on exit 1 (git's "no",
+    e.g. `ls-files --error-unmatch` for an untracked path). Any other exit,
+    a timeout, or a missing git raises SetupError: a failure is never read
+    as "untracked", so the CI verdict fails closed (review ADV11-2)."""
+    what = "git " + " ".join(args)
+    try:
+        r = subprocess.run(["git", "-C", cwd] + list(args), capture_output=True,
+                           timeout=git_timeout(), stdin=subprocess.DEVNULL)
+    except subprocess.TimeoutExpired:
+        raise SetupError("git failed: %s: timed out after %gs" % (what, git_timeout()))
+    except (OSError, subprocess.SubprocessError) as e:
+        raise SetupError("git failed: %s: %s" % (what, e))
+    if r.returncode == 0:
+        return r.stdout.decode("utf-8", "replace")
+    if r.returncode == 1:
+        return None
+    err = r.stderr.decode("utf-8", "replace").strip().splitlines()
+    raise SetupError("git failed: %s: %s" % (what, err[-1] if err else "exit %d" % r.returncode))
 
 
 def git_toplevel(path):
@@ -472,15 +502,46 @@ def git_toplevel(path):
 
 def tracked_name(d, rel):
     """rel's repository path when git tracks d/rel (in the index), else None."""
-    out = git_out(d, "ls-files", "--full-name", "--error-unmatch", "--", rel)
+    out = git_ask(d, "ls-files", "--full-name", "--error-unmatch", "--", rel)
     return out.strip() if out and out.strip() else None
 
 
-def index_file_layer(kind, path, base, warnings):
-    """file_layer for the index copy: absent unless git tracks the file."""
+def target_work_tree(given):
+    """Under --committed, the work tree whose index tracks `given`: from the
+    innermost repository outward, the first whose index names it, else the
+    innermost (a new file). A nested repository never speaks for a file the
+    outer one tracks (review ADV11-1)."""
+    first = top = git_toplevel(given)
+    while top is not None:
+        rel = rel_under(given, top)
+        if rel and tracked_name(top, rel) is not None:
+            return top
+        parent = os.path.dirname(top)
+        if parent == top:
+            break
+        top = git_toplevel(parent)
+    return first
+
+
+def committed_name(d, rel, toplevel):
+    """rel's index name when the target's own work tree `toplevel` tracks
+    d/rel, else None. A d outside that work tree (path-wise, after symlinks)
+    is never asked; a d in a nested repository is refused, since its answer
+    would come from the nested index (review ADV11-1)."""
+    if not _under(segs(path_key(d)), segs(path_key(toplevel))):
+        return None
+    top = git_ask(d, "rev-parse", "--show-toplevel")
+    if not top or not same_dir(top.strip(), toplevel):
+        return None
+    return tracked_name(d, rel)
+
+
+def index_file_layer(kind, path, base, warnings, toplevel):
+    """file_layer for the index copy: absent unless the target's own work
+    tree tracks the file."""
     d, rel = os.path.dirname(path), os.path.basename(path)
-    name = tracked_name(d, rel)
-    text = git_out(d, "show", ":" + name) if name else None
+    name = committed_name(d, rel, toplevel)
+    text = git_ask(d, "show", ":" + name) if name else None
     data = load_yaml_file(path, warnings, text=text) if text is not None else None
     return Layer(kind, path, path=path, data=data, base=base)
 
@@ -500,7 +561,7 @@ def is_user_root(d, cfgdir):
             or path_key(os.path.join(d, ".claude")) == path_key(cfgdir))
 
 
-def find_project(explicit, env, target, launch_dir=None, untracked=None):
+def find_project(explicit, env, target, launch_dir=None, untracked=None, toplevel=None):
     """(project root or None, how). One rule for every consumer:
     1. --project, verbatim;
     2. the nearest ancestor of the target holding .claude/respeak/config.yaml
@@ -509,7 +570,8 @@ def find_project(explicit, env, target, launch_dir=None, untracked=None):
     3. --launch-dir / $CLAUDE_PROJECT_DIR, where Claude Code was started;
     4. the nearest ancestor holding .git or .claude/ (again never $HOME).
     With `untracked` (a list, under --committed) step 2 skips a project file
-    git does not track and appends its directory to the list."""
+    the target's own work tree `toplevel` does not track (outside it, in a
+    nested repository, or untracked) and appends its directory to the list."""
     cfgdir = user_config_dir(env)
     if explicit:
         return real(explicit), "--project"
@@ -517,7 +579,7 @@ def find_project(explicit, env, target, launch_dir=None, untracked=None):
     chain = list(reversed(ancestors(d)))          # nearest first
     for a in chain:
         if not is_user_root(a, cfgdir) and os.path.isfile(os.path.join(a, PROJECT_REL)):
-            if untracked is not None and tracked_name(a, PROJECT_REL) is None:
+            if untracked is not None and committed_name(a, PROJECT_REL, toplevel) is None:
                 untracked.append(a)
                 continue
             return real(a), "nearest " + PROJECT_REL
@@ -540,14 +602,16 @@ def tdir_anchor(tdir, project):
     return project
 
 
-def project_layers(project, warnings, cfgdir, committed=False):
+def project_layers(project, warnings, cfgdir, committed=None):
+    """`committed` is the target's own work tree under --committed, else None."""
     if is_user_root(project, cfgdir):
         warnings.append("project root %s is the user config directory; the user file is not "
                         "re-applied at project grade" % project)
         return []
-    project_file = index_file_layer if committed else file_layer
+    path = os.path.join(project, PROJECT_REL)
     return [
-        project_file("project", os.path.join(project, PROJECT_REL), project, warnings),
+        index_file_layer("project", path, project, warnings, committed) if committed
+        else file_layer("project", path, project, warnings),
         file_layer("project-local", os.path.join(project, PROJECT_LOCAL_REL), project, warnings),
     ]
 
@@ -601,7 +665,7 @@ def session_layer(session_id, env, warnings):
 
 
 def build_stack(project, target, plugin_root, env, overrides, walk_from, warnings, session=None,
-                committed=False):
+                committed=None):
     layers = []
 
     # 1. plugin defaults
@@ -823,20 +887,20 @@ def resolve(target=None, project=None, plugin_root=None, env=None, overrides=Non
     target = real(given)
     plugin_root = real(plugin_root or env.get("CLAUDE_PLUGIN_ROOT") or DEFAULT_PLUGIN_ROOT)
     launch_dir = real(launch_dir) if launch_dir else None
-    untracked = None
+    untracked = toplevel = None
     if committed:
-        toplevel = git_toplevel(given)
+        toplevel = target_work_tree(given)
         if toplevel is None:
             raise SetupError("--committed needs a git work tree")
         untracked = []
-    project, how = find_project(project, env, given, launch_dir, untracked)
+    project, how = find_project(project, env, given, launch_dir, untracked, toplevel)
     if project and under_how(target, project) is None and under_how(given, project) == "logical":
         # e.g. proj/ext.md -> /elsewhere/ext.md: the file the tool wrote lives
         # in the project, so resolve for the spelling that says so
         target = given
     session, provider = session_layer(session_id, env, warnings)
     layers = build_stack(project, target, plugin_root, env, overrides or {}, walk_from, warnings,
-                         session=session, committed=committed)
+                         session=session, committed=toplevel)
     if not layers[0].present:
         warnings.append("plugin defaults not found at %s" % layers[0].path)
     config, origins, applied = {}, {}, []

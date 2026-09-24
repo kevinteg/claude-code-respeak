@@ -57,15 +57,15 @@
 # A runner result with `is_error` true, or a `subtype` other than
 # `success`, is a failure and nothing reaches --out (the narrative goes to a
 # temp name and moves over --out only on success). The failure is an account
-# failure when the result, or a failed runner's stderr, matches
-# ACCOUNT_FAILURE_RE below (any case): exit 4 with one stderr line,
-# `respeak-render: account failure: <first line of the result>`, so a
+# failure when the result, the runner's stderr, or its raw stdout (JSON or
+# not) matches ACCOUNT_FAILURE_RE below (any case): exit 4 with one stderr
+# line, `respeak-render: account failure: <the first matching line>`, so a
 # sitting stops the run instead of retrying.
 #
 # Exit codes: 0 = wrote a passing narrative. 1 = still failing the gate
 # after --max-rounds. 2 = usage/setup error (missing runner, bad args,
 # missing files, runner/parse failure, a refusal above, the wall clock).
-# 4 = account failure (usage limit, login, API key, credit, OAuth token).
+# 4 = account failure (usage or rate limit, login, API key, credit, OAuth token).
 #
 # bash 3.2 compatible (macOS default): indexed arrays only, no associative
 # arrays, no mapfile.
@@ -82,8 +82,11 @@ CONTRACT=""
 MAX_ROUNDS=2
 RENDER_CMD="${RESPEAK_RENDER_CMD:-claude}"
 RENDER_MODEL="${RESPEAK_RENDER_MODEL:-claude-sonnet-5}"
-# The account failures (ADV10-3): one extended regex, matched without case.
-ACCOUNT_FAILURE_RE='usage limit|/login|not logged in|invalid api key|credit balance|oauth token (has )?expired'
+# The account failures (ADV10-3, ADV11-5): one extended regex, matched
+# without case. The relay's account stop owns the canonical pattern; this copy
+# holds until a re-sync brings it, and tests/test_render.sh pins each
+# measured phrasing so the two cannot drift silently.
+ACCOUNT_FAILURE_RE='usage limit|limit reached|rate_limit|/login|not logged in|invalid api key|credit balance|oauth token (has )?expired'
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -245,10 +248,10 @@ if failed:
         err_lines = open(err_log, errors="replace").read().splitlines()
     except OSError:
         err_lines = []
-    if account.search(result):
-        line = next(l for l in result.splitlines() if l.strip())
-    else:
-        line = next((l for l in err_lines if account.search(l)), None)
+    # The result, the runner's stderr, then the raw stdout whether or not
+    # it parsed as JSON: a plain-text limit line is still the account's.
+    line = next((l for l in result.splitlines() + err_lines + raw.splitlines()
+                 if account.search(l)), None)
     if line is not None:
         sys.stderr.write("respeak-render: account failure: %s\n" % line.strip())
         sys.exit(4)

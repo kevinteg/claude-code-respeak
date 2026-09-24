@@ -11,7 +11,13 @@ check() { if [ "$2" = "$3" ]; then pass=$((pass + 1)); echo "ok   - $1"; else fa
 
 last() { tail -1 "$1" 2>/dev/null; }
 
-work="$(mktemp -d)"; trap 'pkill -f "sleep 353" 2>/dev/null; pkill -f "sleep 32" 2>/dev/null; rm -rf "$work"' EXIT
+# Survivor markers carry this run's pid and are matched whole (pgrep -fx), so a sibling worktree
+# running this suite is never counted (review ADV11-4). The decoys are what an unanchored pattern
+# would count: each marker with a digit appended, alive through every survivor case.
+m353="sleep 353.$$"; m32="sleep 32.$$"
+decoys=""
+for m in "$m353" "$m32"; do perl -e 'sleep 900' -- ${m}7 & decoys="$decoys $!"; disown $!; done
+work="$(mktemp -d)"; trap 'kill $decoys 2>/dev/null; pkill -fx "$m353" 2>/dev/null; pkill -fx "$m32" 2>/dev/null; rm -rf "$work"' EXIT
 
 # The wall: the whole group dies, the runner exits 124 well inside the command's own 30 s.
 t0=$(date +%s)
@@ -68,29 +74,32 @@ check "...and the command does not run" absent "$([ -e "$work/aged" ] && echo pr
 # ADV10-2: bounded's whole group SIGKILLed at 1 s leaves no survivor of the command 3 s later.
 BOUNDED_GRACE=1 python3 -c '
 import os, signal, subprocess, sys, time
-p = subprocess.Popen([sys.executable, sys.argv[1], "--wall", "20", "--", "sleep", "353"],
+p = subprocess.Popen([sys.executable, sys.argv[1], "--wall", "20", "--"] + sys.argv[2].split(),
                      preexec_fn=os.setsid, stderr=subprocess.DEVNULL)
 time.sleep(1)
 os.killpg(p.pid, signal.SIGKILL)
 p.wait()
-' "$BOUNDED"
+' "$BOUNDED" "$m353"
 sleep 3
-check "a SIGKILLed group leaves no sleep 353 behind (ADV10-2)" 0 "$(pgrep -f 'sleep 353' | wc -l | tr -d ' ')"
+check "a SIGKILLed group leaves no $m353 behind (ADV10-2)" 0 "$(pgrep -fx "$m353" | wc -l | tr -d ' ')"
 
 # S13b: TERM, then INT and HUP 0.2 s apart, give one cut: the first signal's 143, no traceback,
 # no survivor 3 s later (the old copy re-entered the cut on the last signal and exited 129).
 rc=$(BOUNDED_GRACE=2 python3 -c '
 import signal, subprocess, sys, time
 p = subprocess.Popen([sys.executable, sys.argv[1], "--wall", "20", "--",
-                      "sh", "-c", "trap \"\" TERM; sleep 32"], stderr=open(sys.argv[2], "w"))
+                      "sh", "-c", "trap \"\" TERM; " + sys.argv[3]], stderr=open(sys.argv[2], "w"))
 time.sleep(1)
 for s in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
     p.send_signal(s); time.sleep(0.2)
 print(p.wait())
-' "$BOUNDED" "$work/cut.err")
+' "$BOUNDED" "$work/cut.err" "$m32")
 sleep 3
 check "TERM, INT, HUP give one cut: 143, no traceback, no survivor (S13b)" "143 0 0" \
-  "$rc $(grep -c Traceback "$work/cut.err") $(pgrep -f 'sleep 32' | wc -l | tr -d ' ')"
+  "$rc $(grep -c Traceback "$work/cut.err") $(pgrep -fx "$m32" | wc -l | tr -d ' ')"
+
+alive=0; for d in $decoys; do kill -0 "$d" 2>/dev/null && alive=$((alive + 1)); done
+check "the survivor cases passed with both decoys alive (ADV11-4)" 2 "$alive"
 
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]
