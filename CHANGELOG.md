@@ -4,6 +4,12 @@ Versions follow `.claude-plugin/plugin.json`. Dates are commit dates.
 
 ## Unreleased
 
+- `respeak-check` reads a project file only from the work tree whose index
+  holds the target (review ADV11-1). A nested repository could commit a
+  project file at `fail_on: none` in its own index, hide it from the outer
+  repository with `.git/info/exclude`, and turn a block into a pass while the
+  outer `git status` stayed clean. That file is now skipped and named in
+  `dropped` as an untracked project file.
 - `scripts/hygiene`, `scripts/doclint` and `scripts/bounded` are re-synced
   to claude-code-session `35b5870`. Hygiene now scans binary files: a secret
   or a home path inside a binary is a hit, a UTF-16 file is read as text, and

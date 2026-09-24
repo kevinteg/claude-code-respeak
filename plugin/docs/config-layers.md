@@ -545,7 +545,9 @@ in `config.local.yaml`.
 - **The CI verdict reads only a project file git tracks.** Under
   `gate --committed`, an untracked or ignored project file is skipped and
   named in `dropped`, the nearest tracked one is read from the index, and
-  outside a git work tree the resolver exits 2.
+  outside a git work tree the resolver exits 2. "Tracked" means tracked by
+  the work tree whose index holds the target: a project file outside that
+  work tree, or in a nested repository inside it, is skipped the same way.
 - **Hooks fail open.** No PyYAML-capable python, a missing resolver, a
   resolver error, or a measure setup error means the gate allows; only a
   real style-gate verdict blocks. Setup errors include an unreadable or

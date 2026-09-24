@@ -84,6 +84,37 @@ check "committed: a tracked nested file is read from the index, not the working 
 ( cd "$proj" && git rm -q -f --cached docs/.claude/respeak/config.yaml ); rm -rf "$proj/docs/.claude"
 printf '.respeak.local.yaml\n' > "$proj/.gitignore"
 
+# ADV11-1: a nested repository's own index is not the target's. Its project
+# file, committed there and excluded from the outer repository, leaves the
+# outer `git status` clean and must not soften the outer verdict.
+gitc() { git -c user.email=t@example.com -c user.name=t "$@"; }
+nest="$work/nest"; mkdir -p "$nest/.claude/respeak" "$nest/docs/.claude/respeak"
+printf 'version: 3\ngate: {enabled: true, include: ["**/*.md"], fail_on: error}\n' > "$nest/.claude/respeak/config.yaml"
+printf '# Bad\n\nThis design is load-bearing for the release.\n' > "$nest/docs/bad.md"
+( cd "$nest" && git init -q && git add -A && gitc commit -q -m init )
+printf 'version: 3\ngate: {enabled: true, include: ["**/*.md"], fail_on: none}\n' > "$nest/docs/.claude/respeak/config.yaml"
+( cd "$nest/docs" && git init -q && git add .claude/respeak/config.yaml && gitc commit -q -m nested )
+printf 'docs/.claude/\n' >> "$nest/.git/info/exclude"
+check "nested repo: the outer status is clean" 0 "$(cd "$nest" && git status --short | wc -l | tr -d ' ')"
+out="$(cd "$nest" && bash "$CHECK" 2>&1)"; rc=$?
+check "nested repo: its fail_on none project file still blocks (exit 1)" 1 "$rc"
+check_out "...1 blocked" '0 passed, 0 skipped, 1 blocked' "$out"
+check_out "...and the drop is named" 'docs/.claude/respeak/config.yaml untracked project file (committed)' "$out"
+printf 'version: 3\ngate: {enabled: false}\n' > "$nest/docs/.claude/respeak/config.yaml"
+( cd "$nest/docs" && gitc commit -q -am off )
+out="$(cd "$nest" && bash "$CHECK" 2>&1)"; rc=$?
+check "nested repo: its enabled false project file still blocks (exit 1)" 1 "$rc"
+check_out "...1 blocked" '0 passed, 0 skipped, 1 blocked' "$out"
+# A project file the outer repository tracks, beside the nested one, governs.
+mkdir -p "$nest/guides/.claude/respeak"
+printf 'version: 3\ngate: {enabled: true, include: ["**/*.md"], fail_on: error}\n' > "$nest/guides/.claude/respeak/config.yaml"
+printf '# Bad\n\nThis design is load-bearing for the release.\n' > "$nest/guides/bad.md"
+printf 'version: 3\ngate: {enabled: true, include: ["**/*.md"], fail_on: none}\n' > "$nest/.claude/respeak/config.yaml"
+( cd "$nest" && git add -A && gitc commit -q -m guides )
+out="$(cd "$nest" && bash "$CHECK" guides/bad.md 2>&1)"; rc=$?
+check "nested repo: a tracked project file beside it still governs (exit 1)" 1 "$rc"
+check_out "...and blocks" 'BLOCKED  guides/bad.md' "$out"
+
 # A file the gate cannot judge is an error, never a pass.
 cp "$proj/docs/guide.md" "$proj/docs/locked.md"; chmod 000 "$proj/docs/locked.md"
 out="$(cd "$proj" && bash "$CHECK" docs/locked.md 2>&1)"; rc=$?
