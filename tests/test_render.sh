@@ -63,6 +63,8 @@ case "${FAKE_MODE:-echo}" in
   limit) printf '%s\n' '{"type": "result", "subtype": "success", "is_error": true, "result": "Claude AI usage limit reached|1790000000\nsecond line"}' ;;
   iserr) printf '%s\n' '{"type": "result", "subtype": "success", "is_error": true, "result": "# Fixture\n\nSomething broke.\n"}' ;;
   maxturns) printf '%s\n' '{"type": "result", "subtype": "error_max_turns", "is_error": false, "result": "# Fixture\n\nPartial.\n"}' ;;
+  result) python3 -c 'import json, os; print(json.dumps({"type": "result", "subtype": "success", "is_error": True, "result": os.environ["FAKE_RESULT"]}))' ;;
+  text) printf '%s\n' "$FAKE_TEXT"; exit 1 ;;
   login) echo "Invalid API key · Please run /login" >&2; exit 1 ;;
   crash) echo "segfault in the runner" >&2; exit 1 ;;
   nonl) printf '%s\n' '{"result": "# Fixture\n\nThe cache is warm."}' ;;
@@ -166,6 +168,17 @@ check "render: a runner exiting 1 with /login on stderr exits 4" 4 "$rc"
 check_out "...with the account-failure line" 'respeak-render: account failure: Invalid API key' "$err"
 FAKE_MODE=crash bash "$RENDER" --mode technical --source "$src" --out "$out" >/dev/null 2>&1; rc=$?
 check "render: any other runner error stays exit 2" 2 "$rc"
+# ADV11-5: every measured phrasing is an account failure, and so is one
+# printed as plain text outside JSON; the guard against the pattern drifting.
+for phrase in '5-hour limit reached ∙ resets 3pm' 'Weekly limit reached ∙ resets Mon 9am' 'API Error: 429 rate_limit_error'; do
+  rm -f "$out"; FAKE_MODE=result FAKE_RESULT="$phrase" bash "$RENDER" --mode technical --source "$src" --out "$out" >/dev/null 2>&1; rc=$?
+  check "render: is_error result '$phrase' exits 4" 4 "$rc"
+done
+err="$(FAKE_MODE=text FAKE_TEXT='Claude AI usage limit reached|1790000000' bash "$RENDER" --mode technical --source "$src" --out "$out" 2>&1 >/dev/null)"; rc=$?
+check "render: a plain-text usage limit on stdout with exit 1 exits 4" 4 "$rc"
+check_out "...with that line" 'respeak-render: account failure: Claude AI usage limit reached|1790000000$' "$err"
+FAKE_MODE=text FAKE_TEXT=boom bash "$RENDER" --mode technical --source "$src" --out "$out" >/dev/null 2>&1; rc=$?
+check "render: a plain-text boom with exit 1 stays exit 2" 2 "$rc"
 cp "$fx/README.md" "$work/README.before"
 FAKE_MODE=login bash "$README_RENDER" --repo "$fx" >/dev/null 2>&1; rc=$?
 check "readme-render: an account failure passes through as exit 4" 4 "$rc"

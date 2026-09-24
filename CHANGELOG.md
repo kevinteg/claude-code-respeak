@@ -16,6 +16,12 @@ Versions follow `.claude-plugin/plugin.json`. Dates are commit dates.
   and a blocked doc was reported as skipped with rc 0. The run stops at the
   first failure. `RESPEAK_GIT_TIMEOUT` sets the per-call limit (10 s by
   default).
+- `respeak-render` reports more account failures as exit 4 (review
+  ADV11-5). The pattern now matches `limit reached` and `rate_limit`, so a
+  5-hour limit, a weekly limit and an API 429 stop the run. A limit line that
+  the runner prints as plain text on stdout is found as well; before, it read
+  as a runner failure, rc 2. The relay owns the canonical pattern; a test per
+  measured phrasing guards this copy until a re-sync.
 - `scripts/hygiene`, `scripts/doclint` and `scripts/bounded` are re-synced
   to claude-code-session `35b5870`. Hygiene now scans binary files: a secret
   or a home path inside a binary is a hit, a UTF-16 file is read as text, and
