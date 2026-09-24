@@ -29,7 +29,9 @@
 #      output, strips any preamble before the first real content line (a
 #      leading `---` front-matter fence or a `#` heading) — belt-and-suspenders
 #      against a chatty preamble the agent's own output contract forbids but
-#      a model might still emit — and writes it to --out.
+#      a model might still emit — and writes it to --out. The output ends
+#      in exactly one newline when the source ends in one, and in none when
+#      the source does not (ruling 10).
 #      Everything above that first line is dropped, which is why a README
 #      source keeps its icon line (the HTML img) under the title, never
 #      above it: above the title, the strip would remove it.
@@ -222,9 +224,9 @@ extract_and_write() {
   # $1 = raw --output-format json file, $2 = destination narrative file,
   # $3 = the runner's stderr log, $4 = the runner's exit status.
   # Exits 0 (written), 2 (runner or parse failure), 4 (account failure).
-  "$RESPEAK_PY" - "$1" "$2" "$3" "$4" "$ACCOUNT_FAILURE_RE" <<'PY'
+  "$RESPEAK_PY" - "$1" "$2" "$3" "$4" "$ACCOUNT_FAILURE_RE" "$SOURCE" <<'PY'
 import json, os, re, sys, tempfile
-src, dest, err_log, status, account_re = sys.argv[1:6]
+src, dest, err_log, status, account_re, source = sys.argv[1:7]
 account = re.compile(account_re, re.I)
 raw = open(src).read()
 try:
@@ -267,6 +269,9 @@ if m:
 # The agent opens with an activation marker for interactive readers; a
 # rendered file does not want it.
 result = re.sub(r"\A\s*\U0001F4E3[^\n]*\n+", "", result)
+with open(source, "rb") as f:
+    source_newline = f.read().endswith(b"\n")
+result = result.rstrip("\n") + ("\n" if source_newline else "")
 fd, tmp = tempfile.mkstemp(prefix=".respeak-render.", dir=os.path.dirname(os.path.abspath(dest)))
 umask = os.umask(0)
 os.umask(umask)

@@ -4,6 +4,13 @@ Versions follow `.claude-plugin/plugin.json`. Dates are commit dates.
 
 ## Unreleased
 
+- `readme-render.sh` writes the status line into a copy of
+  `design/readme/source.md` in its temp directory, renders and verifies the
+  copy, and moves the copy over the source and the render over `README.md`
+  only after the verifier passes. The renderer keeps the source's final
+  newline: a source ending in one gives an output ending in exactly one. The
+  failures: a failed `make readme` rewrote the source's status line, and a
+  rendered `README.md` lost its final newline (review ADV10-6, ruling 10).
 - The renderer treats a runner result with `is_error` true, or a `subtype`
   other than `success`, as a failure, and writes nothing to `--out`: the
   narrative goes to a temp name and moves over `--out` only on success. An
