@@ -19,9 +19,30 @@ check() { if [ "$2" -eq "$3" ]; then ok "$1"; else bad "$1 (expected exit $2, go
 check_out() { if printf '%s' "$3" | grep -q -- "$2"; then ok "$1"; else bad "$1 (expected '$2' in: $3)"; fi; }
 no_runner() { if [ ! -s "$FAKE_LOG" ]; then ok "$1"; else bad "$1 (the runner ran: $(cat "$FAKE_LOG"))"; fi; }
 survivors() { pgrep -f "$1" >/dev/null 2>&1 && echo yes || echo no; }
+# gone MARKER: waits up to 5 s for every process matching MARKER to exit.
+gone() { i=0; while [ "$i" -lt 50 ] && [ "$(survivors "$1")" = yes ]; do sleep 0.1; i=$((i + 1)); done
+  [ "$(survivors "$1")" = no ]; }
+# killpg_after CMD [ARGS...]: CMD starts as the leader of a new session (the
+# way a caller's `bounded` or a relay starts it), and its whole group is
+# SIGKILLed 2 s later: nothing gets a chance to clean up.
+killpg_after() {
+  python3 - "$@" <<'PY'
+import os, signal, sys, time
+pid = os.fork()
+if pid == 0:
+    os.setsid()
+    fd = os.open(os.devnull, os.O_RDWR)
+    for i in (0, 1, 2):
+        os.dup2(fd, i)
+    os.execvp(sys.argv[1], sys.argv[1:])
+time.sleep(2)
+os.killpg(pid, signal.SIGKILL)
+os.waitpid(pid, 0)
+PY
+}
 
 work="$(mktemp -d)"; work="$(cd "$work" && pwd -P)"
-trap 'pkill -f "sleep 4[67].25" 2>/dev/null; rm -rf "$work"' EXIT
+trap 'pkill -f "sleep 4[4-7].25" 2>/dev/null; pkill -f "sleep 43\$" 2>/dev/null; rm -rf "$work"' EXIT
 export RESPEAK_CACHE_DIR="$work/cache"
 export CLAUDE_CONFIG_DIR="$work/no-user-config"; mkdir -p "$CLAUDE_CONFIG_DIR"
 export CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugin"
@@ -37,7 +58,7 @@ cat > "$work/bin/claude" <<'SH'
 { echo "args: $*"; echo "depth: ${RESPEAK_RENDER_DEPTH:-}"; } >> "$FAKE_LOG"
 prompt="$(cat)"
 case "${FAKE_MODE:-echo}" in
-  sleep) sleep 46.25 ;;
+  sleep) sleep "${FAKE_SLEEP:-46.25}" ;;
   banned) printf '%s\n' '{"result": "# Fixture\n\nThis design is load-bearing for the release.\n"}' ;;
   *) printf '%s\n' "$prompt" | python3 -c '
 import json, sys
@@ -73,6 +94,19 @@ check_out "...and says so" 'respeak-deadline: sleep killed after 1 s' "$(cat "$w
 got="$(echo hi | bash "$DEADLINE" 5 cat)"; rc=$?
 if [ "$rc" -eq 0 ] && [ "$got" = hi ]; then ok "deadline: stdin and stdout pass through"; else bad "deadline: stdin and stdout pass through (rc $rc, '$got')"; fi
 bash "$DEADLINE" 5 sh -c 'exit 7'; check "deadline: the command's own exit passes through" 7 "$?"
+
+# --- ADV10-2: a SIGKILL to the caller's group still stops CMD's group -------
+killpg_after bash "$DEADLINE" 30 sleep 45.25
+if gone 'sleep 45.25'; then ok "deadline: a killpg of the caller's group leaves no survivor"
+else bad "deadline: a killpg of the caller's group leaves no survivor (sleep 45.25 is alive)"; fi
+: > "$FAKE_LOG"
+FAKE_MODE=sleep FAKE_SLEEP=44.25 RESPEAK_RENDER_WALL=60 killpg_after bash "$RENDER" --mode technical --source "$src" --out "$out"
+if gone 'sleep 44.25'; then ok "render: a killpg of the caller's group leaves no runner"
+else bad "render: a killpg of the caller's group leaves no runner (sleep 44.25 is alive)"; fi
+# ADV10-7: the watchdog's timer does not outlive a run that ends first.
+for n in 1 2 3; do bash "$DEADLINE" 43 true; done
+if gone 'sleep 43$'; then ok "deadline: three quick runs leave no sleep 43 behind"
+else bad "deadline: three quick runs leave no sleep 43 behind"; fi
 
 # --- the renderer's breakers: exit 2, no runner started ----------------------
 : > "$FAKE_LOG"

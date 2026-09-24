@@ -4,6 +4,21 @@ Versions follow `.claude-plugin/plugin.json`. Dates are commit dates.
 
 ## Unreleased
 
+- `respeak-deadline.sh` starts its watchdog in a process group of its own.
+  The watchdog ticks once a second, and when the script is gone or the wall
+  has passed it stops the command's group: TERM, then KILL after
+  `RESPEAK_DEADLINE_GRACE` seconds (default 2, was 5). The renderer and
+  `readme-render.sh` run under it. When the command ends first, the script
+  kills the watchdog's group, so no timer outlives a run. The failure: a
+  SIGKILL to the caller's group killed the watchdog but left the runner
+  alive, and every run left a `sleep` of the wall's length behind (review
+  ADV10-2, ADV10-7).
+- `gate --committed` reads the project file only when git tracks it, and
+  reads it from the index. An untracked or ignored project file is skipped
+  and named in `dropped`; outside a git work tree the resolver exits 2 and
+  `respeak-gate.sh --committed` exits 3. The failure: an ignored nested
+  `.claude/respeak/config.yaml` at `fail_on: none` let `respeak-check`
+  pass a blocked file (review ADV10-1).
 - The README source is rewritten as the public document: why respeak
   exists, install with `make install` and `make doctor`, every command and
   skill, the tests by file, and the conventions shared with the sibling

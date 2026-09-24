@@ -554,6 +554,15 @@ class CLI(unittest.TestCase):
         write(env_cfg, "gate: {enabled: false}\n")
         self.env["RESPEAK_CONFIG"] = env_cfg
         doc = self.fx.doc("docs/a.md")
+        # ADV10-1: outside a git work tree there is no committed project file
+        r = self.run_cli("gate", "--committed", "--project", self.fx.project, "--for", doc,
+                         "--walk-from", self.fx.root)
+        self.assertEqual(r.returncode, 2, r.stdout)
+        self.assertIn("--committed needs a git work tree", r.stderr)
+        # ...inside one, it reads the project file git tracks, from the index
+        subprocess.run(["git", "init", "-q"], cwd=self.fx.project, check=True, env=self.env)
+        subprocess.run(["git", "add", ".claude/respeak/config.yaml"], cwd=self.fx.project,
+                       check=True, env=self.env)
         out_cfg = os.path.join(self.fx.root, "resolved.yaml")
         common = ["--project", self.fx.project, "--for", doc, "--walk-from", self.fx.root,
                   "--set", "gate.fail_on=warn", "--write-config", out_cfg]
