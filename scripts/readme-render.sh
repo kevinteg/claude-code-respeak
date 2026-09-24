@@ -12,6 +12,8 @@
 #   1  the render still failed the style gate; README.md untouched
 #   2  setup, a source without its status line, the renderer's refusals,
 #      or the verifier; README.md untouched
+#   4  the renderer's account failure (usage limit, login, API key);
+#      README.md untouched
 # The verifier runs under $PYTHON (the Makefile exports it), else python3.
 #
 # bash 3.2 compatible.
@@ -72,6 +74,7 @@ rc=$?
 if [ "$rc" -ne 0 ]; then
   echo "readme-render: the render exited $rc; README.md untouched" >&2
   [ "$rc" -eq 1 ] && exit 1
+  [ "$rc" -eq 4 ] && exit 4
   exit 2
 fi
 # The status line is prose to the verifier, so a render may reword it; the

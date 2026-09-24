@@ -4,6 +4,14 @@ Versions follow `.claude-plugin/plugin.json`. Dates are commit dates.
 
 ## Unreleased
 
+- The renderer treats a runner result with `is_error` true, or a `subtype`
+  other than `success`, as a failure, and writes nothing to `--out`: the
+  narrative goes to a temp name and moves over `--out` only on success. An
+  account failure (usage limit, `/login`, not logged in, invalid API key,
+  credit balance, OAuth token expired) exits 4 with one stderr line,
+  `respeak-render: account failure: <first line>`; `readme-render.sh`
+  passes 4 through. The failure: the renderer wrote a usage-limit message
+  to `--out` as the narrative (review ADV10-3).
 - `respeak-deadline.sh` starts its watchdog in a process group of its own.
   The watchdog ticks once a second, and when the script is gone or the wall
   has passed it stops the command's group: TERM, then KILL after

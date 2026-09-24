@@ -52,9 +52,18 @@
 # (default 8), and runs under respeak-deadline.sh for RESPEAK_RENDER_WALL
 # seconds (default 600) in its own process group, killed as a group.
 #
+# A runner result with `is_error` true, or a `subtype` other than
+# `success`, is a failure and nothing reaches --out (the narrative goes to a
+# temp name and moves over --out only on success). The failure is an account
+# failure when the result, or a failed runner's stderr, matches
+# ACCOUNT_FAILURE_RE below (any case): exit 4 with one stderr line,
+# `respeak-render: account failure: <first line of the result>`, so a
+# sitting stops the run instead of retrying.
+#
 # Exit codes: 0 = wrote a passing narrative. 1 = still failing the gate
 # after --max-rounds. 2 = usage/setup error (missing runner, bad args,
 # missing files, runner/parse failure, a refusal above, the wall clock).
+# 4 = account failure (usage limit, login, API key, credit, OAuth token).
 #
 # bash 3.2 compatible (macOS default): indexed arrays only, no associative
 # arrays, no mapfile.
@@ -71,6 +80,8 @@ CONTRACT=""
 MAX_ROUNDS=2
 RENDER_CMD="${RESPEAK_RENDER_CMD:-claude}"
 RENDER_MODEL="${RESPEAK_RENDER_MODEL:-claude-sonnet-5}"
+# The account failures (ADV10-3): one extended regex, matched without case.
+ACCOUNT_FAILURE_RE='usage limit|/login|not logged in|invalid api key|credit balance|oauth token (has )?expired'
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -208,18 +219,46 @@ run_agent() {
 }
 
 extract_and_write() {
-  # $1 = raw --output-format json file, $2 = destination narrative file
-  "$RESPEAK_PY" - "$1" "$2" <<'PY'
-import json, re, sys
-src, dest = sys.argv[1], sys.argv[2]
+  # $1 = raw --output-format json file, $2 = destination narrative file,
+  # $3 = the runner's stderr log, $4 = the runner's exit status.
+  # Exits 0 (written), 2 (runner or parse failure), 4 (account failure).
+  "$RESPEAK_PY" - "$1" "$2" "$3" "$4" "$ACCOUNT_FAILURE_RE" <<'PY'
+import json, os, re, sys, tempfile
+src, dest, err_log, status, account_re = sys.argv[1:6]
+account = re.compile(account_re, re.I)
 raw = open(src).read()
 try:
     data = json.loads(raw)
-except json.JSONDecodeError as e:
-    sys.stderr.write(f"respeak-render: could not parse the runner output as JSON: {e}\n")
+    if not isinstance(data, dict):
+        raise ValueError("not a JSON object")
+except ValueError as e:
+    data, parse_error = None, e
+result = data.get("result", "") if data else ""
+if not isinstance(result, str):
+    result = ""
+failed = status != "0" or (data is not None and (
+    data.get("is_error") is True or data.get("subtype", "success") != "success"))
+if failed:
+    try:
+        err_lines = open(err_log, errors="replace").read().splitlines()
+    except OSError:
+        err_lines = []
+    if account.search(result):
+        line = next(l for l in result.splitlines() if l.strip())
+    else:
+        line = next((l for l in err_lines if account.search(l)), None)
+    if line is not None:
+        sys.stderr.write("respeak-render: account failure: %s\n" % line.strip())
+        sys.exit(4)
+    if status == "0":
+        first = next((l for l in result.splitlines() if l.strip()), "(no result)")
+        sys.stderr.write("respeak-render: the runner reported an error (is_error %s, subtype %s): %s\n"
+                         % (data.get("is_error"), data.get("subtype"), first.strip()))
     sys.exit(2)
-result = data.get("result", "")
-if not isinstance(result, str) or not result.strip():
+if data is None:
+    sys.stderr.write(f"respeak-render: could not parse the runner output as JSON: {parse_error}\n")
+    sys.exit(2)
+if not result.strip():
     sys.stderr.write("respeak-render: no non-empty string .result in the runner output\n")
     sys.exit(2)
 m = re.search(r"^(?:---|#)", result, re.M)
@@ -228,8 +267,17 @@ if m:
 # The agent opens with an activation marker for interactive readers; a
 # rendered file does not want it.
 result = re.sub(r"\A\s*\U0001F4E3[^\n]*\n+", "", result)
-with open(dest, "w") as f:
-    f.write(result)
+fd, tmp = tempfile.mkstemp(prefix=".respeak-render.", dir=os.path.dirname(os.path.abspath(dest)))
+umask = os.umask(0)
+os.umask(umask)
+try:
+    os.chmod(tmp, 0o666 & ~umask)
+    with os.fdopen(fd, "w") as f:
+        f.write(result)
+    os.replace(tmp, dest)
+except BaseException:
+    os.unlink(tmp)
+    raise
 PY
 }
 
@@ -248,13 +296,15 @@ while [ "$round" -le "$MAX_ROUNDS" ]; do
     cat "$err_log" >&2
     exit 2
   fi
+  extract_and_write "$raw_out" "$OUT" "$err_log" "$agent_status"
+  extract_status=$?
+  [ "$extract_status" -eq 4 ] && exit 4
   if [ "$agent_status" -ne 0 ]; then
     echo "respeak-render: runner '$RENDER_CMD' exited $agent_status (round $round)" >&2
     cat "$err_log" >&2
     exit 2
   fi
-
-  extract_and_write "$raw_out" "$OUT" || exit 2
+  [ "$extract_status" -eq 0 ] || exit 2
 
   if [ -n "$RESOLVED" ] && [ -s "$RESOLVED" ]; then
     gate_report="$("$RESPEAK_PY" "$MEASURE" "$OUT" --fail-on error --config "$RESOLVED" 2>&1)"
