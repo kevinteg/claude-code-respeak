@@ -7,6 +7,7 @@
 | wall | this repo. No other repo (the canonical bytes are quoted here by sha); no push; no `--amend`; no rebase; no device |
 | may touch | edit: `Makefile`, `CHANGELOG.md`, `docs/config-layers.md`, `scripts/respeak-config.py`, `scripts/respeak-config.sh`, `scripts/respeak-session.sh`, `scripts/hygiene`, `scripts/doclint`, `skills/respeak/SKILL.md`, `tests/test_overrides.sh`, `tests/test_provider_layer.py`, `tests/test_config_layers.py`; new: `history/sittings/2026-09-22-5.md` (the charter; dated by the run's day). Nothing else; anything else is a report line |
 | acceptance | the lines of §6 with their baselines; the gate reruns them on the branch |
+| verify | `make check` |
 | budget | 60 turns, 60k context; commit per act; checkpoint at 80%; never push, amend or rebase |
 
 ## 1. What the source says (quoted)

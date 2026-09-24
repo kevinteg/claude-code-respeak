@@ -6,7 +6,8 @@
 | pin | claude-code-respeak `main` at `17030b4` or later. Branch `r7-fixes-r6`, worktree `.claude/worktrees/r7-fixes-r6` off it |
 | wall | this repo; no push, `--amend`, rebase, device, tag, version bump, `make readme`; no real `claude` beyond `plugin validate` inside `make check`; no test opens a path under the real checkout except the scripts it tests |
 | may touch | `Makefile`, `CLAUDE.md`, `CHANGELOG.md` (a bullet per act under `## Unreleased`), `plugin/docs/config-layers.md`, `scripts/readme-fresh.sh`, the config, gate, check and render scripts in `plugin/scripts/`, the check, gate_hook, readme_fresh, install, report_env and config_layers suites; new: `plugin/scripts/respeak-deadline.sh`, `scripts/readme-render.sh`, `design/readme/contract.txt`, `tests/test_render.sh`, the charter. Nothing else |
-| acceptance | the lines of §6 with their baselines, targeted, under a minute; the verify line is `make check`, the relay's gate, never a line here |
+| acceptance | the lines of §6 with their baselines, targeted, under a minute |
+| verify | `make check` |
 | budget | 110 turns (one builder; the acts share three scripts), 144k context; one commit per act; the charter's open names doclint's five rows; checkpoint at 80% |
 
 ## 1. What the source says (quoted)

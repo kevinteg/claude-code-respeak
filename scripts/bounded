@@ -1,29 +1,42 @@
 #!/usr/bin/env python3
-"""bounded: run a command under a wall, a per-tree lock and a load breaker (R6 C1).
+"""bounded: run a command under a wall, a per-tree lock and a load breaker (R6 C1, ADV10).
 
-Usage: bounded [--lock DIR] [--wall S] [--load N] -- cmd...
+Usage: bounded [--lock FILE] [--wall S] [--load N] -- cmd...
 
-  --lock DIR  `mkdir DIR` holding `owner` (pid and start, epoch seconds). While the
-              holder's pid lives and the lock is under 900 s old: exit 2. A dead pid or
-              a stale lock is taken over. Released on exit and on SIGTERM, SIGINT, SIGHUP.
-  --wall S    the command runs in its own process group (a new session); at S seconds
-              the whole group gets SIGTERM, then SIGKILL after a grace: exit 124.
-  --load N    while the 1-minute load average is above N x cores, poll every 30 s up to
-              600 s, then exit 2. Taken after the lock, so a waiting gate holds its tree.
+  --lock FILE `flock(LOCK_EX|LOCK_NB)` on FILE, which holds the holder's pid and start
+              (for the message only). Held: exit 2, at any age. The kernel releases it
+              when the last holder dies, SIGKILL included: no staleness, no takeover.
+              A mkdir-era lock directory is removed when its owner pid is dead, else exit 2.
+  --wall S    counted from bounded's start, the load wait included; at S seconds the
+              command's group gets SIGTERM, then SIGKILL after a grace: exit 124.
+  --load N    while the 1-minute load average is above N x cores, poll every 30 s, up to
+              600 s or the wall, whichever is first, then exit 2. Taken after the lock.
+
+The lifeline (ADV10-1): bounded spawns a guardian (`bounded --guard FD -- cmd`) in a new
+session, holding the read end of a pipe and the lock. The guardian runs cmd in cmd's own
+group and watches the pipe and cmd. On EOF (bounded died, SIGKILL included, or reached
+its wall) it kills cmd's group (TERM, the grace, KILL) and exits; when cmd exits it kills
+the rest of cmd's group and exits with cmd's code. So no member of the group outlives
+bounded by more than the grace plus 1 s, and the lock lives exactly as long as the group.
+
+On a refusal or the wall the last stderr line is `bounded: stop: lock|load|wall`: the
+command did not run to its end, so the gate reads it as unrun, never red (conventions §5).
 
 Exits: the command's own (128+signal when a signal ended it), 124 at the wall, 2 lock or
-load, 1 usage, 127 when cmd cannot start. Test overrides: BOUNDED_GRACE (s, default 5), BOUNDED_LOAD_POLL (30),
-BOUNDED_LOAD_MAX (600), BOUNDED_LOADAVG (a fake 1-minute reading).
+load, 1 usage, 127 when cmd cannot start. Test overrides: BOUNDED_GRACE (s, default 5),
+BOUNDED_LOAD_POLL (30), BOUNDED_LOAD_MAX (600), BOUNDED_LOADAVG (a fake 1-minute reading).
 """
+import fcntl
 import os
+import select
 import shutil
 import signal
 import subprocess
 import sys
 import time
 
-STALE = 900
-USAGE = "usage: bounded [--lock DIR] [--wall S] [--load N] -- cmd..."
+USAGE = "usage: bounded [--lock FILE] [--wall S] [--load N] -- cmd..."
+TICK = 0.05
 
 
 class Usage(Exception):
@@ -31,7 +44,9 @@ class Usage(Exception):
 
 
 class Refused(Exception):
-    pass
+    def __init__(self, message, reason):
+        super().__init__(message)
+        self.reason = reason
 
 
 def parse(args):
@@ -79,91 +94,76 @@ def pid_alive(pid):
     return True
 
 
-class Lock:
-    def __init__(self, path):
-        self.path = path
-        self.owner = os.path.join(path, "owner")
-        self.mine = "%d %d\n" % (os.getpid(), int(time.time()))
-        self.held = False
-
-    def holder(self):
-        """(pid, start) of the current holder; an ownerless dir dates from its mtime."""
-        try:
-            with open(self.owner) as fh:
-                pid, start = fh.read().split()[:2]
-            return int(pid), float(start)
-        except (OSError, ValueError):
-            try:
-                # an ownerless dir: live for 5 s (its creator is writing), then stale
-                return (-1 if time.time() - os.stat(self.path).st_mtime >= 5 else os.getpid(),
-                        os.stat(self.path).st_mtime)
-            except OSError:
-                return -1, 0.0
-
-    def take(self):
-        for _ in range(2):
-            try:
-                os.mkdir(self.path)
-            except FileExistsError:
-                pid, start = self.holder()
-                age = time.time() - start
-                if pid_alive(pid) and age < STALE:
-                    raise Refused("bounded: %s held by pid %d for %d s (stale at %d s)"
-                                  % (self.path, pid, age, STALE))
-                sys.stderr.write("bounded: taking over %s from pid %d (%s)\n" % (
-                    self.path, pid, "stale" if pid_alive(pid) else "dead"))
-                aside = "%s.stale.%d" % (self.path, os.getpid())
-                try:
-                    os.rename(self.path, aside)
-                    shutil.rmtree(aside, ignore_errors=True)
-                except OSError:
-                    pass
-                continue
-            with open(self.owner, "w") as fh:
-                fh.write(self.mine)
-            self.held = True
-            return
-        raise Refused("bounded: %s contended, not taken" % self.path)
-
-    def release(self):
-        if not self.held:
-            return
-        self.held = False
-        try:
-            with open(self.owner) as fh:
-                if fh.read() != self.mine:
-                    return  # taken over; not ours to remove
-        except OSError:
-            return
-        shutil.rmtree(self.path, ignore_errors=True)
+def owner_of(path):
+    """(pid, start) from an owner line; (-1, 0) when unreadable."""
+    try:
+        with open(path) as fh:
+            pid, start = fh.read().split()[:2]
+        return int(pid), float(start)
+    except (OSError, ValueError):
+        return -1, 0.0
 
 
-def wait_for_load(ceiling):
+def take_lock(path):
+    """The flocked fd, or Refused. The pid written is bounded's; the guardian's replaces it."""
+    if os.path.isdir(path):
+        pid, _ = owner_of(os.path.join(path, "owner"))
+        if pid_alive(pid):
+            raise Refused("bounded: %s is a mkdir-era lock held by live pid %d" % (path, pid),
+                          "lock")
+        sys.stderr.write("bounded: removing the mkdir-era lock %s (pid %d dead)\n" % (path, pid))
+        shutil.rmtree(path, ignore_errors=True)
+    try:
+        fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o644)
+    except OSError as exc:
+        raise Refused("bounded: cannot open %s: %s" % (path, exc), "lock")
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        os.close(fd)
+        pid, start = owner_of(path)
+        raise Refused("bounded: %s held by pid %d for %d s" % (
+            path, pid, time.time() - start if start else 0), "lock")
+    write_owner(fd, os.getpid())
+    return fd
+
+
+def write_owner(fd, pid):
+    os.ftruncate(fd, 0)
+    os.pwrite(fd, ("%d %d\n" % (pid, int(time.time()))).encode(), 0)
+
+
+def wait_for_load(ceiling, deadline):
     poll = env_float("BOUNDED_LOAD_POLL", 30)
-    limit = env_float("BOUNDED_LOAD_MAX", 600)
+    limit = time.monotonic() + env_float("BOUNDED_LOAD_MAX", 600)
+    if deadline is not None:
+        limit = min(limit, deadline)
     limit_load = ceiling * (os.cpu_count() or 1)
-    waited = 0.0
+    t0 = time.monotonic()
+    said = False
     while True:
         fake = os.environ.get("BOUNDED_LOADAVG")
         load = float(fake) if fake else os.getloadavg()[0]
         if load <= limit_load:
             return
-        if waited >= limit:
+        now = time.monotonic()
+        if now >= limit:
             raise Refused("bounded: load %.2f above %.2f (%g x %d cores) for %d s"
-                          % (load, limit_load, ceiling, os.cpu_count() or 1, waited))
-        if not waited:
+                          % (load, limit_load, ceiling, os.cpu_count() or 1, now - t0), "load")
+        if not said:
+            said = True
             sys.stderr.write("bounded: load %.2f above %.2f; waiting up to %d s\n"
-                             % (load, limit_load, limit))
-        time.sleep(poll)
-        waited += poll
+                             % (load, limit_load, limit - now))
+        time.sleep(min(poll, max(limit - now, 0)))
 
 
 def kill_group(pgid, child):
-    """SIGTERM the group, then SIGKILL whatever is left after the grace."""
+    """SIGTERM the group, then SIGKILL whatever is left after the grace; reap the child."""
     grace = env_float("BOUNDED_GRACE", 5)
     try:
         os.killpg(pgid, signal.SIGTERM)
     except OSError:
+        child.poll()
         return
     deadline = time.monotonic() + grace
     while time.monotonic() < deadline:
@@ -172,59 +172,111 @@ def kill_group(pgid, child):
             os.killpg(pgid, 0)
         except OSError:
             return
-        time.sleep(0.05)
+        time.sleep(TICK)
     try:
         os.killpg(pgid, signal.SIGKILL)
     except OSError:
         pass
-    child.poll()
+    try:
+        child.wait(timeout=1)
+    except subprocess.TimeoutExpired:
+        pass
+
+
+def exit_code(code):
+    return 128 - code if code < 0 else code
+
+
+def guard(fd, cmd):
+    """The guardian: cmd in its own group; the pipe's EOF or cmd's exit ends the group."""
+    try:
+        child = subprocess.Popen(cmd, process_group=0)
+    except OSError as exc:
+        sys.stderr.write("bounded: cannot run %s: %s\n" % (cmd[0], exc))
+        return 127
+    for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+        signal.signal(sig, signal.SIG_IGN)  # only the pipe ends a guardian
+    while True:
+        ready, _, _ = select.select([fd], [], [], TICK)
+        if ready and not os.read(fd, 64):
+            kill_group(child.pid, child)
+            return exit_code(child.returncode) if child.returncode is not None else 137
+        code = child.poll()
+        if code is not None:
+            kill_group(child.pid, child)  # the rest of cmd's group: nothing outlives it
+            return exit_code(code)
 
 
 def main(argv):
+    t0 = time.monotonic()
+    if argv[1:2] == ["--guard"] and len(argv) > 4 and argv[3] == "--":
+        return guard(int(argv[2]), argv[4:])
     try:
         opts, cmd = parse(argv[1:])
     except Usage as exc:
         sys.stderr.write("bounded: %s\n%s\n" % (exc, USAGE))
         return 1
-    lock = Lock(opts["lock"]) if opts["lock"] else None
-    state = {"child": None}
+    deadline = t0 + opts["wall"] if opts["wall"] else None
+    state = {"guardian": None, "pipe": None}
+
+    def cut(guardian):
+        """Close the lifeline and wait out the guardian (grace plus 1 s at most)."""
+        if state["pipe"] is not None:
+            os.close(state["pipe"])
+            state["pipe"] = None
+        if guardian is not None:
+            try:
+                guardian.wait(timeout=env_float("BOUNDED_GRACE", 5) + 1)
+            except subprocess.TimeoutExpired:
+                os.killpg(guardian.pid, signal.SIGKILL)
 
     def on_signal(signum, _frame):
-        child = state["child"]
-        if child is not None:
-            kill_group(child.pid, child)
-        if lock:
-            lock.release()
+        cut(state["guardian"])
         os._exit(128 + signum)
 
     for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
         signal.signal(sig, on_signal)
+    lockfd = None
     try:
-        if lock:
-            lock.take()
+        if opts["lock"]:
+            lockfd = take_lock(opts["lock"])
         if opts["load"] is not None:
-            wait_for_load(opts["load"])
+            wait_for_load(opts["load"], deadline)
+        if deadline is not None and time.monotonic() >= deadline:
+            raise Refused("bounded: wall of %g s spent before the command ran" % opts["wall"],
+                          "wall")
+        r, w = os.pipe()
+        state["pipe"] = w
+        keep = (r,) if lockfd is None else (r, lockfd)
         try:
-            child = subprocess.Popen(cmd, start_new_session=True)
-        except OSError as exc:
-            sys.stderr.write("bounded: cannot run %s: %s\n" % (cmd[0], exc))
-            return 127
-        state["child"] = child
+            guardian = subprocess.Popen(
+                [sys.executable, os.path.abspath(__file__), "--guard", str(r), "--", *cmd],
+                pass_fds=keep, start_new_session=True)
+        finally:
+            os.close(r)
+        state["guardian"] = guardian
+        if lockfd is not None:
+            write_owner(lockfd, guardian.pid)
+            os.close(lockfd)  # the guardian holds it now, exactly while the group lives
+            lockfd = None
         try:
-            code = child.wait(timeout=opts["wall"])
+            code = guardian.wait(timeout=None if deadline is None
+                                 else max(deadline - time.monotonic(), 0))
         except subprocess.TimeoutExpired:
-            sys.stderr.write("bounded: wall of %g s reached; killing group %d\n"
-                             % (opts["wall"], child.pid))
-            kill_group(child.pid, child)
-            child.wait()
-            return 124
-        return 128 - code if code < 0 else code
+            sys.stderr.write("bounded: wall of %g s reached; killing the command's group\n"
+                             % opts["wall"])
+            cut(guardian)
+            raise Refused(None, "wall")
+        cut(None)
+        return exit_code(code)
     except Refused as exc:
-        sys.stderr.write("%s\n" % exc)
-        return 2
+        if exc.args[0]:
+            sys.stderr.write("%s\n" % exc.args[0])
+        sys.stderr.write("bounded: stop: %s\n" % exc.reason)
+        return 124 if exc.reason == "wall" else 2
     finally:
-        if lock:
-            lock.release()
+        if lockfd is not None:
+            os.close(lockfd)
 
 
 if __name__ == "__main__":

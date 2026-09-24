@@ -7,6 +7,7 @@
 | wall | this repo. No other repo; no push; no `--amend`; no rebase; no device. Real `claude`: only `plugin validate`, the two `--json` lists, the render |
 | may touch | edit: `Makefile`, `CHANGELOG.md`, `CLAUDE.md`, `.hygiene-allow`, `.claude-plugin/marketplace.json`, `.claude/respeak/config.yaml`, `design/readme/source.md`, `design/readme/rendered.sha256`, `README.md` (by `make readme` only), `docs/architecture.md`, `scripts/doclint`, the eleven files `git ls-files tests` names (path spans only); git mv into `plugin/` (path spans only): `.claude-plugin/plugin.json`, `agents/`, `config/`, `corpus/`, `hooks/`, `skills/`, `docs/config-layers.md`, every `scripts/*` except `hygiene`, `doclint`, `readme-fresh.sh`; new: `plugin/scripts/respeak-doctor.sh`, `tests/test_doctor.sh`, `tests/test_install.sh`, the charter `history/sittings/<run day>-<n>.md`. Nothing else |
 | acceptance | the lines of §6 with their baselines; the gate reruns them on the branch |
+| verify | `make check` |
 | budget | 80 turns (the move and one render), 60k context; commit per act; checkpoint at 80%; never push, amend or rebase |
 
 ## 1. What the source says (quoted)

@@ -26,10 +26,11 @@ check "a lock held by a live pid refuses with 2" 2 "$?"
 check "...and the command does not run" absent "$([ -e "$work/ran" ] && echo present || echo absent)"
 rm -rf "$work/lock"
 
-# The command's own exit passes through, and a free lock is released after the run.
+# The command's own exit passes through, and the lock (a flock file kept after the run) is free again.
 python3 "$BOUNDED" --lock "$work/lock" -- sh -c 'exit 7'
 check "the command's own exit passes through" 7 "$?"
-check "...and the lock is released" absent "$([ -e "$work/lock" ] && echo present || echo absent)"
+python3 "$BOUNDED" --lock "$work/lock" -- true
+check "a second run after the first takes the lock and runs" 0 "$?"
 
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

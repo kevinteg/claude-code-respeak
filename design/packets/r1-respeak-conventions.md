@@ -7,6 +7,7 @@
 | wall | this repo. Read-only: the claude-code-session checkout beside this repo, four files: `scripts/hygiene`, `scripts/doclint`, `.hygiene-allow`, `design/conventions.md`. No other repo; no push; no `--amend` |
 | may touch | new: `Makefile`, `.python-version`, `.hygiene-allow`, `scripts/hygiene`, `scripts/doclint`, `tests/test_provider_layer.py`. Edit: both files under `.claude-plugin/`, `scripts/respeak-config.py`, `scripts/respeak-gate.sh`, `tests/test_config_layers.py`, `tests/test_hooks.sh`, `tests/test_report_env.sh`. Human lane, only what §3 names: `CLAUDE.md`, `README.md`, `docs/config-layers.md`, `research/sources/deai-language-landscape.md`. Nothing else; anything else is a report line |
 | acceptance | the twelve lines of §6 with their baselines; the gate reruns them on the branch |
+| verify | `make check` |
 | budget | 100 turns, 120k context; commit per item; checkpoint at 80%; never push, amend or rebase |
 
 ## 1. What the source says (quoted)
