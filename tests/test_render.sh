@@ -55,7 +55,8 @@ export RESPEAK_CACHE_DIR="$work/cache"
 export CLAUDE_CONFIG_DIR="$work/no-user-config"; mkdir -p "$CLAUDE_CONFIG_DIR"
 export CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugin"
 unset RESPEAK_RENDER_DEPTH RESPEAK_RENDER_CMD RESPEAK_RENDER_WALL RESPEAK_RENDER_MAX_TURNS RESPEAK_CONFIG \
-  CLAUDE_PROJECT_DIR CLAUDE_CODE_SESSION_ID XDG_STATE_HOME 2>/dev/null || true
+  CLAUDE_PROJECT_DIR CLAUDE_CODE_SESSION_ID XDG_STATE_HOME \
+  CLAUDE_SESSION_DEPTH CLAUDE_SESSION_HELPER CLAUDE_SESSION_MAX_TURNS RELAY_ROW 2>/dev/null || true
 export RESPEAK_LOAD_MAX=100000        # only the load test below looks at the real breaker
 export FAKE_LOG="$work/runner.log"
 export FAKE_SLEEP="${m46#sleep }"
@@ -64,7 +65,8 @@ export FAKE_SLEEP="${m46#sleep }"
 mkdir -p "$work/bin" "$work/loadbin"
 cat > "$work/bin/claude" <<'SH'
 #!/bin/bash
-{ echo "args: $*"; echo "depth: ${RESPEAK_RENDER_DEPTH:-}"; } >> "$FAKE_LOG"
+{ echo "args: $*"; echo "depth: ${RESPEAK_RENDER_DEPTH:-}"
+  echo "session: depth=${CLAUDE_SESSION_DEPTH:-} helper=${CLAUDE_SESSION_HELPER:-} row=${RELAY_ROW:-} turns=${CLAUDE_SESSION_MAX_TURNS:-}"; } >> "$FAKE_LOG"
 prompt="$(cat)"
 case "${FAKE_MODE:-echo}" in
   sleep) sleep "$FAKE_SLEEP" ;;
@@ -246,6 +248,35 @@ check_out "...and says so" "readme-render: no status line in design/readme/sourc
 if cmp -s "$fx/README.md" "$work/README.before"; then ok "...and leaves README.md untouched"
 else bad "...and leaves README.md untouched"; fi
 no_runner "...and starts no runner"
+
+# --- R15: the render runs as a marked helper, refused past depth 2 --------
+# relay-r1 section 10: the runner sees CLAUDE_SESSION_DEPTH one deeper and
+# CLAUDE_SESSION_HELPER=1, with RELAY_ROW and CLAUDE_SESSION_MAX_TURNS as
+# given; at depth 2 (or a depth that is not an integer) nothing runs or is
+# written. HOME and the XDG homes are temp dirs here, so the python that
+# carries PyYAML is resolved first, under the caller's HOME.
+py_real="${PYTHON:-$(python3 -c 'import sys; print(sys.executable)')}"
+cp "$work/source.before" "$src"; printf '# Fixture\n\nThe old text.\n' > "$fx/README.md"
+rm -f "$fx/design/readme/rendered.sha256"
+snap() { (cd "$fx" && find . -exec ls -ld {} + 2>/dev/null | awk '{print $1, $5, $NF}'; find . -type f -exec cksum {} +) | sort; }
+mkdir -p "$work/home" "$work/xdg-config" "$work/xdg-state"
+helper() { HOME="$work/home" XDG_CONFIG_HOME="$work/xdg-config" XDG_STATE_HOME="$work/xdg-state" \
+  PYTHON="$py_real" RESPEAK_PYTHON="${RESPEAK_PYTHON:-$py_real}" "$@"; }
+: > "$FAKE_LOG"
+helper env CLAUDE_SESSION_DEPTH=1 RELAY_ROW=r15-case CLAUDE_SESSION_MAX_TURNS=7 FAKE_MODE=crash \
+  bash "$README_RENDER" --repo "$fx" >/dev/null 2>&1; rc=$?
+check "readme-render: at CLAUDE_SESSION_DEPTH=1 the runner runs (a crash here, exit 2)" 2 "$rc"
+check_out "...and sees depth 2, CLAUDE_SESSION_HELPER=1, RELAY_ROW and CLAUDE_SESSION_MAX_TURNS as given" \
+  'session: depth=2 helper=1 row=r15-case turns=7' "$(cat "$FAKE_LOG")"
+for depth in 2 x1; do
+  : > "$FAKE_LOG"; before="$(snap)"
+  err="$(helper env CLAUDE_SESSION_DEPTH=$depth RELAY_ROW=r15-case bash "$README_RENDER" --repo "$fx" 2>&1 >/dev/null)"; rc=$?
+  check "readme-render: CLAUDE_SESSION_DEPTH=$depth is refused (exit 2)" 2 "$rc"
+  check_out "...and says why" "readme-render: CLAUDE_SESSION_DEPTH=$depth" "$err"
+  no_runner "...and starts no runner"
+  if [ "$(snap)" = "$before" ]; then ok "...and writes nothing"
+  else bad "...and writes nothing"; fi
+done
 
 alive=0; for d in $decoys; do kill -0 "$d" 2>/dev/null && alive=$((alive + 1)); done
 check "the survivor cases passed with all five decoys alive (ADV11-4)" 5 "$alive"

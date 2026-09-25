@@ -11,10 +11,17 @@
 # render prose-only against the copy does the copy move over the source
 # and the render over README.md, and then readme-fresh.sh stamps both.
 # Any other exit leaves the source and README.md untouched.
+#
+# The renderer's `claude -p` is a helper this script spawns (relay-r1
+# section 10): it runs in the foreground one level deeper, marked with
+# CLAUDE_SESSION_HELPER=1, and RELAY_ROW and CLAUDE_SESSION_MAX_TURNS pass
+# through as given.
 #   0  README.md written and stamped
 #   1  the render still failed the style gate; README.md untouched
-#   2  setup, a source without its status line, the renderer's refusals,
-#      or the verifier; README.md untouched
+#   2  setup (a CLAUDE_SESSION_DEPTH that is not a plain non-negative
+#      integer, or a helper past depth 2, before any write), a source
+#      without its status line, the renderer's refusals, or the verifier;
+#      README.md untouched
 #   4  the renderer's account failure (usage limit, login, API key);
 #      README.md untouched
 # The verifier runs under $PYTHON (the Makefile exports it), else python3.
@@ -32,6 +39,19 @@ while [ $# -gt 0 ]; do
     *) echo "readme-render: unknown argument $1" >&2; exit 2 ;;
   esac
 done
+
+# relay-r1 §10 at agent-relay b8d789b: "a helper a sitting spawns keeps `RELAY_ROW` and `CLAUDE_SESSION_MAX_TURNS`, runs in the foreground as `CLAUDE_SESSION_DEPTH=$((d+1)) CLAUDE_SESSION_HELPER=1 claude -p … --max-turns N`, and is refused past depth 2; Stop and `start.json` skip it; `DropSitting` is the relay's own helpers' alone"
+# d is CLAUDE_SESSION_DEPTH (unset or empty: 0); the helper runs at d + 1,
+# refused past depth 2 before anything is written.
+d="${CLAUDE_SESSION_DEPTH:-0}"
+case "$d" in
+  *[!0-9]*) echo "readme-render: CLAUDE_SESSION_DEPTH=$d is not a plain non-negative integer" >&2; exit 2 ;;
+esac
+while [ "${#d}" -gt 1 ] && [ "${d#0}" != "$d" ]; do d="${d#0}"; done
+if [ "${#d}" -gt 1 ] || [ $((d + 1)) -gt 2 ]; then
+  echo "readme-render: CLAUDE_SESSION_DEPTH=${CLAUDE_SESSION_DEPTH:-}: a helper is refused past depth 2 (relay-r1 section 10)" >&2
+  exit 2
+fi
 PY="${PYTHON:-python3}"
 REPO="$(cd "$REPO" 2>/dev/null && pwd)" || { echo "readme-render: no directory $REPO" >&2; exit 2; }
 SOURCE="design/readme/source.md"
@@ -74,7 +94,7 @@ with open(src, "w", encoding="utf-8") as f:
     f.write(text)
 PY
 
-bash "$PLUGIN_ROOT/scripts/respeak-render.sh" --mode technical --source "$src_copy" --out "$out" --contract "$CONTRACT"
+CLAUDE_SESSION_DEPTH=$((d + 1)) CLAUDE_SESSION_HELPER=1 bash "$PLUGIN_ROOT/scripts/respeak-render.sh" --mode technical --source "$src_copy" --out "$out" --contract "$CONTRACT"
 rc=$?
 if [ "$rc" -ne 0 ]; then
   echo "readme-render: the render exited $rc; README.md untouched" >&2

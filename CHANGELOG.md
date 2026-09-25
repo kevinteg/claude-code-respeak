@@ -4,6 +4,12 @@ Versions follow `.claude-plugin/plugin.json`. Dates are commit dates.
 
 ## Unreleased
 
+- `scripts/readme-render.sh` runs the renderer as a marked helper
+  (relay-r1 §10): its `claude -p` gets `CLAUDE_SESSION_DEPTH` one deeper and
+  `CLAUDE_SESSION_HELPER=1`, and `RELAY_ROW` and `CLAUDE_SESSION_MAX_TURNS`
+  pass through as given, so Stop and `start.json` skip it instead of reading
+  it as a sitting. A `CLAUDE_SESSION_DEPTH` that is not a plain non-negative
+  integer, or a helper past depth 2, exits 2 before anything is written.
 - `scripts/hygiene`, `scripts/doclint` and `scripts/bounded` are re-synced
   to claude-code-session `db648f3`, and `make hygiene` now pins `bounded` by
   hash with the other two. Hygiene reads a file over 4 MiB in chunks instead
