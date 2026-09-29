@@ -3,11 +3,13 @@
 This repository ships the respeak plugin and uses it on itself. A session
 working here follows these rules.
 
-**The human lane.** `README.md`, `CHANGELOG.md`, this file,
-`design/readme/source.md`, everything under `docs/`, and everything under `plugin/docs/` are read by people. They are written in respeak technical mode
-for a peer engineer; `.claude/respeak/config.yaml` declares that as a scope,
-and `respeak-config.sh explain --for <file>` shows it. Skills and agent
-prompts are Markdown too and pass the same gate, but their reader is a model.
+**The human lane.** `README.md`, `CHANGELOG.md`, the five root files as each
+lands (`DECISIONS.md`, `DESIGN.md`, `NICE_TO_HAVE.md`, `OPEN-QUESTIONS.md`,
+`HANDOFF.md`), top-level `design/*.md`, `design/readme/`, `docs/` and
+`plugin/docs/` are read by people, in respeak technical mode for a peer
+engineer. `.claude/respeak/config.yaml` lists them in `gate.include`;
+`respeak-config.sh explain --for <file>` shows the register. This file,
+skills, agent prompts, packets and sittings are read by a model, not gated.
 
 **Editing a human-lane file.** Do not hand-edit prose in those files. Ask the
 `respeak:respeak` agent for its technical-mode editorial pass over the file,
@@ -32,10 +34,10 @@ Links in the source are `/`-rooted, so one target resolves from the source
 and from the root. The source stays at or under 24,576 bytes;
 `scripts/readme-fresh.sh` enforces the ceiling.
 
-**The gate is on.** Every Markdown write outside `research/`, `examples/`,
-and `plugin/corpus/` is scanned by the PostToolUse hook and blocked on an
-error-severity hit. `/respeak:off gate` silences it for one session when you
-must; say so in the commit message.
+**The gate is on.** The PostToolUse hook scans a write to a human-lane file
+and blocks an error-severity hit. `make doclint` still gates
+`examples/layered/project/` by that fixture's own config. `/respeak:off gate`
+silences it for one session when you must; say so in the commit message.
 
 **Before committing.** Run `bash plugin/scripts/respeak-check.sh` (every doc passes
 its own gate) and `make check`. Use `python3` for anything Python: in this

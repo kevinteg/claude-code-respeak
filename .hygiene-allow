@@ -36,6 +36,8 @@ tests/*: sibling,lan,email
 # example address (research/sources). lan: the fixture's `.local(` method (tests).
 # person: the author (LICENSE, the manifests' author and owner) and the repo URL.
 LICENSE: person
+# NICE_TO_HAVE.md: the owner in its front matter, the plugin's name and its config directory.
+NICE_TO_HAVE.md: sibling,person
 README.md: sibling,person
 # design/readme/: the README's source; the plugin's name and the repo URL in the install lines.
 design/readme/*: sibling,person
